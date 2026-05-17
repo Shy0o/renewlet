@@ -58,9 +58,9 @@ export default function Index() {
     handleEditDialogOpenChange,
   } = useSubscriptionCrud(subscriptions);
 
-  // 与参考项目保持一致：数据/汇率未就绪时先展示骨架屏，避免页面内容闪动。
-  // Caveat: 统计卡片依赖汇率，提前渲染会出现金额先 fallback 后跳变。
-  if (subscriptionsQuery.isPending || settingsQuery.isPending || ratesLoading) {
+  // 只有页面主数据还没有首屏结果时才展示骨架屏。
+  // 汇率刷新期间保留已有内容，并在统计卡片副标题里提示加载状态，避免整页闪回 loading。
+  if (subscriptionsQuery.isPending || settingsQuery.isPending) {
     return (
       <div className="min-h-screen bg-background">
         <Header onAddSubscription={handleAddSubscription} />
