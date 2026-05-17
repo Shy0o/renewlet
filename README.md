@@ -59,6 +59,37 @@ docker compose pull
 docker compose up -d
 ```
 
+### 升级
+
+升级前先备份数据和配置：
+
+```bash
+tar -czf renewlet-backup-$(date +%F).tgz .env docker-compose.yml data
+```
+
+升级到最新镜像：
+
+```bash
+docker compose pull
+docker compose up -d
+docker compose logs -f
+```
+
+### 常用命令
+
+查看状态和日志：
+
+```bash
+docker compose ps
+docker compose logs -f
+```
+
+停止服务但保留数据：
+
+```bash
+docker compose down
+```
+
 常用配置都在 `.env`：
 
 | 变量 | 用途 |
@@ -123,35 +154,6 @@ docker compose up -d
     </td>
   </tr>
 </table>
-
-## 日常运维
-
-查看状态和日志：
-
-```bash
-docker compose ps
-docker compose logs -f
-```
-
-升级前先备份数据和配置：
-
-```bash
-tar -czf renewlet-backup-$(date +%F).tgz .env docker-compose.yml data
-```
-
-升级到最新镜像：
-
-```bash
-docker compose pull
-docker compose up -d
-docker compose logs -f
-```
-
-停止服务但保留数据：
-
-```bash
-docker compose down
-```
 
 ## 本地开发
 

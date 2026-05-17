@@ -59,6 +59,37 @@ docker compose pull
 docker compose up -d
 ```
 
+### Upgrade
+
+Back up data and config before upgrading:
+
+```bash
+tar -czf renewlet-backup-$(date +%F).tgz .env docker-compose.yml data
+```
+
+Upgrade to the latest image:
+
+```bash
+docker compose pull
+docker compose up -d
+docker compose logs -f
+```
+
+### Common commands
+
+Check status and logs:
+
+```bash
+docker compose ps
+docker compose logs -f
+```
+
+Stop the service while keeping data:
+
+```bash
+docker compose down
+```
+
 Common settings live in `.env`:
 
 | Variable | Purpose |
@@ -123,35 +154,6 @@ Common settings live in `.env`:
     </td>
   </tr>
 </table>
-
-## Operations
-
-Check status and logs:
-
-```bash
-docker compose ps
-docker compose logs -f
-```
-
-Back up data and config before upgrading:
-
-```bash
-tar -czf renewlet-backup-$(date +%F).tgz .env docker-compose.yml data
-```
-
-Upgrade to the latest image:
-
-```bash
-docker compose pull
-docker compose up -d
-docker compose logs -f
-```
-
-Stop the service while keeping data:
-
-```bash
-docker compose down
-```
 
 ## Local Development
 
