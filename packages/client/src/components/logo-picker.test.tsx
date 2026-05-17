@@ -10,8 +10,37 @@ type ApiFetchMock = (
   init?: { signal?: AbortSignal },
 ) => Promise<unknown>;
 
+type UploadedLogoAssetFixture = {
+  id: string;
+  url: string;
+  kind: "logo";
+  originalName?: string;
+};
+
+type UploadedLogosStateFixture = {
+  assets: UploadedLogoAssetFixture[];
+  error: Error | null;
+  hasLoaded: boolean;
+  hasMore: boolean;
+  isLoading: boolean;
+  isLoadingMore: boolean;
+};
+
 const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn<ApiFetchMock>(),
+  loadUploadedLogosInitial: vi.fn<() => Promise<void>>(),
+  loadUploadedLogosMore: vi.fn<() => Promise<void>>(),
+  resetUploadedLogos: vi.fn<() => void>(),
+  uploadedLogosState: {
+    current: {
+      assets: [],
+      error: null,
+      hasLoaded: false,
+      hasMore: false,
+      isLoading: false,
+      isLoadingMore: false,
+    } as UploadedLogosStateFixture,
+  },
 }));
 
 vi.mock("@/lib/api-client", () => {
@@ -43,6 +72,15 @@ vi.mock("@/hooks/use-cropped-image-upload", () => ({
   }),
 }));
 
+vi.mock("@/hooks/use-uploaded-logo-assets", () => ({
+  useUploadedLogoAssets: () => ({
+    ...mocks.uploadedLogosState.current,
+    loadInitial: mocks.loadUploadedLogosInitial,
+    loadMore: mocks.loadUploadedLogosMore,
+    reset: mocks.resetUploadedLogos,
+  }),
+}));
+
 vi.mock("@/components/image-crop-dialog", () => ({
   ImageCropDialog: () => null,
 }));
@@ -56,6 +94,19 @@ function expectApiFetchCallWithSignal(urlPart: string) {
 describe("LogoPicker", () => {
   beforeEach(() => {
     mocks.apiFetch.mockReset();
+    mocks.loadUploadedLogosInitial.mockReset();
+    mocks.loadUploadedLogosMore.mockReset();
+    mocks.resetUploadedLogos.mockReset();
+    mocks.loadUploadedLogosInitial.mockResolvedValue(undefined);
+    mocks.loadUploadedLogosMore.mockResolvedValue(undefined);
+    mocks.uploadedLogosState.current = {
+      assets: [],
+      error: null,
+      hasLoaded: false,
+      hasMore: false,
+      isLoading: false,
+      isLoadingMore: false,
+    };
     vi.spyOn(console, "debug").mockImplementation(() => undefined);
     mocks.apiFetch.mockImplementation((url: string) => {
       if (url.startsWith("/api/app/thesvg-icons")) {
@@ -82,7 +133,7 @@ describe("LogoPicker", () => {
 
     render(<LogoPicker value={undefined} onChange={onChange} serviceName="Netflix" />);
 
-    await user.click(screen.getByRole("button", { name: "搜索 Logo" }));
+    await user.click(screen.getByRole("button", { name: "搜索" }));
 
     await waitFor(() => {
       expectApiFetchCallWithSignal("/api/app/thesvg-icons?search=Netflix");
@@ -103,6 +154,93 @@ describe("LogoPicker", () => {
     expect(input).toHaveAttribute("accept", IMAGE_UPLOAD_ACCEPT);
   });
 
+  it("selects an uploaded custom Logo from the uploaded Logo picker", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    mocks.uploadedLogosState.current = {
+      assets: [
+        {
+          id: "asset-1",
+          url: "/api/app/assets/asset-1",
+          kind: "logo",
+          originalName: "netflix.png",
+        },
+      ],
+      error: null,
+      hasLoaded: true,
+      hasMore: false,
+      isLoading: false,
+      isLoadingMore: false,
+    };
+
+    render(<LogoPicker value={undefined} onChange={onChange} />);
+
+    expect(screen.getByRole("button", { name: "上传 Logo" })).toHaveClass("w-full");
+    expect(screen.getByRole("button", { name: "已上传" })).toHaveClass("h-8");
+    expect(screen.getByRole("button", { name: "搜索" })).toHaveClass("h-8");
+    await user.click(screen.getByRole("button", { name: "已上传" }));
+
+    expect(mocks.loadUploadedLogosInitial).toHaveBeenCalledTimes(1);
+    await user.click(await screen.findByRole("button", { name: "netflix.png" }));
+
+    expect(onChange).toHaveBeenCalledWith("/api/app/assets/asset-1");
+  });
+
+  it("shows empty, retry, load-more, and selected states in the uploaded Logo picker", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<LogoPicker value={undefined} onChange={vi.fn()} />);
+
+    mocks.uploadedLogosState.current = {
+      assets: [],
+      error: null,
+      hasLoaded: true,
+      hasMore: false,
+      isLoading: false,
+      isLoadingMore: false,
+    };
+    rerender(<LogoPicker value={undefined} onChange={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "已上传" }));
+    expect(await screen.findByText("还没有上传过自定义 Logo")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "已上传" }));
+    mocks.uploadedLogosState.current = {
+      assets: [],
+      error: new Error("offline"),
+      hasLoaded: true,
+      hasMore: false,
+      isLoading: false,
+      isLoadingMore: false,
+    };
+    rerender(<LogoPicker value={undefined} onChange={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "已上传" }));
+    expect(await screen.findByText("已上传 Logo 加载失败")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "重试" }));
+    expect(mocks.loadUploadedLogosInitial).toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "已上传" }));
+    mocks.uploadedLogosState.current = {
+      assets: [
+        {
+          id: "asset-2",
+          url: "/api/app/assets/asset-2",
+          kind: "logo",
+          originalName: "selected.svg",
+        },
+      ],
+      error: null,
+      hasLoaded: true,
+      hasMore: true,
+      isLoading: false,
+      isLoadingMore: false,
+    };
+    rerender(<LogoPicker value="/api/app/assets/asset-2" onChange={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "已上传" }));
+
+    expect(await screen.findByRole("button", { name: "selected.svg" })).toHaveClass("border-primary");
+    await user.click(screen.getByRole("button", { name: "加载更多" }));
+    expect(mocks.loadUploadedLogosMore).toHaveBeenCalledTimes(1);
+  });
+
   it("shows a clear built-in icon empty state while keeping favicon fallback results", async () => {
     const user = userEvent.setup();
     mocks.apiFetch.mockImplementation((url: string) => {
@@ -115,7 +253,7 @@ describe("LogoPicker", () => {
 
     render(<LogoPicker value={undefined} onChange={vi.fn()} serviceName="DMIT" />);
 
-    await user.click(screen.getByRole("button", { name: "搜索 Logo" }));
+    await user.click(screen.getByRole("button", { name: "搜索" }));
 
     expect(await screen.findByText("内置图标：")).toBeInTheDocument();
     expect(await screen.findByText("内置图标未命中")).toBeInTheDocument();
@@ -134,7 +272,7 @@ describe("LogoPicker", () => {
 
     render(<LogoPicker value={undefined} onChange={vi.fn()} serviceName="DMIT" />);
 
-    await user.click(screen.getByRole("button", { name: "搜索 Logo" }));
+    await user.click(screen.getByRole("button", { name: "搜索" }));
 
     expect(await screen.findByText("内置图标：")).toBeInTheDocument();
     expect(await screen.findByText("内置图标搜索失败")).toBeInTheDocument();
@@ -146,7 +284,7 @@ describe("LogoPicker", () => {
 
     render(<LogoPicker value={undefined} onChange={vi.fn()} serviceName="youtube" />);
 
-    await user.click(screen.getByRole("button", { name: "搜索 Logo" }));
+    await user.click(screen.getByRole("button", { name: "搜索" }));
     const searchInput = screen.getByPlaceholderText("输入服务名称或品牌...");
 
     await waitFor(() => {

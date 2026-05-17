@@ -18,12 +18,12 @@
  * Caveat: 外层表单必须关注 uploadStatus，上传中不允许保存订阅，避免 data URL 被持久化。
  */
 
-import { lazy, Suspense, useEffect, useRef } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Upload, Search, X, Loader2, Image as ImageIcon, Check } from 'lucide-react';
+import { Upload, Search, X, Loader2, Image as ImageIcon, Check, Images, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { FaviconResultImage } from '@/components/favicon-result-image';
 import { generateFaviconUrls } from '@/lib/favicon';
@@ -32,6 +32,7 @@ import { IMAGE_UPLOAD_ACCEPT } from '@/lib/upload-constraints';
 import { useFaviconSearch } from '@/hooks/use-favicon-search';
 import { useCroppedImageUpload, type UploadStatus } from '@/hooks/use-cropped-image-upload';
 import { useTheSvgIconSearch } from '@/hooks/use-thesvg-icon-search';
+import { useUploadedLogoAssets } from '@/hooks/use-uploaded-logo-assets';
 import { useI18n } from '@/i18n/I18nProvider';
 
 /** 透出上传状态类型，方便表单弹窗阻止上传中的保存。 */
@@ -84,6 +85,8 @@ export function LogoPicker({
 }: LogoPickerProps) {
   const { t } = useI18n();
   const builtInSearch = useTheSvgIconSearch(32);
+  const uploadedLogos = useUploadedLogoAssets();
+  const [uploadedLogosOpen, setUploadedLogosOpen] = useState(false);
   const builtInCloseResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const search = useFaviconSearch({
     autoQuery: serviceName,
@@ -137,6 +140,21 @@ export function LogoPicker({
       builtInCloseResetTimerRef.current = null;
       builtInSearch.reset();
     }, SEARCH_POPOVER_CLOSE_RESET_DELAY_MS);
+  };
+
+  const handleUploadedLogosOpenChange = (nextOpen: boolean) => {
+    setUploadedLogosOpen(nextOpen);
+    if (nextOpen) {
+      void uploadedLogos.loadInitial();
+    }
+  };
+
+  const retryUploadedLogos = () => {
+    void uploadedLogos.loadInitial();
+  };
+
+  const loadMoreUploadedLogos = () => {
+    void uploadedLogos.loadMore();
   };
 
   useEffect(() => {
@@ -202,12 +220,12 @@ export function LogoPicker({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-col gap-2">
+        <div className="grid min-w-0 flex-1 max-w-52 gap-2">
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="gap-2 text-primary border-primary/30 hover:border-primary hover:bg-primary/10"
+            className="w-full gap-2 text-primary border-primary/30 hover:border-primary hover:bg-primary/10"
             onClick={() => fileInputRef.current?.click()}
             onFocus={preloadImageCropDialog}
             onPointerEnter={preloadImageCropDialog}
@@ -220,172 +238,305 @@ export function LogoPicker({
             {t("media.uploadLogo")}
           </Button>
 
-          <Popover open={search.open} onOpenChange={handleSearchOpenChange}>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="gap-2 border-border"
-              >
-                <Search className="w-4 h-4" />
-                {t("media.searchLogo")}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80 p-4 border-border bg-card" align="start" sideOffset={8}>
-              <div className="grid gap-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">{t("media.searchLogo")}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleSearchOpenChange(false)}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Input
-                    placeholder={t("media.searchLogoPlaceholder")}
-                    value={search.query}
-                    onChange={(e) => search.setQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && search.search()}
-                    className="flex-1 border-border bg-secondary"
-                    autoFocus
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={search.search}
-                    disabled={isAnySearching || !search.query.trim()}
-                    className="bg-primary text-primary-foreground"
-                  >
-                    {isAnySearching ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Search className="w-4 h-4" />
-                    )}
-                  </Button>
-                </div>
-
-                {isAnySearching && !hasAnyResults && (
-                  <div className="flex items-center justify-center py-6">
-                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                    <span className="ml-2 text-sm text-muted-foreground">{t("media.searching")}</span>
+          <div className="grid grid-cols-2 gap-2">
+            <Popover open={uploadedLogosOpen} onOpenChange={handleUploadedLogosOpenChange}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-full gap-1.5 border-border px-2 text-xs"
+                >
+                  <Images className="w-3.5 h-3.5" />
+                  {t("media.uploaded")}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 p-3 border-border bg-card" align="start" sideOffset={8}>
+                <div className="grid gap-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">{t("media.uploadedLogo")}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleUploadedLogosOpenChange(false)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
-                )}
 
-                {shouldShowResultsArea && (
-                  <div className="max-h-72 grid gap-4 overflow-y-auto pr-1">
-                    {shouldShowBuiltInSection && (
-                      <div className="grid gap-2">
-                        <p className="text-xs text-muted-foreground">{t("media.builtInIcons")}</p>
-                        {builtInSearch.icons.length > 0 ? (
-                          <div className="grid grid-cols-4 gap-2 p-1">
-                            {builtInSearch.icons.map((icon) => (
-                              <button
-                                key={icon.slug}
-                                type="button"
-                                title={icon.title}
-                                onClick={() => {
-                                  applyValue(icon.iconUrl);
-                                  handleSearchOpenChange(false);
-                                }}
-                                className={cn(
-                                  "relative h-14 w-14 rounded-lg border-2 p-1.5",
-                                  "flex items-center justify-center bg-white",
-                                  "transition-all hover:border-primary hover:bg-primary/10",
-                                  value === icon.iconUrl ? "border-primary ring-2 ring-primary/20" : "border-border",
-                                )}
-                              >
-                                <div className="h-full w-full">
-                                  <FaviconResultImage src={icon.iconUrl} alt={icon.title} />
-                                </div>
-                                {value === icon.iconUrl && (
-                                  <div className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary">
-                                    <Check className="h-3 w-3 text-primary-foreground" />
-                                  </div>
-                                )}
-                              </button>
-                            ))}
-                          </div>
+                  {uploadedLogos.isLoading && uploadedLogos.assets.length === 0 && (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                      <span className="ml-2 text-sm text-muted-foreground">{t("media.loadingUploadedLogo")}</span>
+                    </div>
+                  )}
+
+                  {uploadedLogos.error && uploadedLogos.assets.length === 0 && (
+                    <div className="grid gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+                      <p className="text-sm text-destructive">{t("media.uploadedLogoLoadFailed")}</p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-2 border-border"
+                        onClick={retryUploadedLogos}
+                        disabled={uploadedLogos.isLoading}
+                      >
+                        {uploadedLogos.isLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
                         ) : (
-                          <p className="rounded-md border border-dashed border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
-                            {builtInSearch.isSearching
-                              ? t("media.searchingBuiltIn")
-                              : builtInSearch.error ?? t("media.noBuiltInMatch")}
-                          </p>
+                          <RefreshCw className="w-4 h-4" />
                         )}
-                      </div>
-                    )}
+                        {t("media.retryUploadedLogo")}
+                      </Button>
+                    </div>
+                  )}
 
-                    {search.results.length > 0 && (
-                      <div className="grid gap-2">
-                        <p className="text-xs text-muted-foreground">{t("media.faviconFallback")}</p>
-                        <div className="grid grid-cols-4 gap-2 p-1">
-                          {search.results.map((url, index) => (
+                  {!uploadedLogos.isLoading && !uploadedLogos.error && uploadedLogos.hasLoaded && uploadedLogos.assets.length === 0 && (
+                    <div className="text-center py-3">
+                      <ImageIcon className="w-8 h-8 mx-auto text-muted-foreground/50 mb-2" />
+                      <p className="text-sm text-muted-foreground">{t("media.noUploadedLogo")}</p>
+                    </div>
+                  )}
+
+                  {uploadedLogos.assets.length > 0 && (
+                    <div className="max-h-72 grid gap-3 overflow-y-auto pr-1">
+                      <div className="grid grid-cols-4 gap-2 p-1">
+                        {uploadedLogos.assets.map((asset, index) => {
+                          const label = asset.originalName ?? t("media.uploadedLogoOption", { index: index + 1 });
+                          return (
                             <button
-                              key={url}
+                              key={asset.id}
                               type="button"
+                              title={label}
+                              aria-label={label}
                               onClick={() => {
-                                applyValue(url);
-                                handleSearchOpenChange(false);
+                                applyValue(asset.url);
+                                handleUploadedLogosOpenChange(false);
                               }}
                               className={cn(
                                 "relative h-14 w-14 rounded-lg border-2 p-1.5",
                                 "hover:border-primary hover:bg-primary/10 transition-all",
                                 "flex items-center justify-center bg-white",
-                                value === url ? "border-primary ring-2 ring-primary/20" : "border-border"
+                                value === asset.url ? "border-primary ring-2 ring-primary/20" : "border-border"
                               )}
                             >
                               <div className="h-full w-full">
-                                <FaviconResultImage
-                                  src={url}
-                                  alt={`Logo option ${index + 1}`}
-                                  onError={() => search.removeResult(url)}
-                                />
+                                <FaviconResultImage src={asset.url} alt={label} />
                               </div>
-                              {value === url && (
+                              {value === asset.url && (
                                 <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary flex items-center justify-center">
                                   <Check className="w-3 h-3 text-primary-foreground" />
                                 </div>
                               )}
                             </button>
-                          ))}
+                          );
+                        })}
+                      </div>
+
+                      {uploadedLogos.error && (
+                        <div className="grid gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+                          <p className="text-xs text-destructive">{t("media.uploadedLogoLoadFailed")}</p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-2 border-border"
+                            onClick={retryUploadedLogos}
+                            disabled={uploadedLogos.isLoading}
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            {t("media.retryUploadedLogo")}
+                          </Button>
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    {isAnySearching && (
-                      <div className="flex items-center justify-center py-2 text-xs text-muted-foreground">
-                        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin text-primary" />
-                        {t("media.loadingMore")}
-                      </div>
-                    )}
+                      {uploadedLogos.hasMore && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-full gap-2 border-border"
+                          onClick={loadMoreUploadedLogos}
+                          disabled={uploadedLogos.isLoadingMore}
+                        >
+                          {uploadedLogos.isLoadingMore && <Loader2 className="w-4 h-4 animate-spin" />}
+                          {t("media.loadMoreUploadedLogo")}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
 
-                    {!isAnySearching && hasAnySearched && !hasAnyResults && (
-                      <div className="text-center py-2">
-                        <ImageIcon className="w-10 h-10 mx-auto text-muted-foreground/50 mb-2" />
-                        <p className="text-sm text-muted-foreground">
-                          {t("media.logoNotFound")}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {t("media.logoNotFoundHint")}
-                        </p>
-                      </div>
-                    )}
+            <Popover open={search.open} onOpenChange={handleSearchOpenChange}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-full gap-1.5 border-border px-2 text-xs"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  {t("media.search")}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 p-4 border-border bg-card" align="start" sideOffset={8}>
+                <div className="grid gap-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">{t("media.searchLogo")}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleSearchOpenChange(false)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
-                )}
 
-                {!isAnySearching && !hasAnySearched && (
-                  <p className="text-xs text-center text-muted-foreground py-2">
-                    {t("media.searchLogoPrompt")}
-                  </p>
-                )}
-              </div>
-            </PopoverContent>
-          </Popover>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder={t("media.searchLogoPlaceholder")}
+                      value={search.query}
+                      onChange={(e) => search.setQuery(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && search.search()}
+                      className="flex-1 border-border bg-secondary"
+                      autoFocus
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={search.search}
+                      disabled={isAnySearching || !search.query.trim()}
+                      className="bg-primary text-primary-foreground"
+                    >
+                      {isAnySearching ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Search className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
+
+                  {isAnySearching && !hasAnyResults && (
+                    <div className="flex items-center justify-center py-6">
+                      <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                      <span className="ml-2 text-sm text-muted-foreground">{t("media.searching")}</span>
+                    </div>
+                  )}
+
+                  {shouldShowResultsArea && (
+                    <div className="max-h-72 grid gap-4 overflow-y-auto pr-1">
+                      {shouldShowBuiltInSection && (
+                        <div className="grid gap-2">
+                          <p className="text-xs text-muted-foreground">{t("media.builtInIcons")}</p>
+                          {builtInSearch.icons.length > 0 ? (
+                            <div className="grid grid-cols-4 gap-2 p-1">
+                              {builtInSearch.icons.map((icon) => (
+                                <button
+                                  key={icon.slug}
+                                  type="button"
+                                  title={icon.title}
+                                  onClick={() => {
+                                    applyValue(icon.iconUrl);
+                                    handleSearchOpenChange(false);
+                                  }}
+                                  className={cn(
+                                    "relative h-14 w-14 rounded-lg border-2 p-1.5",
+                                    "flex items-center justify-center bg-white",
+                                    "transition-all hover:border-primary hover:bg-primary/10",
+                                    value === icon.iconUrl ? "border-primary ring-2 ring-primary/20" : "border-border",
+                                  )}
+                                >
+                                  <div className="h-full w-full">
+                                    <FaviconResultImage src={icon.iconUrl} alt={icon.title} />
+                                  </div>
+                                  {value === icon.iconUrl && (
+                                    <div className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary">
+                                      <Check className="h-3 w-3 text-primary-foreground" />
+                                    </div>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="rounded-md border border-dashed border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+                              {builtInSearch.isSearching
+                                ? t("media.searchingBuiltIn")
+                                : builtInSearch.error ?? t("media.noBuiltInMatch")}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {search.results.length > 0 && (
+                        <div className="grid gap-2">
+                          <p className="text-xs text-muted-foreground">{t("media.faviconFallback")}</p>
+                          <div className="grid grid-cols-4 gap-2 p-1">
+                            {search.results.map((url, index) => (
+                              <button
+                                key={url}
+                                type="button"
+                                onClick={() => {
+                                  applyValue(url);
+                                  handleSearchOpenChange(false);
+                                }}
+                                className={cn(
+                                  "relative h-14 w-14 rounded-lg border-2 p-1.5",
+                                  "hover:border-primary hover:bg-primary/10 transition-all",
+                                  "flex items-center justify-center bg-white",
+                                  value === url ? "border-primary ring-2 ring-primary/20" : "border-border"
+                                )}
+                              >
+                                <div className="h-full w-full">
+                                  <FaviconResultImage
+                                    src={url}
+                                    alt={`Logo option ${index + 1}`}
+                                    onError={() => search.removeResult(url)}
+                                  />
+                                </div>
+                                {value === url && (
+                                  <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary flex items-center justify-center">
+                                    <Check className="w-3 h-3 text-primary-foreground" />
+                                  </div>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {isAnySearching && (
+                        <div className="flex items-center justify-center py-2 text-xs text-muted-foreground">
+                          <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin text-primary" />
+                          {t("media.loadingMore")}
+                        </div>
+                      )}
+
+                      {!isAnySearching && hasAnySearched && !hasAnyResults && (
+                        <div className="text-center py-2">
+                          <ImageIcon className="w-10 h-10 mx-auto text-muted-foreground/50 mb-2" />
+                          <p className="text-sm text-muted-foreground">
+                            {t("media.logoNotFound")}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {t("media.logoNotFoundHint")}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {!isAnySearching && !hasAnySearched && (
+                    <p className="text-xs text-center text-muted-foreground py-2">
+                      {t("media.searchLogoPrompt")}
+                    </p>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
 
           {uploadStatus === "error" && (
             <p className="max-w-64 text-xs text-destructive">
