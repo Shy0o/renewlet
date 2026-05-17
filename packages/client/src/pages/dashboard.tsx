@@ -1,0 +1,177 @@
+/**
+ * 仪表盘首页（/）。
+ *
+ * 展示内容：
+ * - 汇总统计：月度支出/活跃订阅/即将续费/试用中
+ * - 近期订阅卡片
+ * - 支出分布图（按分类/币种换算）
+ * - 即将续费列表
+ *
+ * 架构位置：
+ * - 页面只做数据 hook 装配和布局。
+ * - 首页统计由 `useDashboardStats` 生成，CRUD 弹窗状态由 `useSubscriptionCrud` 管理。
+ */
+
+import Link from '@/components/router-link';
+import type { Subscription } from "@/types/subscription";
+import { Header } from "@/components/header";
+import { StatCard } from "@/components/ui/stat-card";
+import { SubscriptionCard } from "@/components/subscription-card";
+import { SpendingChart } from "@/components/spending-chart";
+import { UpcomingRenewals } from "@/components/upcoming-renewals";
+import { DashboardSkeleton } from "@/components/loading-skeleton";
+import { EditSubscriptionDialog } from "@/components/edit-subscription-dialog";
+import { CreditCard, TrendingUp, Clock, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useExchangeRates } from "@/hooks/use-exchange-rates";
+import { useSubscriptions } from "@/hooks/use-subscriptions";
+import { useSettings } from "@/hooks/use-settings";
+import { useDashboardStats } from "@/modules/subscriptions/application/use-dashboard-stats";
+import { useSubscriptionCrud } from "@/modules/subscriptions/application/use-subscription-crud";
+import { useI18n } from "@/i18n/I18nProvider";
+
+const EMPTY_SUBSCRIPTIONS: Subscription[] = [];
+
+/** 仪表盘页面组件。 */
+export default function Index() {
+  const subscriptionsQuery = useSubscriptions();
+  const subscriptions = subscriptionsQuery.data ?? EMPTY_SUBSCRIPTIONS;
+  const settingsQuery = useSettings();
+  const settings = settingsQuery.data;
+  const { t, formatCurrency } = useI18n();
+  const { convert, loading: ratesLoading } = useExchangeRates(settings?.exchangeRateProvider);
+  const defaultCurrency = settings?.defaultCurrency ?? "CNY";
+  const timeZone = settings?.timezone ?? "UTC";
+  const { activeSubscriptions, totalMonthly, upcomingCount, trialCount } = useDashboardStats(
+    subscriptions,
+    defaultCurrency,
+    convert,
+    timeZone,
+  );
+  const {
+    editingSubscription,
+    editDialogOpen,
+    handleAddSubscription,
+    handleDeleteSubscription,
+    handleEditSubscription,
+    handleSaveSubscription,
+    handleEditDialogOpenChange,
+  } = useSubscriptionCrud(subscriptions);
+
+  // 与参考项目保持一致：数据/汇率未就绪时先展示骨架屏，避免页面内容闪动。
+  // Caveat: 统计卡片依赖汇率，提前渲染会出现金额先 fallback 后跳变。
+  if (subscriptionsQuery.isPending || settingsQuery.isPending || ratesLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header onAddSubscription={handleAddSubscription} />
+        <main className="mx-auto max-w-7xl px-6 py-8">
+          <DashboardSkeleton />
+        </main>
+      </div>
+    );
+  }
+
+  // 仪表盘只展示最近 6 个订阅（完整列表在 /subscriptions），保持首页扫描成本低。
+  const displayedSubscriptions = subscriptions.slice(0, 6);
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Header onAddSubscription={handleAddSubscription} />
+
+      <main className="mx-auto max-w-7xl px-6 py-8">
+        {/* Stats Grid */}
+        <div className="mb-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            title={t("dashboard.monthlySpend")}
+            value={formatCurrency(totalMonthly, defaultCurrency)}
+            subtitle={ratesLoading ? t("dashboard.ratesLoading") : t("dashboard.realTimeRates", { currency: defaultCurrency })}
+            icon={<CreditCard className="h-6 w-6" />}
+            variant="primary"
+            className="animate-fade-in"
+          />
+          <StatCard
+            title={t("dashboard.activeSubscriptions")}
+            value={activeSubscriptions.length}
+            subtitle={t("dashboard.totalSubscriptions", { count: subscriptions.length })}
+            icon={<TrendingUp className="h-6 w-6" />}
+            className="animate-fade-in [animation-delay:100ms]"
+          />
+          <StatCard
+            title={t("dashboard.upcomingRenewals")}
+            value={upcomingCount}
+            subtitle={t("dashboard.next7Days")}
+            icon={<Clock className="h-6 w-6" />}
+            variant={upcomingCount > 0 ? "warning" : "default"}
+            className="animate-fade-in [animation-delay:200ms]"
+          />
+          <StatCard
+            title={t("dashboard.trials")}
+            value={trialCount}
+            subtitle={t("dashboard.trialsNeedAttention")}
+            icon={<Sparkles className="h-6 w-6" />}
+            variant={trialCount > 0 ? "warning" : "default"}
+            className="animate-fade-in [animation-delay:300ms]"
+          />
+        </div>
+
+        {/* Main Content Grid */}
+        <div className="grid gap-8 lg:grid-cols-3">
+          {/* Subscriptions List */}
+          <div className="lg:col-span-2">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-foreground">{t("dashboard.recentSubscriptions")}</h2>
+              <Link href="/subscriptions">
+                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+                  {t("dashboard.viewAll", { count: subscriptions.length })}
+                </Button>
+              </Link>
+            </div>
+            <div className="grid items-stretch gap-4 sm:grid-cols-2">
+              {displayedSubscriptions.map((sub, index) => (
+                <div key={sub.id} className="h-full animate-fade-in" style={{ animationDelay: `${index * 50}ms` }}>
+                  <SubscriptionCard
+                    subscription={sub}
+                    timeZone={timeZone}
+                    onEdit={handleEditSubscription}
+                    onDelete={handleDeleteSubscription}
+                  />
+                </div>
+              ))}
+            </div>
+            {subscriptions.length > 6 && (
+              <div className="mt-4 text-center">
+                <Link href="/subscriptions">
+                  <Button variant="outline" className="border-border">
+                    {t("dashboard.viewAllSubscriptions", { count: subscriptions.length })}
+                  </Button>
+                </Link>
+              </div>
+            )}
+          </div>
+
+          {/* Sidebar */}
+          <div className="grid gap-6">
+            {/* Spending Chart */}
+            <div className="rounded-xl border border-border bg-card p-6 shadow-card">
+              <h3 className="mb-3 text-lg font-semibold text-foreground">{t("dashboard.spendingDistribution")}</h3>
+              <SpendingChart subscriptions={subscriptions} />
+            </div>
+
+            {/* Upcoming Renewals */}
+            <div className="rounded-xl border border-border bg-card p-6 shadow-card">
+              <h3 className="mb-4 text-lg font-semibold text-foreground">{t("dashboard.upcomingRenewals")}</h3>
+                <UpcomingRenewals subscriptions={subscriptions} timeZone={timeZone} />
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <EditSubscriptionDialog
+        subscription={editingSubscription}
+        open={editDialogOpen}
+        onOpenChange={handleEditDialogOpenChange}
+        onSave={handleSaveSubscription}
+      />
+    </div>
+  );
+}

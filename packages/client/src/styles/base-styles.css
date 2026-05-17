@@ -1,0 +1,115 @@
+/* base-styles.css 定义全局 body 背景、字体和滚动条。
+ *
+ * 架构位置：这些规则作用于文档根和 body，必须在 Tailwind 入口之后加载，
+ * 让 @apply 能解析项目 token。
+ */
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+
+  #root {
+    height: 100vh;
+    height: 100dvh;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+
+  /* Theme gradient backgrounds */
+  .dark[data-theme="emerald"] body,
+  .dark:not([data-theme]) body {
+    background: 
+      radial-gradient(ellipse 80% 50% at 20% -20%, hsl(160 84% 39% / 0.08), transparent),
+      radial-gradient(ellipse 60% 40% at 80% 100%, hsl(160 84% 45% / 0.05), transparent),
+      hsl(var(--background));
+  }
+
+  .dark[data-theme="ocean"] body {
+    background: 
+      radial-gradient(ellipse 80% 50% at 10% -10%, hsl(210 90% 50% / 0.1), transparent),
+      radial-gradient(ellipse 70% 50% at 90% 90%, hsl(200 85% 55% / 0.06), transparent),
+      radial-gradient(ellipse 40% 30% at 50% 50%, hsl(220 80% 45% / 0.03), transparent),
+      hsl(var(--background));
+  }
+
+  .dark[data-theme="sunset"] body,
+  .dark[data-theme="lavender"] body,
+  .dark[data-theme="rose"] body {
+    background: 
+      radial-gradient(ellipse 80% 50% at 20% -20%, hsl(var(--primary) / 0.08), transparent),
+      radial-gradient(ellipse 60% 40% at 80% 100%, hsl(var(--primary-glow) / 0.05), transparent),
+      hsl(var(--background));
+  }
+
+  /* Light theme gradient backgrounds */
+  [data-theme="emerald"]:not(.dark) body,
+  :not([data-theme]):not(.dark) body {
+    background: 
+      radial-gradient(ellipse 80% 50% at 20% -20%, hsl(160 84% 39% / 0.06), transparent),
+      radial-gradient(ellipse 60% 40% at 80% 100%, hsl(160 84% 45% / 0.04), transparent),
+      hsl(var(--background));
+  }
+
+  [data-theme="ocean"]:not(.dark) body {
+    background: 
+      radial-gradient(ellipse 80% 50% at 10% -10%, hsl(210 90% 50% / 0.08), transparent),
+      radial-gradient(ellipse 70% 50% at 90% 90%, hsl(200 85% 55% / 0.05), transparent),
+      hsl(var(--background));
+  }
+
+  [data-theme="sunset"]:not(.dark) body,
+  [data-theme="lavender"]:not(.dark) body,
+  [data-theme="rose"]:not(.dark) body {
+    background: 
+      radial-gradient(ellipse 80% 50% at 20% -20%, hsl(var(--primary) / 0.06), transparent),
+      radial-gradient(ellipse 60% 40% at 80% 100%, hsl(var(--primary-glow) / 0.04), transparent),
+      hsl(var(--background));
+  }
+
+  /* Custom theme gradient - uses CSS custom properties set by JS */
+  .dark[data-theme="custom"] body {
+    background: 
+      radial-gradient(ellipse 80% 50% at 20% -20%, hsl(var(--primary) / 0.1), transparent),
+      radial-gradient(ellipse 60% 40% at 80% 100%, hsl(var(--primary-glow) / 0.07), transparent),
+      radial-gradient(ellipse 40% 30% at 50% 50%, hsl(var(--primary) / 0.03), transparent),
+      hsl(var(--background));
+  }
+
+  [data-theme="custom"]:not(.dark) body {
+    background: 
+      radial-gradient(ellipse 80% 50% at 20% -20%, hsl(var(--primary) / 0.08), transparent),
+      radial-gradient(ellipse 60% 40% at 80% 100%, hsl(var(--primary-glow) / 0.05), transparent),
+      hsl(var(--background));
+  }
+
+  /* Smooth scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--background));
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.3);
+  }
+}

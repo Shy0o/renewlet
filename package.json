@@ -1,0 +1,35 @@
+{
+  "name": "renewlet",
+  "private": true,
+  "license": "MIT",
+  "version": "0.0.0",
+  "packageManager": "pnpm@11.1.2",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @renewlet/client dev",
+    "build": "pnpm run build:client && pnpm run sync:static && pnpm run build:server",
+    "build:client": "pnpm --filter @renewlet/client build",
+    "build:server": "pnpm --dir packages/server build",
+    "sync:static": "mkdir -p packages/server/internal/static/public && find packages/server/internal/static/public -mindepth 1 ! -name .gitkeep -delete && cp -R packages/client/dist/. packages/server/internal/static/public/",
+    "start": "pnpm --dir packages/server start",
+    "check:file-lines": "node scripts/check-file-lines.mjs",
+    "lint": "pnpm --filter @renewlet/client lint",
+    "test": "pnpm --filter @renewlet/client test && pnpm --dir packages/server test",
+    "test:run": "pnpm --filter @renewlet/client test:run && pnpm --dir packages/server test",
+    "test:e2e": "playwright test",
+    "test:all": "pnpm check:file-lines && pnpm --filter @renewlet/client test:run && pnpm --filter @renewlet/client typecheck && pnpm --filter @renewlet/client typecheck:all && pnpm --dir packages/server test && pnpm test:e2e",
+    "typecheck": "pnpm --filter @renewlet/client typecheck",
+    "update:thesvg-index": "node scripts/update-thesvg-index.mjs"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  }
+}
