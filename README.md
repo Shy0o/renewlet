@@ -291,6 +291,10 @@ pnpm test:all
 
 如果你准备贡献较大的功能，建议先开 issue 说明目标、使用场景和大致方案，方便在实现前对齐方向。
 
+## 友情链接
+
+- [LINUX DO](https://linux.do/)：Renewlet 认可并感谢 LINUX DO 社区对开源项目交流的支持。
+
 ## 许可证
 
 Renewlet 基于 [MIT License](LICENSE) 开源。

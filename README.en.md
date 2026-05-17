@@ -291,6 +291,10 @@ Issues, documentation improvements, tests, and pull requests are welcome. Before
 
 For larger features, please open an issue first with the goal, use case, and rough approach so the direction can be discussed before implementation.
 
+## Friendly Links
+
+- [LINUX DO](https://linux.do/): Renewlet recognizes and appreciates the LINUX DO community's support for open source project discussions.
+
 ## License
 
 Renewlet is open source under the [MIT License](LICENSE).
