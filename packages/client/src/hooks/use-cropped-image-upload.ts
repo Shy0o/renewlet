@@ -3,7 +3,7 @@
  *
  * 目标：
  * - 位图：选择本地文件 -> 打开裁剪弹窗 -> 先用 dataURL 预览 -> 后台上传 -> 用 `/api/app/assets/...` 替换
- * - SVG：选择本地文件 -> 先用 dataURL 预览 -> 后台上传原始 SVG -> 用 `/api/app/assets/...` 替换
+ * - SVG/ICO：选择本地文件 -> 先用 dataURL 预览 -> 后台上传原始文件 -> 用 `/api/app/assets/...` 替换
  * - 同时需要“取消旧上传结果回写”（用户在上传期间又改选了新的图片）
  *
  * 状态链路：
@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, RefObject } from "react";
 import { uploadImageDataUrl, uploadImageFile, validateImageFileForUpload } from "@/lib/upload-image";
-import { isSvgImageMime, uploadMimeTypeForFile } from "@/lib/upload-constraints";
+import { imageExtensionForMime, isIcoImageMime, isSvgImageMime, uploadMimeTypeForFile } from "@/lib/upload-constraints";
 import { getDisplayErrorMessage } from "@/lib/display-error";
 import type { UploadKind } from "@/lib/api/schemas/media";
 import { getApiLocale } from "@/i18n/api-locale";
@@ -101,7 +101,7 @@ export function useCroppedImageUpload(options: UseCroppedImageUploadOptions): Us
   }, []);
 
   const uploadOriginalFile = useCallback(
-    async (file: File, previewDataUrl: string) => {
+    async (file: File, previewDataUrl: string, mimeType: string) => {
       setPreviewUrl(previewDataUrl);
       setUploadedImage("");
       setCropDialogOpen(false);
@@ -114,7 +114,7 @@ export function useCroppedImageUpload(options: UseCroppedImageUploadOptions): Us
         const result = await uploadImageFile({
           file,
           kind,
-          filename: filename.replace(/\.[^.]*$/, ".svg"),
+          filename: filename.replace(/\.[^.]*$/, `.${imageExtensionForMime(mimeType) ?? "png"}`),
         });
 
         if (uploadTokenRef.current !== token) return;
@@ -158,8 +158,8 @@ export function useCroppedImageUpload(options: UseCroppedImageUploadOptions): Us
         if (fileReadTokenRef.current !== token) return;
         const result = event.target?.result;
         if (typeof result === "string") {
-          if (isSvgImageMime(mimeType)) {
-            void uploadOriginalFile(file, result);
+          if (isSvgImageMime(mimeType) || isIcoImageMime(mimeType)) {
+            void uploadOriginalFile(file, result, mimeType);
             return;
           }
           setUploadedImage(result);

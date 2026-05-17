@@ -47,6 +47,19 @@ func TestDetectUploadMimeTypeRecognizesSvgDocuments(t *testing.T) {
 	}
 }
 
+func TestDetectUploadMimeTypeRecognizesIcoDocuments(t *testing.T) {
+	got, err := detectUploadMimeType(memoryUploadReader{data: []byte("\x00\x00\x01\x00\x01\x00\x10\x10\x00\x00")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "image/x-icon" {
+		t.Fatalf("detectUploadMimeType() = %q, want image/x-icon", got)
+	}
+	if !isAllowedImageMime(got) {
+		t.Fatalf("expected %q to be allowed", got)
+	}
+}
+
 func TestDetectUploadMimeTypeRejectsNonSvgXml(t *testing.T) {
 	got, err := detectUploadMimeType(memoryUploadReader{data: []byte(`<?xml version="1.0"?><html></html>`)})
 	if err != nil {
@@ -120,6 +133,22 @@ func TestNormalizeSubscriptionRecordDefaultsAndValidatesContract(t *testing.T) {
 	record.Set("customDays", 0)
 	if err := normalizeSubscriptionRecord(record); err == nil {
 		t.Fatal("expected custom billing cycle without customDays to fail")
+	}
+
+	record.Set("billingCycle", "monthly")
+	record.Set("price", 0)
+	if err := normalizeSubscriptionRecord(record); err != nil {
+		t.Fatalf("expected zero price to be accepted: %v", err)
+	}
+
+	record.Set("price", -1)
+	if err := normalizeSubscriptionRecord(record); err == nil {
+		t.Fatal("expected negative price to fail")
+	}
+
+	record.Set("price", float64(maxSubscriptionPrice)+1)
+	if err := normalizeSubscriptionRecord(record); err == nil {
+		t.Fatal("expected too-high price to fail")
 	}
 }
 

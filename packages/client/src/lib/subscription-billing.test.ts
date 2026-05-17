@@ -22,4 +22,27 @@ describe("subscription-billing", () => {
     expect(calculateNextBillingDate(assertDateOnly("2026-01-31"), "monthly")).toBe("2026-02-28");
     expect(calculateNextBillingDate(assertDateOnly("2024-02-29"), "annual")).toBe("2025-02-28");
   });
+
+  it("finds the next billing occurrence on or after the reference date", () => {
+    const referenceDate = assertDateOnly("2026-05-17");
+
+    expect(calculateNextBillingDate(assertDateOnly("2025-03-20"), "annual", undefined, referenceDate)).toBe("2027-03-20");
+    expect(calculateNextBillingDate(assertDateOnly("2025-03-20"), "monthly", undefined, referenceDate)).toBe("2026-05-20");
+    expect(calculateNextBillingDate(assertDateOnly("2026-05-10"), "weekly", undefined, referenceDate)).toBe("2026-05-17");
+  });
+
+  it("keeps month and year recurrences anchored to the original start date", () => {
+    expect(calculateNextBillingDate(
+      assertDateOnly("2026-01-31"),
+      "monthly",
+      undefined,
+      assertDateOnly("2026-03-01"),
+    )).toBe("2026-03-31");
+    expect(calculateNextBillingDate(
+      assertDateOnly("2024-02-29"),
+      "annual",
+      undefined,
+      assertDateOnly("2025-03-01"),
+    )).toBe("2026-02-28");
+  });
 });

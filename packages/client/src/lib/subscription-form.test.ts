@@ -29,6 +29,8 @@ describe("subscription-form", () => {
   });
 
   it("rejects loose numeric prefixes, Infinity, NaN and negative prices", () => {
+    expect(parseNonNegativeFiniteNumberInput("0")).toBe(0);
+    expect(parseNonNegativeFiniteNumberInput("0.00")).toBe(0);
     expect(parseNonNegativeFiniteNumberInput("12.5")).toBe(12.5);
     expect(parseNonNegativeFiniteNumberInput(".5")).toBe(0.5);
     expect(parseNonNegativeFiniteNumberInput("12abc")).toBeNull();
@@ -67,6 +69,17 @@ describe("subscription-form", () => {
 
     expect(getSubscriptionDraftValidationError(form)).toContain("金额");
     expect(toSubscriptionDraft(form)).toBeNull();
+  });
+
+  it("builds a draft for zero-price services", () => {
+    const form = createSubscriptionFormState({
+      name: "Free service",
+      price: "0",
+      startDate: assertDateOnly("2026-01-01"),
+      nextBillingDate: assertDateOnly("2026-02-01"),
+    });
+
+    expect(toSubscriptionDraft(form)).toMatchObject({ price: 0 });
   });
 
   it("builds a draft only when custom cycle and reminder values are strict integers", () => {

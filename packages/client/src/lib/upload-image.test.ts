@@ -24,6 +24,8 @@ describe("upload-image", () => {
     expect(validateImageFileForUpload(new File(["x"], "x.png", { type: "image/png" }))).toBeNull();
     expect(validateImageFileForUpload(new File(["<svg />"], "x.svg", { type: "image/svg+xml" }))).toBeNull();
     expect(validateImageFileForUpload(new File(["<svg />"], "x.svg", { type: "" }))).toBeNull();
+    expect(validateImageFileForUpload(new File(["\0\0\x01\0"], "x.ico", { type: "image/x-icon" }))).toBeNull();
+    expect(validateImageFileForUpload(new File(["\0\0\x01\0"], "x.ico", { type: "" }))).toBeNull();
     expect(validateImageFileForUpload(new File(["x"], "x.gif", { type: "image/gif" }))).toContain("仅支持");
   });
 });

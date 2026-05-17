@@ -19,7 +19,10 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
-const maxLogoReferenceLength = 64 * 1024
+const (
+	maxLogoReferenceLength = 64 * 1024
+	maxSubscriptionPrice   = 1_000_000_000
+)
 
 // ensureSchema 创建/修正 PocketBase collection schema。
 // Caveat: 修改字段名会影响前端 schema、record hooks 和历史数据迁移，必须作为破坏性迁移处理。
@@ -209,6 +212,7 @@ func ensureSubscriptionsCollection(app core.App, users *core.Collection) error {
 	return ensureCollectionWithSave(app, "subscriptions", func(c *core.Collection) (bool, error) {
 		ownerRules(c)
 		minZero := 0.0
+		maxPrice := float64(maxSubscriptionPrice)
 		replaceLegacyLogoURLField := false
 		if existingLogo := c.Fields.GetByName("logo"); existingLogo != nil && existingLogo.Type() == core.FieldTypeURL {
 			replaceLegacyLogoURLField = true
@@ -217,7 +221,7 @@ func ensureSubscriptionsCollection(app core.App, users *core.Collection) error {
 			userRelation(users),
 			&core.TextField{Name: "name", Required: true, Max: 120},
 			&core.TextField{Name: "logo", Max: maxLogoReferenceLength},
-			&core.NumberField{Name: "price", Required: true, Min: &minZero},
+			&core.NumberField{Name: "price", Min: &minZero, Max: &maxPrice},
 			&core.TextField{Name: "currency", Required: true, Max: 8, Pattern: `^[A-Z]{3}$`},
 			&core.SelectField{Name: "billingCycle", Required: true, Values: []string{"weekly", "monthly", "quarterly", "semi-annual", "annual", "custom"}},
 			&core.NumberField{Name: "customDays", OnlyInt: true, Min: &minZero},
@@ -294,7 +298,7 @@ func ensureAssetsCollection(app core.App, users *core.Collection) error {
 		fields := []core.Field{
 			userRelation(users),
 			&core.SelectField{Name: "kind", Required: true, Values: []string{"logo", "icon"}},
-			&core.FileField{Name: "file", MaxSelect: 1, MaxSize: 2 * 1024 * 1024, MimeTypes: []string{"image/png", "image/jpeg", "image/webp", "image/svg+xml"}, Protected: true, Required: true},
+			&core.FileField{Name: "file", MaxSelect: 1, MaxSize: 2 * 1024 * 1024, MimeTypes: []string{"image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon"}, Protected: true, Required: true},
 			&core.TextField{Name: "mimeType", Max: 100},
 			&core.NumberField{Name: "sizeBytes", OnlyInt: true, Min: types.Pointer(0.0)},
 			&core.TextField{Name: "originalName", Max: 255},

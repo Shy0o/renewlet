@@ -8,13 +8,14 @@
  * Caveat: 这里不做汇率换算；金额币种归一化由统计模型处理。
  */
 import type { BillingCycle } from "@/types/subscription";
-import { addDateOnly, type DateOnly } from "@/lib/time/date-only";
+import { addDateOnly, compareDateOnly, type DateOnly } from "@/lib/time/date-only";
 
 /**
  * 根据开始日期 + 周期计算“下一次扣费日期”。
  *
  * 规则：
- * - 从 startDate 起加一个扣费周期，得到当前订阅周期的到期/下次扣费日期
+ * - 未传 referenceDate 时，从 startDate 起加一个扣费周期，得到当前订阅周期的到期/下次扣费日期
+ * - 传入 referenceDate 时，按 startDate 锚定周期，返回 referenceDate 当天或之后最近一次扣费日
  * - 自定义周期（custom）使用 customDays（默认 30 天）
  *
  * 注意：
@@ -25,22 +26,42 @@ export function calculateNextBillingDate(
   startDate: DateOnly,
   cycle: BillingCycle,
   customDays?: number,
+  referenceDate?: DateOnly,
+): DateOnly {
+  if (referenceDate) {
+    let cycleCount = 1;
+    let candidate = addBillingCycles(startDate, cycle, cycleCount, customDays);
+    while (compareDateOnly(candidate, referenceDate) < 0) {
+      cycleCount += 1;
+      candidate = addBillingCycles(startDate, cycle, cycleCount, customDays);
+    }
+    return candidate;
+  }
+
+  return addBillingCycles(startDate, cycle, 1, customDays);
+}
+
+function addBillingCycles(
+  startDate: DateOnly,
+  cycle: BillingCycle,
+  cycleCount: number,
+  customDays?: number,
 ): DateOnly {
   switch (cycle) {
     case "weekly":
-      return addDateOnly(startDate, { weeks: 1 });
+      return addDateOnly(startDate, { weeks: cycleCount });
     case "monthly":
-      return addDateOnly(startDate, { months: 1 });
+      return addDateOnly(startDate, { months: cycleCount });
     case "quarterly":
-      return addDateOnly(startDate, { months: 3 });
+      return addDateOnly(startDate, { months: 3 * cycleCount });
     case "semi-annual":
-      return addDateOnly(startDate, { months: 6 });
+      return addDateOnly(startDate, { months: 6 * cycleCount });
     case "annual":
-      return addDateOnly(startDate, { years: 1 });
+      return addDateOnly(startDate, { years: cycleCount });
     case "custom":
-      return addDateOnly(startDate, { days: customDays || 30 });
+      return addDateOnly(startDate, { days: (customDays || 30) * cycleCount });
     default:
-      return addDateOnly(startDate, { months: 1 });
+      return addDateOnly(startDate, { months: cycleCount });
   }
 }
 

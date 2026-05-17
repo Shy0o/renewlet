@@ -206,6 +206,42 @@ func TestAssetsCollectionCreateAcceptsSvgUpload(t *testing.T) {
 	}
 }
 
+func TestAssetsCollectionCreateAcceptsIcoUpload(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	registerRecordHooks(app)
+	user, token := createRouteTestUser(t, app, "authenticated")
+
+	res := serveMultipartTestRequest(
+		t,
+		app,
+		"/api/collections/assets/records",
+		token,
+		map[string]string{
+			"user": user.Id,
+			"kind": "logo",
+		},
+		"file",
+		"logo.ico",
+		"\x00\x00\x01\x00\x01\x00\x10\x10\x00\x00",
+	)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected ICO asset create 200, got %d: %s", res.Code, res.Body.String())
+	}
+	var body struct {
+		MimeType string `json:"mimeType"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.MimeType != "image/x-icon" {
+		t.Fatalf("mimeType = %q, want image/x-icon", body.MimeType)
+	}
+}
+
 func TestSubscriptionsCollectionCreateAcceptsPrivateAssetLogoPath(t *testing.T) {
 	app := newSchemaTestApp(t)
 	if err := ensureSchema(app); err != nil {
@@ -250,7 +286,7 @@ func TestSubscriptionsCollectionCreateAcceptsPrivateAssetLogoPath(t *testing.T) 
 			"user":%q,
 			"name":"test",
 			"logo":%q,
-			"price":0.83,
+			"price":0,
 			"currency":"CNY",
 			"billingCycle":"monthly",
 			"customDays":null,
@@ -399,6 +435,42 @@ func TestFaviconSearchRequiresAuthAndCanServeCachedResult(t *testing.T) {
 	res = serveTestRequest(t, app, http.MethodGet, "/api/app/favicon-search?search=netflix", "", token)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "https://netflix.com/favicon.ico") {
 		t.Fatalf("unexpected cached favicon response %d: %s", res.Code, res.Body.String())
+	}
+}
+
+func TestExtractSiteAssetURLsResolvesRelativeIcoLinks(t *testing.T) {
+	urls := extractSiteAssetURLs(
+		`<html><head><link rel="shortcut icon" href="/favicon.ico"><link rel="apple-touch-icon" href="touch.png"></head></html>`,
+		"https://example.com",
+		"logo",
+	)
+	expected := []string{
+		"https://example.com/favicon.ico",
+		"https://example.com/touch.png",
+	}
+	for _, want := range expected {
+		found := false
+		for _, got := range urls {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected %q in %#v", want, urls)
+		}
+	}
+}
+
+func TestFaviconCandidateServicesAreAcceptedAsImages(t *testing.T) {
+	for _, candidate := range []string{
+		"https://example.com/favicon.ico",
+		"https://www.google.com/s2/favicons?domain=example.com&sz=128",
+		"https://icons.duckduckgo.com/ip3/example.com.ico",
+	} {
+		if !isLikelyImageURL(candidate) {
+			t.Fatalf("expected favicon candidate to be accepted: %s", candidate)
+		}
 	}
 }
 

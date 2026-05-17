@@ -9,15 +9,17 @@
 /** 单张上传图片大小上限；与上传 API 的 413 响应保持一致。 */
 export const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 
-export const IMAGE_UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp,image/svg+xml,.svg";
+export const IMAGE_UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon,image/vnd.microsoft.icon,.svg,.ico";
 
-export type AllowedImageExtension = "png" | "jpg" | "webp" | "svg";
+export type AllowedImageExtension = "png" | "jpg" | "webp" | "svg" | "ico";
 
 const MIME_TO_EXTENSION = new Map<string, AllowedImageExtension>([
   ["image/png", "png"],
   ["image/jpeg", "jpg"],
   ["image/webp", "webp"],
   ["image/svg+xml", "svg"],
+  ["image/x-icon", "ico"],
+  ["image/vnd.microsoft.icon", "ico"],
 ]);
 
 function normalizeMimeType(mimeType: string): string {
@@ -39,6 +41,11 @@ export function isSvgImageMime(mimeType: string): boolean {
   return imageExtensionForMime(mimeType) === "svg";
 }
 
+/** 判断 MIME 是否为 ICO。 */
+export function isIcoImageMime(mimeType: string): boolean {
+  return imageExtensionForMime(mimeType) === "ico";
+}
+
 /**
  * 读取上传文件 MIME。
  *
@@ -49,5 +56,6 @@ export function uploadMimeTypeForFile(file: File): string {
   const mimeType = normalizeMimeType(file.type);
   if (mimeType) return mimeType;
   if (/\.svg$/i.test(file.name)) return "image/svg+xml";
+  if (/\.ico$/i.test(file.name)) return "image/x-icon";
   return "";
 }

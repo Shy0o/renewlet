@@ -67,4 +67,22 @@ describe("useCroppedImageUpload", () => {
     });
     expect(screen.getByTestId("status").textContent).toBe("idle");
   });
+
+  it("uploads ICO files directly without opening the crop dialog", async () => {
+    render(<UploadHarness />);
+
+    const file = new File(["\0\0\x01\0"], "logo.ico", { type: "image/x-icon" });
+    fireEvent.change(screen.getByTestId("file"), { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(mocks.uploadImageFile).toHaveBeenCalledWith({
+        file,
+        kind: "logo",
+        filename: "logo.ico",
+      });
+    });
+
+    expect(mocks.uploadImageDataUrl).not.toHaveBeenCalled();
+    expect(screen.queryByText("crop-open")).toBeNull();
+  });
 });

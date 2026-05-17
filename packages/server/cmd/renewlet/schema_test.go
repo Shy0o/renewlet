@@ -71,7 +71,8 @@ func TestEnsureSchemaCreatesContractFieldsAndIndexes(t *testing.T) {
 		"created":      core.FieldTypeAutodate,
 		"updated":      core.FieldTypeAutodate,
 	})
-	assertFileFieldMimeTypes(t, app, "assets", "file", "image/svg+xml")
+	assertNumberField(t, app, "subscriptions", "price", false, 0, maxSubscriptionPrice)
+	assertFileFieldMimeTypes(t, app, "assets", "file", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon")
 	assertFields(t, app, "notification_jobs", map[string]string{
 		"user":                core.FieldTypeRelation,
 		"scheduledLocalDate":  core.FieldTypeText,
@@ -216,7 +217,28 @@ func TestEnsureSchemaSelfHealsAssetsSvgMimeType(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertFileFieldMimeTypes(t, app, "assets", "file", "image/svg+xml")
+	assertFileFieldMimeTypes(t, app, "assets", "file", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon")
+}
+
+func assertNumberField(t *testing.T, app core.App, collectionName string, fieldName string, required bool, min float64, max float64) {
+	t.Helper()
+	collection, err := app.FindCollectionByNameOrId(collectionName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	field, ok := collection.Fields.GetByName(fieldName).(*core.NumberField)
+	if !ok {
+		t.Fatalf("collection %s field %s is not a number field", collectionName, fieldName)
+	}
+	if field.Required != required {
+		t.Fatalf("collection %s field %s required = %v, want %v", collectionName, fieldName, field.Required, required)
+	}
+	if field.Min == nil || *field.Min != min {
+		t.Fatalf("collection %s field %s min = %v, want %v", collectionName, fieldName, field.Min, min)
+	}
+	if field.Max == nil || *field.Max != max {
+		t.Fatalf("collection %s field %s max = %v, want %v", collectionName, fieldName, field.Max, max)
+	}
 }
 
 func assertFields(t *testing.T, app core.App, collectionName string, fields map[string]string) {

@@ -105,8 +105,12 @@ func normalizeSubscriptionRecord(record *core.Record) error {
 	}
 	record.Set("currency", currency)
 
-	if record.GetFloat("price") < 0 {
+	price := record.GetFloat("price")
+	if price < 0 {
 		return errors.New("SUBSCRIPTION_PRICE_NEGATIVE")
+	}
+	if price > maxSubscriptionPrice {
+		return errors.New("SUBSCRIPTION_PRICE_TOO_HIGH")
 	}
 
 	billingCycle := record.GetString("billingCycle")
@@ -469,6 +473,9 @@ func detectUploadMimeType(reader interface {
 	if isSVGDocument(data) {
 		return "image/svg+xml", nil
 	}
+	if isICODocument(data) {
+		return "image/x-icon", nil
+	}
 	if len(data) > 512 {
 		data = data[:512]
 	}
@@ -489,11 +496,22 @@ func isSVGDocument(data []byte) bool {
 	}
 }
 
+func isICODocument(data []byte) bool {
+	if len(data) < 6 {
+		return false
+	}
+	return data[0] == 0x00 &&
+		data[1] == 0x00 &&
+		data[2] == 0x01 &&
+		data[3] == 0x00 &&
+		(data[4] != 0x00 || data[5] != 0x00)
+}
+
 // isAllowedImageMime 限制可上传图片格式。
 func isAllowedImageMime(mimeType string) bool {
 	normalizedMimeType := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
 	switch normalizedMimeType {
-	case "image/png", "image/jpeg", "image/webp", "image/svg+xml":
+	case "image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon":
 		return true
 	default:
 		return false

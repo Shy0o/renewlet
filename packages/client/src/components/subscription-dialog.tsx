@@ -37,6 +37,8 @@ import type { Subscription, SubscriptionDraft } from "@/types/subscription";
 import { REMINDER_DAYS_OPTIONS } from "@/types/subscription";
 import { createSubscriptionFormState, type SubscriptionFormState } from "@/types/subscription-form";
 import { useI18n } from "@/i18n/I18nProvider";
+import { todayDateOnlyInTimeZone } from "@/lib/time/date-only";
+import { getSystemTimeZone } from "@/lib/time/time-zone";
 
 type CreateDialogProps = {
   mode: "create";
@@ -84,6 +86,10 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
     if (enabledCurrencyValues.includes(statisticCurrency)) return statisticCurrency;
     return enabledCurrencyValues[0] ?? statisticCurrency;
   }, [enabledCurrencyValues, statisticCurrency]);
+  const billingReferenceDate = useMemo(
+    () => todayDateOnlyInTimeZone(new Date(), settings?.timezone ?? getSystemTimeZone("UTC")),
+    [settings?.timezone],
+  );
 
   const [logoUploadStatus, setLogoUploadStatus] = useState<LogoUploadStatus>("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -199,10 +205,10 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
   useEffect(() => {
     if (formData.autoCalculate && formData.startDate) {
       const customDays = formData.billingCycle === "custom" ? parsePositiveIntegerInput(formData.customDays) ?? 30 : undefined;
-      const nextDate = calculateNextBillingDate(formData.startDate, formData.billingCycle, customDays);
+      const nextDate = calculateNextBillingDate(formData.startDate, formData.billingCycle, customDays, billingReferenceDate);
       setFormData((prev) => ({ ...prev, nextBillingDate: nextDate }));
     }
-  }, [formData.startDate, formData.billingCycle, formData.customDays, formData.autoCalculate]);
+  }, [billingReferenceDate, formData.startDate, formData.billingCycle, formData.customDays, formData.autoCalculate]);
 
   /** 表单提交：create → 回传 draft；edit → merge id 后回传完整 Subscription。 */
   const handleFieldChange = useCallback(

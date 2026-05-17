@@ -51,6 +51,21 @@ vi.mock("@/components/subscription-form-fields", () => ({
         type="button"
         onClick={() =>
           setFormData(createSubscriptionFormState({
+            name: "Free uptime check",
+            price: "0",
+            currency: "USD",
+            startDate: assertDateOnly("2026-05-14"),
+            nextBillingDate: assertDateOnly("2026-06-14"),
+            tags: "",
+          }))
+        }
+      >
+        填充零元订阅
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          setFormData(createSubscriptionFormState({
             name: "Aws",
             price: "15",
             currency: "USD",
@@ -112,5 +127,29 @@ describe("SubscriptionDialog submit", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("网站地址必须使用 http:// 或 https://");
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("submits zero-price subscriptions", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+
+    render(
+      <TooltipProvider delayDuration={0}>
+        <SubscriptionDialog
+          mode="create"
+          open
+          onOpenChange={vi.fn()}
+          onSubmit={onSubmit}
+        />
+      </TooltipProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "填充零元订阅" }));
+    await user.click(screen.getByRole("button", { name: "添加订阅" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Free uptime check",
+      price: 0,
+    }));
   });
 });
