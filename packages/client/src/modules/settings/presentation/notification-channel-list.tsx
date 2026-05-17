@@ -116,7 +116,7 @@ export function NotificationChannelList({
 }) {
   const { t } = useI18n();
   return (
-    <div className="grid gap-3">
+    <div className="grid content-start gap-3">
       <Label>{t("settings.notificationChannels")}</Label>
       <div className="grid gap-3">
         {NOTIFICATION_CHANNELS.map((channel) => (

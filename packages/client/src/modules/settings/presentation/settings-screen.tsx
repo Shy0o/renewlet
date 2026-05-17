@@ -405,7 +405,7 @@ export function SettingsScreen() {
                     {t("settings.notificationTimeHelp")}
                   </p>
                 </div>
-                <div className="grid gap-2">
+                <div className="grid content-start gap-2">
                   <Label>{t("settings.tip")}</Label>
                   <p className="text-xs text-muted-foreground">
                     {t("settings.cronTip")}
