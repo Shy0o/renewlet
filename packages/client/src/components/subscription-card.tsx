@@ -114,12 +114,15 @@ export function SubscriptionCard({ subscription, viewMode = 'grid', onEdit, onDe
 
   return (
     <>
-    <div className={cn(
-      "group relative h-full overflow-hidden rounded-xl border border-border bg-card p-5 shadow-card transition-all duration-300 hover:bg-card-hover",
-      isExpired && "border-destructive/40",
-      isRenewingSoon && "border-warning/40",
-      isTrialEndingSoon && "animate-pulse-glow"
-    )}>
+    <div
+      data-testid="subscription-card"
+      className={cn(
+        "group relative h-full overflow-hidden rounded-xl border border-border bg-card p-5 shadow-card transition-all duration-300 hover:bg-card-hover",
+        isExpired && "border-destructive/40",
+        isRenewingSoon && "border-warning/40",
+        isTrialEndingSoon && "animate-pulse-glow"
+      )}
+    >
       <div className="flex items-start gap-4">
         {/* Logo（有则显示图片，否则显示订阅名称前 2 个字符作为占位） */}
         <div className={cn(

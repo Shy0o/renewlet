@@ -19,9 +19,14 @@
     "lint": "pnpm --filter @renewlet/client lint",
     "test": "pnpm --filter @renewlet/client test && pnpm --dir packages/server test",
     "test:run": "pnpm --filter @renewlet/client test:run && pnpm --dir packages/server test",
-    "test:e2e": "playwright test",
-    "test:all": "pnpm check:file-lines && pnpm check:deploy && pnpm --filter @renewlet/client test:run && pnpm --filter @renewlet/client typecheck && pnpm --filter @renewlet/client typecheck:all && pnpm --dir packages/server test && pnpm test:e2e",
-    "typecheck": "pnpm --filter @renewlet/client typecheck",
+    "test:e2e": "pnpm typecheck:e2e && playwright test",
+    "test:e2e:headed": "pnpm typecheck:e2e && playwright test --headed",
+    "test:e2e:ui": "pnpm typecheck:e2e && playwright test --ui",
+    "test:e2e:debug": "pnpm typecheck:e2e && playwright test --debug",
+    "test:e2e:report": "playwright show-report",
+    "test:all": "pnpm check:file-lines && pnpm check:deploy && pnpm --filter @renewlet/client test:run && pnpm typecheck && pnpm --filter @renewlet/client typecheck:all && pnpm --dir packages/server test && pnpm test:e2e",
+    "typecheck": "pnpm --filter @renewlet/client typecheck && pnpm typecheck:e2e",
+    "typecheck:e2e": "tsc --noEmit --project tsconfig.playwright.json",
     "update:thesvg-index": "node scripts/update-thesvg-index.mjs"
   },
   "pnpm": {
@@ -31,6 +36,8 @@
     ]
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0"
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^25.8.0",
+    "typescript": "^6.0.3"
   }
 }

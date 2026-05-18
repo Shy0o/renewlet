@@ -104,6 +104,21 @@ func createRouteTestSuperuser(t *testing.T, app core.App, email string, password
 	return superuser
 }
 
+func TestPocketBaseInstallerIsDisabled(t *testing.T) {
+	event := &core.ServeEvent{
+		InstallerFunc: func(core.App, *core.Record, string) error {
+			t.Fatal("PocketBase installer should not run for Renewlet")
+			return nil
+		},
+	}
+
+	disablePocketBaseInstaller(event)
+
+	if event.InstallerFunc != nil {
+		t.Fatal("expected PocketBase installer to be disabled")
+	}
+}
+
 func TestSetupRouteHonorsSetupEnabledAndCreatedStatus(t *testing.T) {
 	app := newSchemaTestApp(t)
 	if err := ensureSchema(app); err != nil {

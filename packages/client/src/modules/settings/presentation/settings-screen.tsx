@@ -179,7 +179,7 @@ export function SettingsScreen() {
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
 
-      <main className={cn("flex-1", hasUnsavedChanges && "pb-24")}>
+      <main className={cn("flex-1", hasUnsavedChanges && "pb-24")} data-testid="settings-main">
         <div className="mx-auto max-w-7xl px-6 py-8">
           <div className="mb-8">
             <h1 className="text-2xl font-bold text-foreground">{t("settings.title")}</h1>

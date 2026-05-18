@@ -254,7 +254,12 @@ const Subscriptions = () => {
           <div className="flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="border-border">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="border-border"
+                  aria-label={t("subscriptions.exportMenu")}
+                >
                   <Download className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>

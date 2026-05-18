@@ -276,6 +276,7 @@ export function SubscriptionTagInput({
 
         <PopoverContent
           ref={popoverContentRef}
+          data-testid="subscription-tag-popover"
           role="presentation"
           side="top"
           align="start"

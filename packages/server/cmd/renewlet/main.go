@@ -70,6 +70,7 @@ func main() {
 
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Func: func(e *core.ServeEvent) error {
+			disablePocketBaseInstaller(e)
 			registerRoutes(e.App, e.Router)
 
 			staticFS, err := fs.Sub(appstatic.Files, "public")
@@ -88,6 +89,13 @@ func main() {
 	if err := app.Start(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func disablePocketBaseInstaller(e *core.ServeEvent) {
+	// Renewlet owns first-run setup at /setup. PocketBase's default installer opens
+	// /_/#/pbinstall in a separate browser on empty data dirs; re-enabling it would
+	// split the first-run state machine and make headed E2E show the wrong UI.
+	e.InstallerFunc = nil
 }
 
 func runHealthcheck() {
