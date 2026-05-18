@@ -95,6 +95,33 @@ describe("subscription-form", () => {
     expect(toSubscriptionDraft(form)).toMatchObject({ price: 0 });
   });
 
+  it("rejects renewal dates before the start date", () => {
+    const form = createSubscriptionFormState({
+      name: "Backdated service",
+      price: "10",
+      startDate: assertDateOnly("2026-05-14"),
+      nextBillingDate: assertDateOnly("2026-05-13"),
+    });
+
+    expect(getSubscriptionDraftValidationError(form)).toBe("到期日期不能早于开始日期");
+    expect(toSubscriptionDraft(form)).toBeNull();
+  });
+
+  it("allows renewal dates on the same day as the start date", () => {
+    const form = createSubscriptionFormState({
+      name: "Same-day service",
+      price: "10",
+      startDate: assertDateOnly("2026-05-14"),
+      nextBillingDate: assertDateOnly("2026-05-14"),
+    });
+
+    expect(getSubscriptionDraftValidationError(form)).toBeNull();
+    expect(toSubscriptionDraft(form)).toMatchObject({
+      startDate: "2026-05-14",
+      nextBillingDate: "2026-05-14",
+    });
+  });
+
   it("builds a draft only when custom cycle and reminder values are strict integers", () => {
     const valid = createSubscriptionFormState({
       name: "Server",

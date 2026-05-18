@@ -26,6 +26,7 @@ import { calculateNextBillingDate } from "@/lib/subscription-billing";
 import {
   isOptionalHttpUrl,
   getTagsValidationError,
+  isRenewalDateBeforeStartDate,
   parseNonNegativeFiniteNumberInput,
   parseNonNegativeIntegerInput,
   parsePositiveIntegerInput,
@@ -226,6 +227,8 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
     }
     if (!formData.startDate || !formData.nextBillingDate) {
       errors.dates = t("subscription.validation.datesRequired");
+    } else if (isRenewalDateBeforeStartDate(formData)) {
+      errors.dates = t("subscription.validation.dateOrderInvalid");
     }
     if (formData.billingCycle === "custom" && parsePositiveIntegerInput(formData.customDays) === null) {
       errors.customDays = t("subscription.validation.customCycleInvalid");

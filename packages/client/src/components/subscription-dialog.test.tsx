@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -166,6 +166,59 @@ describe("SubscriptionDialog", () => {
     expect(await screen.findByRole("button", { name: "2026年" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "四月" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /2026年4月16日.*selected/ })).toBeInTheDocument();
+  });
+
+  it("shows an inline error for historical subscriptions whose renewal date is before the start date", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+
+    render(
+      <TooltipProvider delayDuration={0}>
+        <SubscriptionDialog
+          mode="edit"
+          open
+          onOpenChange={vi.fn()}
+          onSubmit={onSubmit}
+          subscription={makeSubscription({
+            startDate: assertDateOnly("2026-05-14"),
+            nextBillingDate: assertDateOnly("2026-05-13"),
+            autoCalculateNextBillingDate: false,
+          })}
+        />
+      </TooltipProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "保存修改" }));
+
+    expect(screen.getByText("到期日期不能早于开始日期")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("disables manual renewal dates before the selected start date", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <TooltipProvider delayDuration={0}>
+        <SubscriptionDialog
+          mode="edit"
+          open
+          onOpenChange={vi.fn()}
+          onSubmit={vi.fn()}
+          subscription={makeSubscription({
+            startDate: assertDateOnly("2026-05-14"),
+            nextBillingDate: assertDateOnly("2026-05-20"),
+            autoCalculateNextBillingDate: false,
+          })}
+        />
+      </TooltipProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /2026年5月20日/ }));
+
+    expect(await screen.findByRole("button", { name: "五月" })).toBeInTheDocument();
+    const calendar = screen.getByRole("grid");
+    expect(within(calendar).getByRole("button", { name: /2026年5月13日/ })).toBeDisabled();
+    expect(within(calendar).getByRole("button", { name: /2026年5月14日/ })).not.toBeDisabled();
   });
 
   it("shows website and notes fields for an edited subscription", () => {

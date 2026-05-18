@@ -128,12 +128,21 @@ func normalizeSubscriptionRecord(record *core.Record) error {
 		record.Set("customDays", 0)
 	}
 
-	if err := requireDateOnly(record.GetString("startDate"), "START_DATE"); err != nil {
+	startDate := strings.TrimSpace(record.GetString("startDate"))
+	if err := requireDateOnly(startDate, "START_DATE"); err != nil {
 		return err
 	}
-	if err := requireDateOnly(record.GetString("nextBillingDate"), "NEXT_BILLING_DATE"); err != nil {
+	record.Set("startDate", startDate)
+	nextBillingDate := strings.TrimSpace(record.GetString("nextBillingDate"))
+	if err := requireDateOnly(nextBillingDate, "NEXT_BILLING_DATE"); err != nil {
 		return err
 	}
+	// 两端都已通过 requireDateOnly，固定宽度 YYYY-MM-DD 的字典序等同于日历顺序；
+	// 这里避免再次 Parse，保存边界仍能用 O(1) 字符串比较守住日期不变量。
+	if nextBillingDate < startDate {
+		return errors.New("NEXT_BILLING_DATE_BEFORE_START_DATE")
+	}
+	record.Set("nextBillingDate", nextBillingDate)
 	if trialEndDate := strings.TrimSpace(record.GetString("trialEndDate")); trialEndDate != "" {
 		if err := requireDateOnly(trialEndDate, "TRIAL_END_DATE"); err != nil {
 			return err

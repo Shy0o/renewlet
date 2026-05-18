@@ -15,6 +15,7 @@ describe("display-error", () => {
 
   it("localizes stable backend validation codes", () => {
     expect(getDisplayErrorMessage(new ApiError("SUBSCRIPTION_NAME_REQUIRED", 400))).toBe("请输入订阅名称");
+    expect(getDisplayErrorMessage(new ApiError("NEXT_BILLING_DATE_BEFORE_START_DATE", 400))).toBe("到期日期不能早于开始日期");
     expect(getDisplayErrorMessage({ response: { message: "CUSTOM_CONFIG_ITEM_INVALID:categories:CONFIG_ITEM_LABELS_REQUIRED" } })).toBe("配置项必须同时填写中文名和英文名");
   });
 

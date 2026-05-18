@@ -15,6 +15,7 @@ import {
 import type { SubscriptionFormState } from "@/types/subscription-form";
 import { getApiLocale } from "@/i18n/api-locale";
 import { translate } from "@/i18n/messages";
+import { compareDateOnly } from "@/lib/time/date-only";
 
 const MAX_PRICE = 1_000_000_000;
 const MAX_DAYS = 3650;
@@ -108,11 +109,26 @@ export function toReminderDays(formData: Pick<SubscriptionFormState, "reminderTy
   return parseNonNegativeIntegerInput(formData.reminderDays) ?? 3;
 }
 
+/**
+ * 订阅日期的跨字段不变量集中放在这里，确保弹窗校验和 draft 转换不会出现两套口径。
+ * 使用 DateOnly 比较而不是 JS Date，避免运行时本地时区把业务日期推前/推后一天。
+ */
+export function isRenewalDateBeforeStartDate(
+  formData: Pick<SubscriptionFormState, "startDate" | "nextBillingDate">,
+): boolean {
+  return Boolean(
+    formData.startDate &&
+    formData.nextBillingDate &&
+    compareDateOnly(formData.nextBillingDate, formData.startDate) < 0,
+  );
+}
+
 /** 返回订阅草稿的首个阻塞性校验错误；用于提交前给用户明确反馈。 */
 export function getSubscriptionDraftValidationError(formData: SubscriptionFormState): string | null {
   const locale = getApiLocale();
   if (!formData.name.trim()) return translate(locale, "subscription.validation.nameRequired");
   if (!formData.startDate || !formData.nextBillingDate) return translate(locale, "subscription.validation.datesRequired");
+  if (isRenewalDateBeforeStartDate(formData)) return translate(locale, "subscription.validation.dateOrderInvalid");
   if (parseNonNegativeFiniteNumberInput(formData.price) === null) return translate(locale, "subscription.validation.amountInvalid");
   if (parseNonNegativeIntegerInput(
     formData.reminderType === "custom" ? formData.customReminderDays : formData.reminderDays,

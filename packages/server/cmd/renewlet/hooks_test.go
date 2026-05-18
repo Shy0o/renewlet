@@ -167,6 +167,30 @@ func TestNormalizeSubscriptionRecordDefaultsAndValidatesContract(t *testing.T) {
 	}
 }
 
+func TestNormalizeSubscriptionRecordValidatesDateOrder(t *testing.T) {
+	collection := core.NewBaseCollection("subscriptions")
+	base := func(startDate, nextBillingDate string) *core.Record {
+		record := core.NewRecord(collection)
+		record.Set("name", "Date Order")
+		record.Set("price", 10)
+		record.Set("currency", "USD")
+		record.Set("billingCycle", "monthly")
+		record.Set("customDays", 0)
+		record.Set("startDate", startDate)
+		record.Set("nextBillingDate", nextBillingDate)
+		record.Set("tags", []string{})
+		record.Set("reminderDays", 3)
+		return record
+	}
+
+	if err := normalizeSubscriptionRecord(base("2026-05-14", "2026-05-13")); err == nil || !strings.Contains(err.Error(), "NEXT_BILLING_DATE_BEFORE_START_DATE") {
+		t.Fatalf("expected renewal date before start date to fail, got %v", err)
+	}
+	if err := normalizeSubscriptionRecord(base("2026-05-14", "2026-05-14")); err != nil {
+		t.Fatalf("expected same-day renewal date to be accepted: %v", err)
+	}
+}
+
 func TestNormalizeSubscriptionRecordValidatesLogoReferences(t *testing.T) {
 	collection := core.NewBaseCollection("subscriptions")
 	base := func(logo string) *core.Record {

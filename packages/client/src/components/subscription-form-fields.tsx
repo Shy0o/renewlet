@@ -21,7 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarIcon, CreditCard } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
-import { dateOnlyToLocalDate, dateToDateOnly } from "@/lib/time/date-only";
+import { compareDateOnly, dateOnlyToLocalDate, dateToDateOnly } from "@/lib/time/date-only";
 import { LogoPicker, type UploadStatus as LogoUploadStatus } from "@/components/logo-picker";
 import { AuthorizedImage } from "@/components/authorized-image";
 import { SubscriptionTagInput } from "@/components/subscription-tag-input";
@@ -100,7 +100,24 @@ export const SubscriptionFormFields = memo(function SubscriptionFormFields({
   const [nextBillingDatePickerOpen, setNextBillingDatePickerOpen] = useState(false);
 
   const update = useCallback(<K extends keyof SubscriptionFormState>(key: K, value: SubscriptionFormState[K]) => {
-    setFormData((prev) => ({ ...prev, [key]: value }));
+    setFormData((prev) => {
+      if (key === "startDate") {
+        const nextStartDate = value as SubscriptionFormState["startDate"];
+        return {
+          ...prev,
+          startDate: nextStartDate,
+          // 开始日后移后，原手动到期日可能变成非法值；清空比静默改成同一天更能保留用户意图。
+          // 比较保持在 DateOnly 字符串语义内，避免本地 Date 时区换算导致跨天误判。
+          nextBillingDate:
+            nextStartDate &&
+            prev.nextBillingDate &&
+            compareDateOnly(prev.nextBillingDate, nextStartDate) < 0
+              ? undefined
+              : prev.nextBillingDate,
+        };
+      }
+      return { ...prev, [key]: value };
+    });
     const errorField = errorFieldByFormKey[key];
     if (errorField) onClearFieldError?.(errorField);
     // onFieldChange 是外层识别“用户明确修改过某字段”的钩子，例如新增订阅默认货币同步策略。
@@ -136,6 +153,8 @@ export const SubscriptionFormFields = memo(function SubscriptionFormFields({
     config.paymentMethods.find((method) => method.value === formData.paymentMethod)?.labels;
   const selectedStartDate = formData.startDate ? dateOnlyToLocalDate(formData.startDate) : undefined;
   const selectedNextBillingDate = formData.nextBillingDate ? dateOnlyToLocalDate(formData.nextBillingDate) : undefined;
+  // 当非法到期日被清空后，打开到期日历应落在开始日所在月份，让下一个合法选择直接可见。
+  const nextBillingDateCalendarMonth = selectedNextBillingDate ?? selectedStartDate;
   const repeatReminderIntervalLabel =
     REPEAT_REMINDER_INTERVAL_OPTIONS.find((option) => option.value === formData.repeatReminderInterval)?.labels;
   const repeatReminderIntervalText = repeatReminderIntervalLabel
@@ -423,7 +442,10 @@ export const SubscriptionFormFields = memo(function SubscriptionFormFields({
               <PopoverContent className="w-auto p-0 border-border bg-card" align="start">
                 <Calendar
                   mode="single"
-                  {...(selectedNextBillingDate ? { selected: selectedNextBillingDate, defaultMonth: selectedNextBillingDate } : {})}
+                  {...(selectedNextBillingDate ? { selected: selectedNextBillingDate } : {})}
+                  {...(nextBillingDateCalendarMonth ? { defaultMonth: nextBillingDateCalendarMonth } : {})}
+                  // DayPicker 的 before 是排他边界：禁用开始日前的日期，同时保留“同一天到期”这个合法选择。
+                  {...(selectedStartDate ? { disabled: { before: selectedStartDate } } : {})}
                   onSelect={(date) => update("nextBillingDate", date ? dateToDateOnly(date) : undefined)}
                   autoFocus
                   className="p-3 pointer-events-auto"
