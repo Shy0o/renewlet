@@ -256,12 +256,13 @@ export function LogoPicker({
               </PopoverTrigger>
               <PopoverContent
                 aria-label={t("media.uploadedLogo")}
-                className="w-80 p-3 border-border bg-card"
+                className="h5-logo-sheet h5-uploaded-logo-sheet w-80 p-3 border-border bg-card"
                 align="start"
                 sideOffset={8}
+                mobileDetent="large"
                 data-testid="uploaded-logo-sheet"
               >
-                <div className="grid gap-3">
+                <div className="h5-logo-sheet-panel h5-uploaded-logo-panel grid gap-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">{t("media.uploadedLogo")}</span>
                     <button
@@ -273,94 +274,99 @@ export function LogoPicker({
                     </button>
                   </div>
 
-                  {uploadedLogos.isLoading && uploadedLogos.assets.length === 0 && (
-                    <div className="flex items-center justify-center py-4">
-                      <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                      <span className="ml-2 text-sm text-muted-foreground">{t("media.loadingUploadedLogo")}</span>
-                    </div>
-                  )}
-
-                  {uploadedLogos.error && uploadedLogos.assets.length === 0 && (
-                    <div className="grid gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
-                      <p className="text-sm text-destructive">{t("media.uploadedLogoLoadFailed")}</p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-2 border-border"
-                        onClick={retryUploadedLogos}
-                        disabled={uploadedLogos.isLoading}
-                      >
-                        {uploadedLogos.isLoading ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="w-4 h-4" />
-                        )}
-                        {t("media.retryUploadedLogo")}
-                      </Button>
-                    </div>
-                  )}
-
-                  {!uploadedLogos.isLoading && !uploadedLogos.error && uploadedLogos.hasLoaded && uploadedLogos.assets.length === 0 && (
-                    <div className="text-center py-3">
-                      <ImageIcon className="w-8 h-8 mx-auto text-muted-foreground/50 mb-2" />
-                      <p className="text-sm text-muted-foreground">{t("media.noUploadedLogo")}</p>
-                    </div>
-                  )}
-
-                  {uploadedLogos.assets.length > 0 && (
-                    <div className="max-h-72 grid gap-3 overflow-y-auto pr-1">
-                      <div className="grid grid-cols-4 gap-2 p-1">
-                        {uploadedLogos.assets.map((asset, index) => {
-                          const label = asset.originalName ?? t("media.uploadedLogoOption", { index: index + 1 });
-                          return (
-                            <MediaThumbnailButton
-                              key={asset.id}
-                              src={asset.url}
-                              alt={label}
-                              title={label}
-                              selected={value === asset.url}
-                              onClick={() => {
-                                applyValue(asset.url);
-                                handleUploadedLogosOpenChange(false);
-                              }}
-                            />
-                          );
-                        })}
+                  <div
+                    className="h5-logo-sheet-results h5-uploaded-logo-results h5-mobile-sheet-scroll grid max-h-72 gap-3 overflow-y-auto pr-1"
+                    data-testid="uploaded-logo-results"
+                  >
+                    {uploadedLogos.isLoading && uploadedLogos.assets.length === 0 && (
+                      <div className="h5-logo-sheet-message flex items-center justify-center py-4">
+                        <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                        <span className="ml-2 text-sm text-muted-foreground">{t("media.loadingUploadedLogo")}</span>
                       </div>
+                    )}
 
-                      {uploadedLogos.error && (
-                        <div className="grid gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
-                          <p className="text-xs text-destructive">{t("media.uploadedLogoLoadFailed")}</p>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-8 gap-2 border-border"
-                            onClick={retryUploadedLogos}
-                            disabled={uploadedLogos.isLoading}
-                          >
-                            <RefreshCw className="w-3.5 h-3.5" />
-                            {t("media.retryUploadedLogo")}
-                          </Button>
-                        </div>
-                      )}
-
-                      {uploadedLogos.hasMore && (
+                    {uploadedLogos.error && uploadedLogos.assets.length === 0 && (
+                      <div className="h5-logo-sheet-message grid gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+                        <p className="text-sm text-destructive">{t("media.uploadedLogoLoadFailed")}</p>
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="w-full gap-2 border-border"
-                          onClick={loadMoreUploadedLogos}
-                          disabled={uploadedLogos.isLoadingMore}
+                          className="h-8 gap-2 border-border"
+                          onClick={retryUploadedLogos}
+                          disabled={uploadedLogos.isLoading}
                         >
-                          {uploadedLogos.isLoadingMore && <Loader2 className="w-4 h-4 animate-spin" />}
-                          {t("media.loadMoreUploadedLogo")}
+                          {uploadedLogos.isLoading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-4 h-4" />
+                          )}
+                          {t("media.retryUploadedLogo")}
                         </Button>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    )}
+
+                    {!uploadedLogos.isLoading && !uploadedLogos.error && uploadedLogos.hasLoaded && uploadedLogos.assets.length === 0 && (
+                      <div className="h5-logo-sheet-message text-center py-3">
+                        <ImageIcon className="w-8 h-8 mx-auto text-muted-foreground/50 mb-2" />
+                        <p className="text-sm text-muted-foreground">{t("media.noUploadedLogo")}</p>
+                      </div>
+                    )}
+
+                    {uploadedLogos.assets.length > 0 && (
+                      <>
+                        <div className="grid grid-cols-4 gap-2 p-1">
+                          {uploadedLogos.assets.map((asset, index) => {
+                            const label = asset.originalName ?? t("media.uploadedLogoOption", { index: index + 1 });
+                            return (
+                              <MediaThumbnailButton
+                                key={asset.id}
+                                src={asset.url}
+                                alt={label}
+                                title={label}
+                                selected={value === asset.url}
+                                onClick={() => {
+                                  applyValue(asset.url);
+                                  handleUploadedLogosOpenChange(false);
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
+
+                        {uploadedLogos.error && (
+                          <div className="grid gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+                            <p className="text-xs text-destructive">{t("media.uploadedLogoLoadFailed")}</p>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 gap-2 border-border"
+                              onClick={retryUploadedLogos}
+                              disabled={uploadedLogos.isLoading}
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              {t("media.retryUploadedLogo")}
+                            </Button>
+                          </div>
+                        )}
+
+                        {uploadedLogos.hasMore && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="w-full gap-2 border-border"
+                            onClick={loadMoreUploadedLogos}
+                            disabled={uploadedLogos.isLoadingMore}
+                          >
+                            {uploadedLogos.isLoadingMore && <Loader2 className="w-4 h-4 animate-spin" />}
+                            {t("media.loadMoreUploadedLogo")}
+                          </Button>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
               </PopoverContent>
             </Popover>
@@ -379,12 +385,13 @@ export function LogoPicker({
               </PopoverTrigger>
               <PopoverContent
                 aria-label={t("media.searchLogo")}
-                className="w-80 p-4 border-border bg-card"
+                className="h5-logo-sheet h5-logo-search-sheet w-80 p-4 border-border bg-card"
                 align="start"
                 sideOffset={8}
+                mobileDetent="large"
                 data-testid="logo-search-sheet"
               >
-                <div className="grid gap-4">
+                <div className="h5-logo-sheet-panel h5-logo-search-panel grid gap-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">{t("media.searchLogo")}</span>
                     <button
@@ -396,7 +403,7 @@ export function LogoPicker({
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="h5-logo-search-input-row flex items-center gap-2">
                     <Input
                       placeholder={t("media.searchLogoPlaceholder")}
                       value={search.query}
@@ -420,91 +427,96 @@ export function LogoPicker({
                     </Button>
                   </div>
 
-                  {isAnySearching && !hasAnyResults && (
-                    <div className="flex items-center justify-center py-6">
-                      <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                      <span className="ml-2 text-sm text-muted-foreground">{t("media.searching")}</span>
-                    </div>
-                  )}
+                  <div
+                    className="h5-logo-sheet-results h5-logo-search-results h5-mobile-sheet-scroll grid max-h-72 gap-4 overflow-y-auto pr-1"
+                    data-testid="logo-search-results"
+                  >
+                    {isAnySearching && !hasAnyResults && (
+                      <div className="flex items-center justify-center py-6">
+                        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                        <span className="ml-2 text-sm text-muted-foreground">{t("media.searching")}</span>
+                      </div>
+                    )}
 
-                  {shouldShowResultsArea && (
-                    <div className="max-h-72 grid gap-4 overflow-y-auto pr-1">
-                      {shouldShowBuiltInSection && (
-                        <div className="grid gap-2">
-                          <p className="text-xs text-muted-foreground">{t("media.builtInIcons")}</p>
-                          {builtInSearch.icons.length > 0 ? (
+                    {shouldShowResultsArea ? (
+                      <>
+                        {shouldShowBuiltInSection && (
+                          <div className="grid gap-2">
+                            <p className="text-xs text-muted-foreground">{t("media.builtInIcons")}</p>
+                            {builtInSearch.icons.length > 0 ? (
+                              <div className="grid grid-cols-4 gap-2 p-1">
+                                {builtInSearch.icons.map((icon) => (
+                                  <MediaThumbnailButton
+                                    key={icon.slug}
+                                    src={icon.iconUrl}
+                                    alt={icon.title}
+                                    title={icon.title}
+                                    selected={value === icon.iconUrl}
+                                    onClick={() => {
+                                      applyValue(icon.iconUrl);
+                                      handleSearchOpenChange(false);
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="rounded-md border border-dashed border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+                                {builtInSearch.isSearching
+                                  ? t("media.searchingBuiltIn")
+                                  : builtInSearch.error ?? t("media.noBuiltInMatch")}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {search.results.length > 0 && (
+                          <div className="grid gap-2">
+                            <p className="text-xs text-muted-foreground">{t("media.faviconFallback")}</p>
                             <div className="grid grid-cols-4 gap-2 p-1">
-                              {builtInSearch.icons.map((icon) => (
+                              {search.results.map((url, index) => (
                                 <MediaThumbnailButton
-                                  key={icon.slug}
-                                  src={icon.iconUrl}
-                                  alt={icon.title}
-                                  title={icon.title}
-                                  selected={value === icon.iconUrl}
+                                  key={url}
+                                  src={url}
+                                  alt={`Logo option ${index + 1}`}
+                                  selected={value === url}
                                   onClick={() => {
-                                    applyValue(icon.iconUrl);
+                                    applyValue(url);
                                     handleSearchOpenChange(false);
                                   }}
+                                  onError={() => search.removeResult(url)}
                                 />
                               ))}
                             </div>
-                          ) : (
-                            <p className="rounded-md border border-dashed border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
-                              {builtInSearch.isSearching
-                                ? t("media.searchingBuiltIn")
-                                : builtInSearch.error ?? t("media.noBuiltInMatch")}
-                            </p>
-                          )}
-                        </div>
-                      )}
-
-                      {search.results.length > 0 && (
-                        <div className="grid gap-2">
-                          <p className="text-xs text-muted-foreground">{t("media.faviconFallback")}</p>
-                          <div className="grid grid-cols-4 gap-2 p-1">
-                            {search.results.map((url, index) => (
-                              <MediaThumbnailButton
-                                key={url}
-                                src={url}
-                                alt={`Logo option ${index + 1}`}
-                                selected={value === url}
-                                onClick={() => {
-                                  applyValue(url);
-                                  handleSearchOpenChange(false);
-                                }}
-                                onError={() => search.removeResult(url)}
-                              />
-                            ))}
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {isAnySearching && (
-                        <div className="flex items-center justify-center py-2 text-xs text-muted-foreground">
-                          <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin text-primary" />
-                          {t("media.loadingMore")}
-                        </div>
-                      )}
+                        {isAnySearching && (
+                          <div className="flex items-center justify-center py-2 text-xs text-muted-foreground">
+                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin text-primary" />
+                            {t("media.loadingMore")}
+                          </div>
+                        )}
 
-                      {!isAnySearching && hasAnySearched && !hasAnyResults && (
-                        <div className="text-center py-2">
-                          <ImageIcon className="w-10 h-10 mx-auto text-muted-foreground/50 mb-2" />
-                          <p className="text-sm text-muted-foreground">
-                            {t("media.logoNotFound")}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {t("media.logoNotFoundHint")}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                        {!isAnySearching && hasAnySearched && !hasAnyResults && (
+                          <div className="text-center py-2">
+                            <ImageIcon className="w-10 h-10 mx-auto text-muted-foreground/50 mb-2" />
+                            <p className="text-sm text-muted-foreground">
+                              {t("media.logoNotFound")}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {t("media.logoNotFoundHint")}
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    ) : null}
 
-                  {!isAnySearching && !hasAnySearched && (
-                    <p className="text-xs text-center text-muted-foreground py-2">
-                      {t("media.searchLogoPrompt")}
-                    </p>
-                  )}
+                    {!isAnySearching && !hasAnySearched && (
+                      <p className="h5-logo-sheet-message text-xs text-center text-muted-foreground py-2">
+                        {t("media.searchLogoPrompt")}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </PopoverContent>
             </Popover>

@@ -175,8 +175,11 @@ describe("LogoPicker", () => {
 
     await user.click(screen.getByRole("button", { name: "搜索" }));
     const sheet = screen.getByTestId("logo-search-sheet");
-    expect(sheet).toHaveClass("h5-mobile-sheet-content");
+    expect(sheet).toHaveClass("h5-logo-sheet", "h5-logo-search-sheet", "h5-mobile-sheet-content", "h5-mobile-sheet-large");
     expect(sheet).toHaveAttribute("aria-label", "搜索 Logo");
+    const resultsViewport = screen.getByTestId("logo-search-results");
+    expect(resultsViewport).toHaveClass("h5-logo-sheet-results", "h5-logo-search-results", "h5-mobile-sheet-scroll");
+    expect(resultsViewport).toHaveTextContent("输入服务名称后点击搜索");
 
     const searchInput = screen.getByPlaceholderText("输入服务名称或品牌...");
     await user.type(searchInput, "Linear{enter}");
@@ -185,6 +188,7 @@ describe("LogoPicker", () => {
       expectApiFetchCallWithSignal("/api/app/thesvg-icons?search=Linear");
     });
     expect(searchInput).toHaveValue("Linear");
+    expect(screen.getByTestId("logo-search-results")).toBe(resultsViewport);
 
     await user.click(await screen.findByTitle("Linear"));
 
@@ -243,6 +247,13 @@ describe("LogoPicker", () => {
     await user.click(screen.getByRole("button", { name: "已上传" }));
 
     expect(mocks.loadUploadedLogosInitial).toHaveBeenCalledTimes(1);
+    const uploadedSheet = screen.getByTestId("uploaded-logo-sheet");
+    expect(uploadedSheet).toHaveClass("h5-logo-sheet", "h5-uploaded-logo-sheet", "h5-mobile-sheet-large");
+    expect(screen.getByTestId("uploaded-logo-results")).toHaveClass(
+      "h5-logo-sheet-results",
+      "h5-uploaded-logo-results",
+      "h5-mobile-sheet-scroll",
+    );
     const uploadedLogoButton = await screen.findByRole("button", { name: "netflix.png" });
     expect(uploadedLogoButton).toHaveClass("media-thumbnail-canvas");
     expect(uploadedLogoButton).toHaveAttribute("aria-pressed", "false");

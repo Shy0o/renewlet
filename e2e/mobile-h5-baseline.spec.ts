@@ -76,6 +76,66 @@ async function captureSearchableSheetListMetrics(sheet: Locator, optionLabel: st
   }, optionLabel);
 }
 
+type UploadedLogoRouteRecord = {
+  id: string;
+  kind: "logo";
+  originalName: string;
+};
+
+async function captureLogoSheetViewportMetrics(sheet: Locator, viewportTestId: string) {
+  return sheet.evaluate((element, testId) => {
+    const results = element.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+    if (!results) {
+      throw new Error(`Missing Logo sheet viewport: ${testId}`);
+    }
+
+    return {
+      sheetHeight: Math.round(element.getBoundingClientRect().height),
+      resultsHeight: Math.round(results.getBoundingClientRect().height),
+    };
+  }, viewportTestId);
+}
+
+async function installUploadedLogoAssetsRoute(page: Page) {
+  let records: UploadedLogoRouteRecord[] = [];
+
+  await page.route("**/api/collections/assets/records**", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        page: 1,
+        perPage: 48,
+        totalItems: records.length,
+        totalPages: records.length > 0 ? 1 : 0,
+        items: records.map((record) => ({
+          id: record.id,
+          collectionId: "assets",
+          collectionName: "assets",
+          kind: record.kind,
+          originalName: record.originalName,
+          mimeType: "image/svg+xml",
+          sizeBytes: 128,
+          created: "2026-05-18 00:00:00.000Z",
+          updated: "2026-05-18 00:00:00.000Z",
+        })),
+      }),
+    });
+  });
+
+  await page.route("**/api/app/assets/e2e-logo-1", async (route) => {
+    await route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#22c55e"/><path d="M18 34h28v8H18zM18 22h28v8H18z" fill="white"/></svg>',
+    });
+  });
+
+  return {
+    setRecords(nextRecords: UploadedLogoRouteRecord[]) {
+      records = nextRecords;
+    },
+  };
+}
+
 async function tapMobileSheetBackdrop(page: Page) {
   const backdrop = page.locator("[data-mobile-overlay-backdrop]").last();
   await expect(backdrop).toBeVisible();
@@ -158,9 +218,95 @@ test("short H5 viewport keeps dialogs and bottom actions operable", async ({ pag
 
 test("mobile sheets keep Logo and currency search stable while typing", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 640 });
+  const uploadedLogoAssetsRoute = await installUploadedLogoAssetsRoute(page);
+
+  await page.goto("/subscriptions");
+  const addDialog = await openAddSubscriptionDialog(page);
+  await addDialog.getByRole("button", { name: "已上传" }).click();
+  const emptyUploadedLogoSheet = page.getByTestId("uploaded-logo-sheet");
+  await expect(emptyUploadedLogoSheet).toBeVisible();
+  await expect(emptyUploadedLogoSheet).toHaveClass(/h5-logo-sheet/);
+  await expect(emptyUploadedLogoSheet).toHaveClass(/h5-mobile-sheet-large/);
+  await waitForSheetAnimation(emptyUploadedLogoSheet);
+  await expect(emptyUploadedLogoSheet.getByText("还没有上传过自定义 Logo")).toBeVisible();
+  const uploadedLogoSheetEmpty = await captureLogoSheetViewportMetrics(
+    emptyUploadedLogoSheet,
+    "uploaded-logo-results",
+  );
+  await page.keyboard.press("Escape");
+  await expect(emptyUploadedLogoSheet).toBeHidden();
+
+  uploadedLogoAssetsRoute.setRecords([
+    {
+      id: "e2e-logo-1",
+      kind: "logo",
+      originalName: "stable-logo.svg",
+    },
+  ]);
+  await addDialog.getByRole("button", { name: "已上传" }).click();
+  const filledUploadedLogoSheet = page.getByTestId("uploaded-logo-sheet");
+  await expect(filledUploadedLogoSheet.getByRole("button", { name: "stable-logo.svg" })).toBeVisible();
+  const uploadedLogoSheetFilled = await captureLogoSheetViewportMetrics(
+    filledUploadedLogoSheet,
+    "uploaded-logo-results",
+  );
+  expect(
+    Math.abs(uploadedLogoSheetFilled.sheetHeight - uploadedLogoSheetEmpty.sheetHeight),
+    "uploaded Logo sheet height should stay fixed between empty and filled states",
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(uploadedLogoSheetFilled.resultsHeight - uploadedLogoSheetEmpty.resultsHeight),
+    "uploaded Logo viewport should stay fixed between empty and filled states",
+  ).toBeLessThanOrEqual(1);
+  await page.keyboard.press("Escape");
+  await expect(filledUploadedLogoSheet).toBeHidden();
+
+  await addDialog.getByRole("button", { name: "搜索" }).click();
+
+  const emptyLogoSheet = page.getByTestId("logo-search-sheet");
+  await expect(emptyLogoSheet).toBeVisible();
+  await expect(emptyLogoSheet).toHaveClass(/h5-logo-search-sheet/);
+  await expect(emptyLogoSheet).toHaveClass(/h5-mobile-sheet-large/);
+  await waitForSheetAnimation(emptyLogoSheet);
+  await expectLocatorInsideViewport(page, emptyLogoSheet, "mobile empty logo search sheet");
+  await expect(emptyLogoSheet.getByText("输入服务名称后点击搜索")).toBeVisible();
+  const logoSheetBeforeSearch = await captureLogoSheetViewportMetrics(emptyLogoSheet, "logo-search-results");
+
+  const emptyLogoSearchInput = emptyLogoSheet.getByPlaceholder("输入服务名称或品牌...");
+  await emptyLogoSearchInput.focus();
+  const focusState = await emptyLogoSheet.evaluate((element) => {
+    const panel = element.querySelector<HTMLElement>(".h5-logo-sheet-panel");
+    const input = element.querySelector<HTMLInputElement>('input[placeholder="输入服务名称或品牌..."]');
+    if (!panel || !input) {
+      throw new Error("Missing Logo search panel or input");
+    }
+
+    return {
+      panelOverflow: window.getComputedStyle(panel).overflow,
+      inputLeftInset: Math.round(input.getBoundingClientRect().left - element.getBoundingClientRect().left),
+    };
+  });
+  expect(focusState.panelOverflow, "Logo search panel should not clip the focused input ring").toBe("visible");
+  expect(focusState.inputLeftInset, "Logo search input should keep visible left focus inset").toBeGreaterThan(12);
+  await emptyLogoSearchInput.fill("Linear");
+  await emptyLogoSearchInput.press("Enter");
+  await expect(emptyLogoSheet.getByTitle("Linear").first()).toBeVisible({ timeout: 10_000 });
+  const logoSheetAfterSearch = await captureLogoSheetViewportMetrics(emptyLogoSheet, "logo-search-results");
+  expect(
+    Math.abs(logoSheetAfterSearch.sheetHeight - logoSheetBeforeSearch.sheetHeight),
+    "Logo search sheet height should stay fixed between prompt and results",
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(logoSheetAfterSearch.resultsHeight - logoSheetBeforeSearch.resultsHeight),
+    "Logo search results viewport should stay fixed between prompt and results",
+  ).toBeLessThanOrEqual(1);
+  await expectLocatorInsideViewport(page, emptyLogoSheet, "mobile logo search sheet after results");
+  await emptyLogoSheet.getByTitle("Linear").first().click();
+  await expect(emptyLogoSheet).toBeHidden();
+  await addDialog.getByRole("button", { name: "取消" }).click();
+  await expect(addDialog).toBeHidden();
 
   const subscriptionName = uniqueE2EName(testInfo, "Mobile Overlay");
-  await page.goto("/subscriptions");
   await createSubscription(page, {
     name: subscriptionName,
     price: "16",

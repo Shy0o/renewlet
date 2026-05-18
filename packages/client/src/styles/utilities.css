@@ -215,6 +215,40 @@
       max-height: none !important;
     }
 
+    .h5-logo-sheet {
+      display: flex !important;
+      height: min(26rem, calc(var(--app-viewport-height) - 3.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))) !important;
+      flex-direction: column;
+      padding-bottom: calc(1rem + env(safe-area-inset-bottom)) !important;
+    }
+
+    .h5-logo-sheet-panel {
+      display: flex !important;
+      min-height: 0;
+      flex: 1 1 auto;
+      flex-direction: column;
+      overflow: visible;
+    }
+
+    .h5-logo-sheet-results {
+      min-height: 0;
+      flex: 1 1 0;
+      max-height: none !important;
+    }
+
+    .h5-logo-sheet-message {
+      margin: auto 0;
+    }
+
+    .h5-logo-sheet-results:has(> .h5-logo-sheet-message:only-child) {
+      align-content: center;
+    }
+
+    .h5-logo-search-input-row {
+      margin: -0.125rem;
+      padding: 0.125rem;
+    }
+
     .h5-mobile-select-viewport {
       width: 100% !important;
       min-width: 0 !important;
