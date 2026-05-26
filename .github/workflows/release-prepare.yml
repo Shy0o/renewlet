@@ -41,13 +41,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Validate stable version
-        # package.json 只记录稳定 SemVer，RC 后缀只存在于 git tag 和镜像标签里。
+        # 同时校验 SemVer 和连续发布序列，避免 0.1.0 后误填 0.5.0 这类跳号版本。
         run: |
-          VERSION="$(node scripts/release.mjs validate-version "${{ inputs.version }}")"
-          if [[ "$VERSION" == *"-rc."* ]]; then
-            echo "Release prepare only accepts stable versions. Use release-rc for candidates." >&2
-            exit 1
-          fi
+          node scripts/release.mjs validate-next-version "${{ inputs.version }}"
 
       - name: Sync workspace package versions
         run: node scripts/release.mjs sync-version "${{ inputs.version }}"

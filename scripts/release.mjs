@@ -21,6 +21,7 @@ const packagePaths = [
 function usage() {
   console.log(`Usage:
   node scripts/release.mjs validate-version <version>
+  node scripts/release.mjs validate-next-version <version>
   node scripts/release.mjs sync-version <version>
   node scripts/release.mjs notes --version <version> [--previous <tag>]
   node scripts/release.mjs docker-tags <version>
@@ -70,6 +71,11 @@ function majorMinor(version) {
   return `${major}.${minor}`;
 }
 
+function versionParts(version) {
+  const [major, minor, patch] = version.split(".").map((part) => Number.parseInt(part, 10));
+  return { major, minor, patch };
+}
+
 function runGit(args) {
   return execFileSync("git", args, {
     cwd: repoRoot,
@@ -80,6 +86,49 @@ function runGit(args) {
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
+}
+
+function latestStableTag() {
+  const output = runGit(["tag", "--list", "v[0-9]*.[0-9]*.[0-9]*", "--sort=-v:refname"]);
+  return output
+    .split(/\r?\n/)
+    .map((tag) => tag.trim())
+    .find((tag) => /^v\d+\.\d+\.\d+$/.test(tag));
+}
+
+function allowedNextVersions(previousVersion) {
+  const { major, minor, patch } = versionParts(previousVersion);
+  return [
+    `${major}.${minor}.${patch + 1}`,
+    `${major}.${minor + 1}.0`,
+    `${major + 1}.0.0`,
+  ];
+}
+
+function validateNextVersion(rawVersion) {
+  const version = normalizeVersion(rawVersion);
+  if (!isStableVersion(version)) {
+    fail("Release prepare only accepts stable versions. Create RC tags from an existing release branch instead.");
+  }
+
+  const latestTag = latestStableTag();
+  if (!latestTag) {
+    if (version !== "0.1.0") {
+      fail(`First stable release must be 0.1.0; got ${version}.`);
+    }
+    console.log(version);
+    return version;
+  }
+
+  const previousVersion = normalizeVersion(latestTag);
+  const allowed = allowedNextVersions(previousVersion);
+  if (!allowed.includes(version)) {
+    // 发布序列必须连续，防止手填 0.5.0 这类合法但会误导升级节奏的跳号版本。
+    fail(`Invalid next release ${version}. Latest stable is ${latestTag}; allowed next versions: ${allowed.join(", ")}.`);
+  }
+
+  console.log(version);
+  return version;
 }
 
 function syncVersion(rawVersion) {
@@ -269,6 +318,9 @@ switch (command) {
     console.log(version);
     break;
   }
+  case "validate-next-version":
+    validateNextVersion(args._[1]);
+    break;
   case "sync-version":
     syncVersion(args._[1]);
     break;
