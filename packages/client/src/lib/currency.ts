@@ -6,12 +6,7 @@
  * - 集中到这里方便统一展示规则与异常兜底
  */
 
-/**
- * 格式化金额为带货币符号的字符串。
- *
- * 注意：
- * - `Intl.NumberFormat` 会在 currency 非法时抛错；这里做兜底避免页面崩溃
- */
+/** currency 来自用户配置和导入数据，非法值只能降级展示，不能让统计页崩溃。 */
 export function formatCurrency(amount: number, currency: string, locale = "zh-CN"): string {
   try {
     return new Intl.NumberFormat(locale, {

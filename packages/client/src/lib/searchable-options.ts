@@ -152,11 +152,7 @@ export function createCurrencyKeywords(
   ]);
 }
 
-/**
- * 创建货币下拉选项。
- *
- * 注意： 当前值即使被禁用也要保留为 disabled 选项，否则编辑旧订阅时会丢失显示上下文。
- */
+/** 当前值即使已被禁用也保留为 disabled 选项，避免编辑旧订阅时丢失显示上下文。 */
 export function createCurrencySelectOptions(params: {
   currencies: readonly ConfigItem[];
   currencyOptions: readonly CurrencyOption[];

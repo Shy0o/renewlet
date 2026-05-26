@@ -58,27 +58,16 @@ const DEFAULT_COLORS = [
 ];
 
 interface ConfigManagerDialogProps {
-  /** 弹窗标题。 */
   title: string;
-  /** 可选：弹窗描述。 */
   description?: string;
-  /** 当前配置项列表（用于渲染与排序）。 */
   items: ConfigItem[];
-  /** 配置项列表更新回调（上层负责写入状态与持久化）。 */
   onUpdate: (items: ConfigItem[]) => void;
-  /** 是否展示颜色编辑（分类/状态常用）。 */
   showColor?: boolean;
-  /** 是否展示图标编辑（支付方式常用）。 */
   showIcon?: boolean;
-  /** 颜色预设列表（用于颜色选择器）。 */
   colorOptions?: string[];
-  /** 最大允许的配置项数量（默认 20）。 */
   maxItems?: number;
-  /** 标题旁的图标（用于 UI 提示）。 */
   icon?: ReactNode;
-  /** 只读模式：不允许新增/编辑/删除（例如状态配置）。 */
   readOnly?: boolean;
-  /** toggle 模式：展示启用/禁用开关（例如货币配置）。 */
   toggleMode?: boolean;
   /**
    * 是否将某个 item 视为“系统内置项”（仅对该 item 禁止编辑/删除，但仍允许拖拽排序）。
@@ -95,17 +84,12 @@ interface ConfigManagerDialogProps {
    * - 分类：若该分类被订阅使用中，则阻止删除并提示先调整订阅
    */
   getDeleteBlockReason?: (item: ConfigItem) => string | null;
-  /** 是否展示列表筛选输入框（货币数量较多时使用）。 */
   searchable?: boolean;
-  /** 筛选输入框占位文案。 */
   searchPlaceholder?: string;
-  /** 筛选无结果文案。 */
   searchEmptyMessage?: string;
-  /** 自定义搜索关键词。 */
   getSearchKeywords?: (item: ConfigItem) => string[];
 }
 
-/** 配置管理弹窗组件。 */
 export const ConfigManagerDialog = ({
   title,
   description,

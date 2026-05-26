@@ -7,9 +7,6 @@
  */
 import { Skeleton } from "@/components/ui/skeleton";
 
-/**
- * 生成 0..(length-1) 的索引数组（避免 `Array(length)` 引入松散推断）。
- */
 function range(length: number): number[] {
   return Array.from({ length }, (_: unknown, index: number) => index);
 }
@@ -25,7 +22,6 @@ function range(length: number): number[] {
 export const DashboardSkeleton = () => {
   return (
     <div className="grid gap-8 animate-in fade-in duration-500">
-      {/* 统计网格骨架屏 */}
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {range(4).map((i) => (
           <div key={i} className="rounded-xl border border-border bg-card p-6">
@@ -41,9 +37,7 @@ export const DashboardSkeleton = () => {
         ))}
       </div>
 
-      {/* 主内容网格骨架屏 */}
       <div className="grid gap-8 lg:grid-cols-3">
-        {/* 订阅列表骨架屏 */}
         <div className="lg:col-span-2">
           <div className="mb-5 flex items-center justify-between">
             <Skeleton className="h-6 w-24" />
@@ -65,7 +59,6 @@ export const DashboardSkeleton = () => {
           </div>
         </div>
 
-        {/* 侧边栏骨架屏 */}
         <div className="grid gap-6">
           <div className="rounded-xl border border-border bg-card p-6">
             <Skeleton className="h-6 w-24 mb-4" />
@@ -100,7 +93,6 @@ export const DashboardSkeleton = () => {
 export const SubscriptionListSkeleton = () => {
   return (
     <div className="grid gap-6 animate-in fade-in duration-500">
-      {/* 筛选器骨架屏 */}
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex flex-wrap items-center gap-4">
           <Skeleton className="h-10 flex-1 min-w-[200px]" />
@@ -109,7 +101,6 @@ export const SubscriptionListSkeleton = () => {
         </div>
       </div>
 
-      {/* 网格骨架屏 */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {range(9).map((i) => (
           <div key={i} className="rounded-xl border border-border bg-card p-4">
@@ -137,7 +128,6 @@ export const SubscriptionListSkeleton = () => {
 export const StatisticsSkeleton = () => {
   return (
     <div className="grid gap-8 animate-in fade-in duration-500">
-      {/* 统计网格 */}
       <section>
         <Skeleton className="h-6 w-24 mb-4" />
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -153,7 +143,6 @@ export const StatisticsSkeleton = () => {
         </div>
       </section>
 
-      {/* 图表 */}
       <section>
         <Skeleton className="h-6 w-24 mb-4" />
         <div className="grid md:grid-cols-2 gap-6">
@@ -182,7 +171,6 @@ export const StatisticsSkeleton = () => {
 export const CalendarSkeleton = () => {
   return (
     <div className="grid gap-6 animate-in fade-in duration-500">
-      {/* 日历顶部栏 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Skeleton className="h-8 w-8 rounded" />
@@ -192,15 +180,12 @@ export const CalendarSkeleton = () => {
         <Skeleton className="h-8 w-20" />
       </div>
 
-      {/* 日历网格 */}
       <div className="rounded-xl border border-border bg-card p-4">
-        {/* 星期标题 */}
         <div className="grid grid-cols-7 gap-2 mb-2">
           {range(7).map((i) => (
             <Skeleton key={i} className="h-8 w-full" />
           ))}
         </div>
-        {/* 日历日期 */}
         <div className="grid grid-cols-7 gap-2">
           {range(35).map((i) => (
             <Skeleton key={i} className="h-24 w-full rounded-lg" />

@@ -130,6 +130,7 @@ export function VirtualizedList({
     const scrollElement = getScrollElement();
     if (!container || !scrollElement || typeof ResizeObserver === "undefined") return undefined;
 
+    // 头部/筛选区高度变化会改 scrollMargin；同时观察容器和滚动根，避免虚拟项整体漂移。
     const observer = new ResizeObserver(() => measureScrollMargin());
     observer.observe(container);
     observer.observe(scrollElement);

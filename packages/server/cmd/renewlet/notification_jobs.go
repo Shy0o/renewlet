@@ -56,7 +56,6 @@ func createNotificationJob(app core.App, userID string, schedule localScheduleDe
 	return record, true, nil
 }
 
-// markNotificationJobSending 将已有任务切回发送中并增加尝试次数。
 func markNotificationJobSending(app core.App, record *core.Record, attempts int) error {
 	record.Set("status", notificationStatusSending)
 	record.Set("attempts", attempts)
@@ -274,7 +273,6 @@ func summarizeCronResult(options notificationCronOptions, results []notification
 	return out
 }
 
-// latestNotificationJob 读取用户最近的一条通知任务。
 func latestNotificationJob(app core.App, userID string, status string) (*core.Record, error) {
 	filter := "user = {:user}"
 	params := dbx.Params{"user": userID}
@@ -289,7 +287,6 @@ func latestNotificationJob(app core.App, userID string, status string) (*core.Re
 	return rows[0], nil
 }
 
-// recordsToHistoryJobs 将 PocketBase records 转为前端 DTO。
 func recordsToHistoryJobs(records []*core.Record) []notificationHistoryJob {
 	out := make([]notificationHistoryJob, 0, len(records))
 	for _, record := range records {

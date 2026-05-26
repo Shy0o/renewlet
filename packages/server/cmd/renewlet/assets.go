@@ -29,6 +29,7 @@ func handleAssetRead(app core.App, e *core.RequestEvent) error {
 	if err != nil {
 		return e.NotFoundError(tr(locale, "资产不存在", "Asset not found"), err)
 	}
+	// PocketBase 文件路径不能当授权依据；record.user 才是资产归属的事实源。
 	if record.GetString("user") != e.Auth.Id {
 		// 对越权访问返回 404 而非 403，避免泄漏其他用户资产 ID 是否存在。
 		return e.NotFoundError(tr(locale, "资产不存在", "Asset not found"), nil)
@@ -53,6 +54,7 @@ func handleAssetRead(app core.App, e *core.RequestEvent) error {
 
 	contentType := strings.TrimSpace(record.GetString("mimeType"))
 	if contentType == "" {
+		// 历史记录可能没有 mimeType；读取时只兜底响应头，不回写 collection，避免 GET 产生数据副作用。
 		contentType = reader.ContentType()
 	}
 	if contentType == "" {

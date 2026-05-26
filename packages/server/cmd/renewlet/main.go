@@ -96,9 +96,7 @@ func main() {
 }
 
 func disablePocketBaseInstaller(e *core.ServeEvent) {
-	// Renewlet owns first-run setup at /setup. PocketBase's default installer opens
-	// /_/#/pbinstall in a separate browser on empty data dirs; re-enabling it would
-	// split the first-run state machine and make headed E2E show the wrong UI.
+	// 首装状态机只属于 Renewlet /setup；PocketBase installer 会另开 /_/#/pbinstall，导致 E2E 和用户看到两套入口。
 	e.InstallerFunc = nil
 }
 

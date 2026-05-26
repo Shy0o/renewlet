@@ -56,6 +56,7 @@ async function routeApp(request: Request, env: Env, url: URL): Promise<Response>
   const segments = pathSegments(url);
   const [head, second, third] = segments;
 
+  // Worker 只实现 Renewlet 产品 API，不模拟 PocketBase REST；路由表越显式，运行面漂移越早暴露。
   if (head === "auth" && second === "login") return routeMethods(request, { POST: () => login(request, env) });
   if (head === "auth" && second === "session") return routeMethods(request, { GET: () => session(request, env) });
   if (head === "auth" && second === "logout") return routeMethods(request, { POST: () => logout(request, env) });

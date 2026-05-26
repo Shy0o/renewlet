@@ -21,6 +21,7 @@ func defaultSystemReleaseClient() systemReleaseClient {
 				if len(via) >= 5 {
 					return errors.New("too many redirects")
 				}
+				// GitHub Release 会跳到对象存储；每一跳都重验 host，避免可信首跳被开放重定向带出边界。
 				return validateTrustedDownloadURL(request.URL.String())
 			},
 		},
@@ -43,6 +44,7 @@ func (client *httpSystemReleaseClient) FetchLatestRelease(ctx context.Context) (
 		return nil, fmt.Errorf("GitHub release API returned %s", response.Status)
 	}
 	var release githubRelease
+	// Release API 是外部输入，限制 body 避免版本检查被异常响应拖垮常驻进程。
 	decoder := json.NewDecoder(io.LimitReader(response.Body, 4<<20))
 	if err := decoder.Decode(&release); err != nil {
 		return nil, err
@@ -70,6 +72,7 @@ func (client *httpSystemReleaseClient) DownloadFile(ctx context.Context, sourceU
 	if response.ContentLength > maxBytes {
 		return fmt.Errorf("download is too large")
 	}
+	// 下载产物先落 0600 临时文件；替换前不让同机其它用户读到半成品 binary 或 checksum 线索。
 	target, err := os.OpenFile(targetPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err

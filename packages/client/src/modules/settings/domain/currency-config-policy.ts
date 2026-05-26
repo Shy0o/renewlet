@@ -18,13 +18,7 @@ export type CurrencyConfigPolicyResult =
       items?: ConfigItem[];
     };
 
-/**
- * 校验货币启用/禁用策略。
- *
- * 业务约束：
- * - 至少保留 1 个启用货币
- * - 不允许禁用当前统计货币，避免全站换算口径丢失
- */
+/** 当前统计货币必须保持启用，否则首页/统计页会失去统一换算口径。 */
 export function enforceCurrencyConfigPolicy(
   items: ConfigItem[],
   defaultCurrency: string,

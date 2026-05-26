@@ -100,6 +100,7 @@ export function createNetworkMonitor(page: Page) {
     requests.push(record);
 
     if (isAppApiPath(pathname)) {
+      // 线上巡检关注的是同一路径风暴；跨路径并发是正常首屏加载，不作为失败信号。
       const nextInflight = (inflightByPath.get(pathname) ?? 0) + 1;
       inflightByPath.set(pathname, nextInflight);
       maxConcurrentByPath.set(pathname, Math.max(maxConcurrentByPath.get(pathname) ?? 0, nextInflight));

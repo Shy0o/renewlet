@@ -32,56 +32,32 @@ export type SubscriptionFormReminderType = "inherit" | "preset" | "custom";
  * - 最终提交时（新增/编辑）会转换为业务模型所需的 `number | DateOnly | undefined`
  */
 export type SubscriptionFormState = {
-  /** 订阅名称（必填）。 */
   name: string;
-  /** Logo（可选，私有资产路径或 http(s) 外链）。 */
+  /** Logo 的表单值必须已经是可持久化 URL，裁剪上传的 data URL 只能停留在组件内部预览态。 */
   logo: string | undefined;
-  /** 金额输入框字符串（提交时 parseFloat）。 */
   price: string;
-  /** 货币代码（如：CNY、USD）。 */
   currency: string;
-  /** 扣费周期。 */
   billingCycle: BillingCycle;
-  /** 自定义周期天数（字符串，仅 billingCycle=custom 时启用）。 */
   customDays: string;
-  /** 分类。 */
   category: Category;
-  /** 状态。 */
   status: SubscriptionStatus;
-  /** 支付方式（空字符串表示“未选择”）。 */
   paymentMethod: PaymentMethod | "";
-  /** 开始日期（date-only，UI 日历边界才临时转 Date）。 */
+  /** date-only 在表单内保持字符串，只有日历控件边界才临时转 Date。 */
   startDate: DateOnly | undefined;
-  /** 下次扣费日期（date-only，UI 日历边界才临时转 Date）。 */
   nextBillingDate: DateOnly | undefined;
-  /** 是否自动根据开始日期 + 周期推算 nextBillingDate。 */
   autoCalculate: boolean;
-  /** 到期提醒类型：继承全局、预设天数或自定义天数。 */
   reminderType: SubscriptionFormReminderType;
-  /** 预设提醒天数；继承时保存字符串 "-1" 作为 UI 选中值。 */
+  /** `-1` 是 UI 对“继承全局提醒”的哨兵值，提交层会转回订阅存储契约。 */
   reminderDays: string;
-  /** 自定义提醒天数（字符串，提交时 parseInt）。 */
   customReminderDays: string;
-  /** 是否为重要订阅开启重复提醒。 */
   repeatReminderEnabled: boolean;
-  /** 重复提醒间隔。 */
   repeatReminderInterval: RepeatReminderInterval;
-  /** 重复提醒窗口。 */
   repeatReminderWindow: RepeatReminderWindow;
-  /** 官网链接输入（可选）。 */
   website: string;
-  /** 备注输入（可选）。 */
   notes: string;
-  /** 标签数组；输入组件负责把用户键入的分隔文本归并为数组。 */
   tags: string[];
 };
 
-/**
- * 创建表单初始值（用于新增/编辑复用）。
- *
- * 说明：
- * - 默认值以“新增订阅”表单为准；编辑时可用 overrides 覆盖（例如 autoCalculate=false）
- */
 export function createSubscriptionFormState(
   overrides: Partial<SubscriptionFormState> = {},
 ): SubscriptionFormState {

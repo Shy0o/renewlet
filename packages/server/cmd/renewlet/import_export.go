@@ -217,6 +217,7 @@ func previewImportPayload(app core.App, user *core.Record, payload importPayload
 		}
 		keyString := importKeyString(key)
 		if seenPayloadKeys[keyString] {
+			// 单个导入文件里的重复幂等键必须失败；否则 replace 会把两条来源记录写到同一订阅。
 			item.Action = "error"
 			item.Errors = append(item.Errors, "IMPORT_SOURCE_ID_DUPLICATE")
 			items = append(items, item)
@@ -232,6 +233,7 @@ func previewImportPayload(app core.App, user *core.Record, payload importPayload
 		if existing, fallback := existingMatches.Resolve(key, subscription); existing != nil {
 			item.ExistingID = existing.Id
 			if fallback {
+				// Wallos display:* 只能按名称低置信桥接，给 warning 让用户确认，不把它伪装成精确命中。
 				item.Warnings = append(item.Warnings, importWarningLowConfidenceNameMatched)
 			}
 			if conflictMode == "replace" {
@@ -434,6 +436,7 @@ func (matches importExistingMatches) AddLowConfidence(row *core.Record) {
 		return
 	}
 	if matches.LowConfidenceByName[nameKey] != nil {
+		// 同名历史订阅一多，名称兜底就失去唯一性；后续必须走用户手动选择。
 		delete(matches.LowConfidenceByName, nameKey)
 		matches.LowConfidenceDuplicates[nameKey] = true
 		return

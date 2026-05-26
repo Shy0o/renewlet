@@ -70,6 +70,7 @@ export function useMediaCandidates(options: UseMediaCandidatesOptions): UseMedia
     abortRef.current?.abort();
     abortRef.current = null;
     requestIdRef.current += 1;
+    // 本轮被用户手动屏蔽的失败图片只影响当前搜索生命周期；关闭/取消后下一轮应重新给候选机会。
     blockedUrlsRef.current = new Set();
   }, []);
 
@@ -116,6 +117,7 @@ export function useMediaCandidates(options: UseMediaCandidatesOptions): UseMedia
           limit,
         }, controller.signal);
         if (controller.signal.aborted) return;
+        // abort 只能拦 fetch；requestId 负责拦住“请求已返回但用户已发起下一轮搜索”的旧结果。
         if (requestIdRef.current !== currentRequestId) return;
 
         const item = response.items[0];

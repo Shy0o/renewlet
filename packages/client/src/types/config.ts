@@ -21,17 +21,12 @@ import {
 import { labels, localizedLabel, type Locale, type LocalizedLabels } from "@/i18n/locales";
 
 export interface ConfigItem {
-  /** 唯一 ID（拖拽排序/编辑时的稳定 key）。 */
   id: string;
-  /** 业务值（写入订阅数据的 value）。例如：productivity / alipay / CNY。 */
+  /** 持久化到订阅的业务值，重命名等同于迁移历史订阅引用。 */
   value: string;
-  /** 展示文案（用于 UI 下拉、标签等）。 */
   labels: LocalizedLabels;
-  /** 颜色（可选），用于分类/状态的视觉展示。 */
   color?: string | undefined;
-  /** 图标（可选，URL）。 */
   icon?: string | undefined;
-  /** 是否启用（可选，仅 toggleMode 使用）。 */
   enabled?: boolean | undefined;
 }
 
@@ -106,7 +101,6 @@ export function getConfigItemLabel(item: ConfigItem, locale: Locale): string {
   return localizedLabel(item.labels, locale);
 }
 
-// 分类颜色
 const CATEGORY_COLORS: Record<BuiltInCategory, string> = {
   productivity: 'hsl(200 80% 50%)',
   entertainment: 'hsl(280 70% 55%)',
@@ -136,7 +130,6 @@ const CATEGORY_COLORS: Record<BuiltInCategory, string> = {
 const LEGACY_DEFAULT_CATEGORY_VALUES = ['productivity', 'entertainment', 'lifestyle', 'finance'] as const;
 const LEGACY_DEFAULT_CATEGORY_VALUE_SET = new Set<string>(LEGACY_DEFAULT_CATEGORY_VALUES);
 
-// 状态颜色
 const STATUS_COLORS: Record<SubscriptionStatus, string> = {
   trial: 'hsl(45 90% 50%)',
   active: 'hsl(160 84% 45%)',
@@ -146,7 +139,6 @@ const STATUS_COLORS: Record<SubscriptionStatus, string> = {
 };
 const DEFAULT_STATUS_VALUE_SET = new Set<string>(SUBSCRIPTION_STATUSES as readonly string[]);
 
-// 从现有类型生成默认配置
 export const getDefaultCategories = (): ConfigItem[] => {
   return Object.entries(CATEGORY_LABELS).map(([value, itemLabels]) => ({
     id: value,

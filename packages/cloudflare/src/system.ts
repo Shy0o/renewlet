@@ -46,6 +46,7 @@ export async function systemUpdate(request: Request, env: Env): Promise<Response
 function cloudflareBuildValue(value: string | undefined, fallback: string): string {
   const trimmed = value?.trim();
   if (!trimmed) return fallback;
+  // wrangler.jsonc 的本地占位版本不能泄漏到线上；CI 未注入时退回 package 版本比显示 0.1.0 更可诊断。
   if (trimmed === "0.1.0" && PACKAGE_VERSION !== "0.1.0") return PACKAGE_VERSION;
   return trimmed;
 }

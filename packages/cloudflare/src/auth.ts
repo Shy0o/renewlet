@@ -32,6 +32,7 @@ export async function createInitialAdmin(request: Request, env: Env): Promise<Re
   if (await hasEnabledAdmin(env)) throw new HttpError(403, tr(locale, "系统已初始化", "System has already been initialized"));
   const body = await readJson(request, setupCreateBodySchema, locale);
   const timestamp = nowIso();
+  // email 唯一索引是初始化竞态的最后闸门；并发首装失败必须暴露为创建失败，而不是补兼容重试。
   await env.DB.prepare(`
     INSERT INTO users (id, email, name, role, banned, ban_reason, password_hash, created_at, updated_at)
     VALUES (?, ?, ?, 'admin', 0, '', ?, ?, ?)
@@ -68,6 +69,7 @@ export async function session(request: Request, env: Env): Promise<Response> {
 export async function logout(request: Request, env: Env): Promise<Response> {
   const token = bearerToken(request);
   if (token) {
+    // 登出只按 hash 清当前 bearer；没有 token 也保持幂等，避免前端清缓存时被 401 卡住。
     await env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await sha256(token)).run();
   }
   return ok();
@@ -166,6 +168,7 @@ export async function adminDeleteUser(request: Request, env: Env, userId: string
   if (!user) throw new HttpError(404, tr(locale, "用户不存在", "User not found"));
   if (user.id === auth.user.id) throw new HttpError(400, tr(locale, "不能删除当前登录的管理员", "You cannot delete the current administrator"));
   await assertNotLastAdminMutation(env, locale, auth.user.id, user, "user", true);
+  // D1 外键级联负责清 session/settings/subscriptions/assets metadata；R2 对象仍只能通过失效 metadata 变成不可读孤儿。
   await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id).run();
   return ok();
 }

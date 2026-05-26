@@ -89,6 +89,7 @@ for (const name of requiredEnv) requireEnv(name);
 const config = JSON.parse(stripJsoncComments(readFileSync(templatePath, "utf8")));
 config.name = requireEnv("WORKER_NAME");
 
+// CI 只替换租户资源标识；路由、binding 名和兼容日期仍以仓库模板为事实源。
 const d1 = findBinding(config, "d1_databases", "DB");
 d1.database_id = requireEnv("D1_DATABASE_ID");
 

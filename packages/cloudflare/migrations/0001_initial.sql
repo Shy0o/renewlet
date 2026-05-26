@@ -16,6 +16,7 @@ CREATE INDEX IF NOT EXISTS idx_users_role_banned ON users (role, banned);
 
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
+  -- 浏览器持有明文 Bearer token；D1 只存 hash，泄库不能直接接管会话。
   token_hash TEXT NOT NULL UNIQUE,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   expires_at TEXT NOT NULL,
@@ -72,6 +73,7 @@ CREATE TABLE IF NOT EXISTS custom_configs (
 
 CREATE TABLE IF NOT EXISTS assets (
   id TEXT PRIMARY KEY,
+  -- R2 key 不公开；所有私有资产读取先过这张 owner metadata 表。
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   kind TEXT NOT NULL CHECK (kind IN ('logo', 'icon')),
   r2_key TEXT NOT NULL UNIQUE,

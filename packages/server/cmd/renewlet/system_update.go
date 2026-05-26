@@ -37,6 +37,7 @@ func (service *systemUpdateService) CheckVersion(ctx context.Context, locale app
 	release, err := service.fetchLatestRelease(ctx)
 	if err != nil {
 		if cached := service.cachedVersion(); cached != nil {
+			// 版本检查是管理页体验能力，不应因 GitHub 短暂失败阻断管理员查看上次可信结果。
 			cached.Warning = tr(locale, "版本检查暂时失败，正在展示缓存结果："+err.Error(), "Version check failed; showing cached result: "+err.Error())
 			return cached, nil
 		}
@@ -80,6 +81,7 @@ func (service *systemUpdateService) PerformUpdate(ctx context.Context, locale ap
 		return nil, fmt.Errorf("invalid checksum URL: %w", err)
 	}
 
+	// 临时目录必须和目标二进制同分区，后续 rename 才能保持替换语义接近原子操作。
 	tempDir, err := os.MkdirTemp(filepath.Dir(capability.binaryPath), ".renewlet-update-*")
 	if err != nil {
 		return nil, err
@@ -97,6 +99,7 @@ func (service *systemUpdateService) PerformUpdate(ctx context.Context, locale ap
 	if int64(len(checksumText)) > systemUpdateMaxChecksumBytes {
 		return nil, errors.New("checksums.txt is too large")
 	}
+	// 先验证 checksum 再解包，避免把不可信 tar 内容交给路径检查和文件写入流程。
 	if err := verifySystemUpdateChecksum(archivePath, archiveAsset.Name, checksumText); err != nil {
 		return nil, err
 	}
@@ -244,6 +247,7 @@ func selfUpdateCapability(locale appLocale) systemUpdateCapability {
 		}
 	}
 	if fileInfo, err := os.Lstat(binaryPath); err != nil || !fileInfo.Mode().IsRegular() {
+		// 旧镜像的 /renewlet 可能仍是真实文件；自更新只支持新布局里的 current/renewlet 可替换目标。
 		return systemUpdateCapability{
 			runtime:           "docker",
 			supported:         false,
@@ -369,6 +373,7 @@ func extractRenewletBinary(archivePath string, targetPath string) error {
 		if found {
 			return errors.New("release archive contains multiple renewlet binaries")
 		}
+		// 发布包里只接受一个 renewlet 可执行文件；其它路径一律忽略，避免 tarball 带额外 payload。
 		target, err := os.OpenFile(targetPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
 		if err != nil {
 			return err
@@ -408,6 +413,7 @@ func replaceRenewletBinary(binaryPath string, backupDir string, newBinaryPath st
 	}
 	backupPath := filepath.Join(backupDir, "renewlet."+safeBackupVersion(currentVersion))
 	_ = os.Remove(backupPath)
+	// 先把当前二进制改名成备份，再移动新二进制；替换失败时仍有可恢复路径。
 	if err := os.Rename(binaryPath, backupPath); err != nil {
 		return fmt.Errorf("backup current binary: %w", err)
 	}

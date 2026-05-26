@@ -134,6 +134,7 @@ export async function enabledAdminCount(env: Env): Promise<number> {
 
 export async function getSettings(env: Env, userId: string): Promise<ApiAppSettings> {
   const row = await env.DB.prepare("SELECT settings_json FROM settings WHERE user_id = ? LIMIT 1").bind(userId).first<{ settings_json: string }>();
+  // 空库用户按当前 shared defaults 启动；不要写回 D1，否则首次访问会制造隐式迁移副作用。
   if (!row) return createDefaultAppSettings();
   return normalizeSettingsJson(row.settings_json);
 }
@@ -174,6 +175,7 @@ export async function getCustomConfig(env: Env, userId: string): Promise<unknown
   try {
     return JSON.parse(row.config_json) as unknown;
   } catch {
+    // 自定义配置坏 JSON 只回到空结构；最终规范化仍在前端 domain，避免 Worker 复制 UI 规则。
     return { categories: [], statuses: [], paymentMethods: [], currencies: [] };
   }
 }
@@ -231,6 +233,7 @@ export async function listSubscriptions(env: Env, userId: string): Promise<Subsc
 }
 
 export async function getAsset(env: Env, userId: string, id: string): Promise<AssetRow | null> {
+  // D1 metadata 是 R2 私有资产的权限索引；所有读取都必须带 userId 过滤。
   return await env.DB.prepare(`SELECT ${ASSET_COLUMNS} FROM assets WHERE user_id = ? AND id = ? LIMIT 1`).bind(userId, id).first<AssetRow>();
 }
 

@@ -35,6 +35,7 @@ export function methodNotAllowed(): Response {
 export function privateShortCache(response: Response): Response {
   const headers = new Headers(response.headers);
   headers.set("cache-control", "private, max-age=300");
+  // 候选搜索结果带用户来源设置和认证语义；Vary Authorization 防止边缘缓存串用户。
   headers.set("vary", "Authorization");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
@@ -86,6 +87,7 @@ export async function readOptionalJson<Schema extends z.ZodType>(
 ): Promise<z.infer<Schema>> {
   const text = await readLimitedText(request, locale, true);
   if (!text) return schema.parse({});
+  // optional body 仍要重新走同一套 JSON/Zod 边界，手动 run 的空 body 只是语义上的 `{}`。
   return readJson(new Request(request.url, { method: request.method, body: text }), schema, locale);
 }
 

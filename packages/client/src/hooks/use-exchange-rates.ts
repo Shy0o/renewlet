@@ -40,7 +40,6 @@ import {
 } from '@/lib/currency-data';
 
 const CACHE_KEY = 'exchange_rates_cache_v3';
-/** 缓存有效期：24 小时（毫秒）。 */
 const CACHE_DURATION = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 10_000;
 
@@ -193,6 +192,7 @@ async function fetchJsonWithTimeout(url: string, parentSignal: AbortSignal): Pro
   const controller = new AbortController();
   let timedOut = false;
 
+  // 父级 abort 表示 provider 已切换或组件卸载；超时 abort 才需要反馈成用户可见的网络超时。
   const abortFromParent = () => controller.abort();
   if (parentSignal.aborted) {
     controller.abort();
@@ -262,7 +262,6 @@ async function fetchProviderRates(
   }
 }
 
-/** 汇率 Hook：提供 convert/getCurrencySymbol/formatAmount 等能力。 */
 export const useExchangeRates = (preferredProvider: ExchangeRateProvider = DEFAULT_EXCHANGE_RATE_PROVIDER) => {
   const [rates, setRates] = useState<ExchangeRates>(FALLBACK_RATES);
   const [baseRate, setBaseRate] = useState<string>('USD');
@@ -273,7 +272,6 @@ export const useExchangeRates = (preferredProvider: ExchangeRateProvider = DEFAU
   const mountedRef = useRef(false);
   const inFlightRef = useRef<InFlightRatesRequest | null>(null);
 
-  /** 读取缓存（缓存命中且未过期才返回）。 */
   const getCachedRates = (requestedProvider: ExchangeRateProvider): CachedExchangeRateData | null => {
     try {
       const cached = localStorage.getItem(CACHE_KEY);
@@ -294,7 +292,6 @@ export const useExchangeRates = (preferredProvider: ExchangeRateProvider = DEFAU
     }
   };
 
-  /** 写入缓存（附带 cachedAt 便于过期判断）。 */
   const setCachedRates = (
     data: ExchangeRateData,
     provider: ExchangeRateProvider,
@@ -342,7 +339,6 @@ export const useExchangeRates = (preferredProvider: ExchangeRateProvider = DEFAU
     setLoading(true);
     setError(null);
 
-    // 优先读缓存（除非强制刷新）
     if (!forceRefresh) {
       const cached = getCachedRates(requestedProvider);
       if (cached) {
@@ -395,7 +391,7 @@ export const useExchangeRates = (preferredProvider: ExchangeRateProvider = DEFAU
           getApiLocale(),
           getErrorMessageKey(kind),
         ));
-        // 使用回退汇率，保证统计/仪表盘仍可用
+        // 汇率失败不能拖垮仪表盘；内置快照牺牲实时性，保留跨币种统计的可解释性。
         setRates(FALLBACK_RATES);
         setBaseRate('USD');
         setActiveProvider("builtin");
@@ -429,7 +425,6 @@ export const useExchangeRates = (preferredProvider: ExchangeRateProvider = DEFAU
     };
   }, [fetchRates]);
 
-  /** 金额换算：fromCurrency -> toCurrency（先转 USD，再转目标币种）。 */
   const convert = useCallback((
     amount: number,
     fromCurrency: string,
@@ -445,12 +440,10 @@ export const useExchangeRates = (preferredProvider: ExchangeRateProvider = DEFAU
     return amountInBase * toRate;
   }, [rates]);
 
-  /** 获取货币符号（用于 UI 展示）。 */
   const getCurrencySymbol = useCallback((currency: string): string => {
     return getIntlCurrencySymbol(currency);
   }, []);
 
-  /** 格式化金额：加货币符号 + “最多 N 位小数”（展示层使用，避免强制补 0）。 */
   const formatAmount = useCallback((
     amount: number,
     currency: string,
@@ -470,7 +463,6 @@ export const useExchangeRates = (preferredProvider: ExchangeRateProvider = DEFAU
     convert,
     getCurrencySymbol,
     formatAmount,
-    /** 强制刷新汇率（跳过缓存）。 */
     refresh: (providerOverride?: ExchangeRateProvider) => fetchRates(true, providerOverride)
   };
 };

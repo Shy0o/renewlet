@@ -11,6 +11,7 @@ fi
 
 if [ "$(id -u)" = "0" ]; then
   mkdir -p /pb_data /opt/renewlet/current /opt/renewlet/backups
+  # /renewlet 是旧 compose/healthcheck 的稳定入口；真实可替换二进制固定在 current/renewlet。
   if [ -e /renewlet ] && [ ! -L /renewlet ]; then
     rm -f /renewlet
   fi

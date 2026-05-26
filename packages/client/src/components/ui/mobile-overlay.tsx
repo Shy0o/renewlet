@@ -185,10 +185,7 @@ function clearExpiredMobileOverlayTriggerSuppression() {
 }
 
 function markMobileOverlayBackdropInteraction(event?: MobileOverlayInteractionEvent) {
-  // Mobile browsers may deliver a delayed compatibility click after the sheet
-  // portal is dismissed. Keep a short, coordinate-scoped guard so that tap
-  // cannot be retargeted to the trigger/control that was visually behind the
-  // backdrop, while still allowing an intentional tap elsewhere immediately.
+  // 移动浏览器会在 portal 卸载后补发兼容 click；短时坐标闸门只拦同一次遮罩点击，不挡用户点别处。
   mobileOverlayTriggerSuppression = {
     expiresAt: Date.now() + MOBILE_OVERLAY_TRIGGER_SUPPRESSION_MS,
     point: getMobileOverlayInteractionPoint(event),
@@ -230,9 +227,7 @@ export function handleMobileOverlayOutsideEvent(
   const originalTarget = event.detail?.originalEvent?.target ?? event.target;
   if (!isMobileOverlayBackdropTarget(originalTarget)) return false;
 
-  // Radix observes outside pointer events before React receives the backdrop click.
-  // Keep the sheet mounted until click so the browser cannot retarget that same
-  // tap to a trigger or to the parent Dialog behind the backdrop.
+  // Radix 比 React 更早收到 outside pointer；这里阻止立即卸载，避免同一次 tap 穿透到底层 Dialog/触发器。
   event.preventDefault();
   markMobileOverlayBackdropInteraction(event.detail?.originalEvent);
   return true;
@@ -274,10 +269,7 @@ export function MobileOverlayBackdrop({
   React.useEffect(() => {
     if (!isMobileOverlay) return undefined;
 
-    // Nested Radix portals can place a mobile sheet inside DialogContent while
-    // DialogOverlay stays in a sibling stacking layer. Registering the active
-    // backdrop gives shared tests and guards one source of truth for the top
-    // mobile layer, while the backdrop itself consumes the tap before dismissal.
+    // 嵌套 Radix portal 会拆开 DialogOverlay 与 sheet 层级；全局计数给测试和触发器防穿透同一事实源。
     return registerMobileOverlayBackdrop();
   }, [isMobileOverlay]);
 

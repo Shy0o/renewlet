@@ -169,11 +169,13 @@ function buildPreview(payload: ImportPayload, conflictMode: ImportConflictMode, 
     }
     const keyString = importKeyString(importKey);
     if (seenPayloadKeys.has(keyString)) {
+      // 同一个导入文件内部重复 sourceId 必须先失败；否则 replace 会把两条 payload 写到同一订阅上。
       errors.push("IMPORT_SOURCE_ID_DUPLICATE");
     }
     seenPayloadKeys.add(keyString);
     const { row: existingRow, fallback } = resolveExistingImportMatch(existingMatches, importKey, subscription);
     if (fallback) {
+      // Wallos display:* 是低置信桥接，只给用户 warning；真正写入仍保留原 import key 方便后续精确替换。
       warnings.push(IMPORT_WARNING_LOW_CONFIDENCE_NAME_MATCHED);
     }
     const action = errors.length > 0 ? "error" : existingRow ? (conflictMode === "replace" ? "replace" : "skip") : "create";
@@ -235,6 +237,7 @@ function addLowConfidenceExisting(matches: ExistingImportMatches, row: Subscript
   const nameKey = lowConfidenceImportName(row.name);
   if (!nameKey) return;
   if (matches.lowConfidenceByName.has(nameKey)) {
+    // 同名历史订阅不唯一时禁用名称兜底，宁可让用户手动处理，也不要误 replace。
     matches.lowConfidenceByName.set(nameKey, null);
     return;
   }

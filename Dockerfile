@@ -42,6 +42,7 @@ ENV GOMEMLIMIT=128MiB \
   RENEWLET_SELF_UPDATE_BINARY=/opt/renewlet/current/renewlet \
   RENEWLET_SELF_UPDATE_BACKUP_DIR=/opt/renewlet/backups
 
+# /renewlet 是 Docker CMD/healthcheck 的稳定门面；自更新只替换 current 下的真实二进制。
 RUN apk add --no-cache ca-certificates su-exec tzdata \
   && addgroup -S -g 1000 renewlet \
   && adduser -S -D -H -u 1000 -G renewlet renewlet \

@@ -144,6 +144,7 @@ export async function sendSmtpEmail(config: SmtpConfig, email: SmtpEmail, locale
       await connection.command("STARTTLS", [220]);
       connection = connection.upgradeTls(config.host);
     }
+    // 认证和正文只在 TLS 建立后发送；用户配置的 SMTP 密码绝不能跑在明文 socket 上。
     await deliverAfterTls(connection, config, email, from, to, replyTo);
   } catch (error) {
     throw new Error(publicSmtpError(error, locale));
@@ -244,6 +245,7 @@ function composeEmail(email: SmtpEmail, from: Mailbox, to: Mailbox[], replyTo: M
     "Content-Transfer-Encoding: 8bit",
   ];
   if (replyTo) headers.splice(2, 0, `Reply-To: ${formatMailboxHeader(replyTo)}`);
+  // 这里只发送纯文本通知，避免用户订阅内容进入 HTML 邮件上下文后产生额外转义面。
   return `${headers.join("\r\n")}\r\n\r\n${normalizeCrlf(email.text)}`;
 }
 

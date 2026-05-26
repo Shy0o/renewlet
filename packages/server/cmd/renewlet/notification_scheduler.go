@@ -149,6 +149,7 @@ func getNotificationScheduleDecision(now time.Time, settings appSettings, subscr
 	if regular.Due || force {
 		return regular
 	}
+	// 日常提醒优先；只有本轮没命中时才检查重要订阅的重复提醒，避免同一分钟重复生成两个 job。
 	if repeat := getRepeatScheduleDecision(now, settings, subscriptions, windowMinutes); repeat.Due {
 		return repeat
 	}
@@ -335,6 +336,7 @@ func runNotificationCron(app core.App, options notificationCronOptions) (notific
 			continue
 		}
 		if !options.Force && existingJob != nil && existingJob.GetString("status") == notificationStatusFailed && attempts >= options.MaxRetries {
+			// 失败任务保留给历史页解释失败原因；超过重试预算后不再自动扰动外部通知渠道。
 			results = append(results, notificationCronUserResult{UserID: userID, Action: "skipped", Reason: "max_retries_reached"})
 			continue
 		}

@@ -43,6 +43,7 @@ const builtInIconSourceSettingSchema = z.object({
   enabled: z.boolean(),
   variantsEnabled: z.boolean(),
 }).strict();
+// PATCH 允许局部更新 provider 开关，但最终 settings 必须仍至少保留一个可用来源。
 const builtInIconSourceSettingPatchSchema = builtInIconSourceSettingSchema.partial().strict();
 
 export const builtInIconProviderSchema = z.enum(BUILT_IN_ICON_PROVIDERS);

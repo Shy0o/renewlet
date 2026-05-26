@@ -26,32 +26,23 @@ function normalizeMimeType(mimeType: string): string {
   return mimeType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
 }
 
-/** 根据白名单 MIME 返回存储扩展名；不信任客户端文件名后缀。 */
+/** 存储扩展名只信任白名单 MIME，不信任客户端文件名后缀。 */
 export function imageExtensionForMime(mimeType: string): AllowedImageExtension | null {
   return MIME_TO_EXTENSION.get(normalizeMimeType(mimeType)) ?? null;
 }
 
-/** 判断 MIME 是否属于允许上传的图片类型。 */
 export function isAllowedImageMime(mimeType: string): boolean {
   return imageExtensionForMime(mimeType) !== null;
 }
 
-/** 判断 MIME 是否为 SVG。 */
 export function isSvgImageMime(mimeType: string): boolean {
   return imageExtensionForMime(mimeType) === "svg";
 }
 
-/** 判断 MIME 是否为 ICO。 */
 export function isIcoImageMime(mimeType: string): boolean {
   return imageExtensionForMime(mimeType) === "ico";
 }
 
-/**
- * 读取上传文件 MIME。
- *
- * 说明：部分浏览器/系统可能不给 SVG 填 `file.type`，这里仅用扩展名改善前端体验；
- * 服务端仍会按文件内容重新判断。
- */
 export function uploadMimeTypeForFile(file: File): string {
   const mimeType = normalizeMimeType(file.type);
   if (mimeType) return mimeType;

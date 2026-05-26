@@ -60,7 +60,6 @@ func createInitialAdmin(app core.App, name string, email string, password string
 	})
 }
 
-// createUser 创建应用用户并设置产品侧角色字段。
 func createUser(app core.App, name string, email string, password string, role string) (*core.Record, error) {
 	users, err := app.FindCollectionByNameOrId("users")
 	if err != nil {
@@ -114,7 +113,6 @@ func createInitialSuperuserIfMissing(app core.App, email string, password string
 	return app.Save(superuser)
 }
 
-// hasNonInstallerSuperuser 判断是否已有真实 superuser。
 func hasNonInstallerSuperuser(app core.App) (bool, error) {
 	total, err := app.CountRecords(core.CollectionNameSuperusers, dbx.Not(dbx.HashExp{
 		"email": core.DefaultInstallerEmail,
@@ -125,13 +123,11 @@ func hasNonInstallerSuperuser(app core.App) (bool, error) {
 	return total > 0, nil
 }
 
-// hasEnabledAdmin 判断系统是否已经初始化。
 func hasEnabledAdmin(app core.App) bool {
 	users, err := app.FindAllRecords("users", dbx.HashExp{"role": "admin", "banned": false})
 	return err == nil && len(users) > 0
 }
 
-// enabledAdminCount 返回未封禁管理员数量。
 func enabledAdminCount(app core.App) int {
 	users, err := app.FindAllRecords("users", dbx.HashExp{"role": "admin", "banned": false})
 	if err != nil {
@@ -140,7 +136,6 @@ func enabledAdminCount(app core.App) int {
 	return len(users)
 }
 
-// preventLastAdminMutation 阻止管理员更新导致系统无可用管理员。
 func preventLastAdminMutation(app core.App, current *core.Record, target *core.Record) error {
 	if current != nil && current.Id == target.Id && (target.GetString("role") != "admin" || target.GetBool("banned")) {
 		return errors.New("CURRENT_ACCOUNT_PROTECTED")
@@ -153,7 +148,6 @@ func preventLastAdminMutation(app core.App, current *core.Record, target *core.R
 	return nil
 }
 
-// preventUserDelete 阻止删除当前账号或最后一个可用管理员。
 func preventUserDelete(app core.App, current *core.Record, target *core.Record) error {
 	if current != nil && current.Id == target.Id {
 		return errors.New("CURRENT_ACCOUNT_DELETE_PROTECTED")
@@ -164,7 +158,6 @@ func preventUserDelete(app core.App, current *core.Record, target *core.Record) 
 	return nil
 }
 
-// localizeAdminMutationError 将管理员保护错误转换为本地化文案。
 func localizeAdminMutationError(locale appLocale, err error) string {
 	if err == nil {
 		return ""

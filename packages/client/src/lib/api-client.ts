@@ -222,6 +222,7 @@ export async function apiFetch<Schema extends z.ZodType>(
   for (const [key, value] of Object.entries(getLocaleHeaders())) {
     if (!headers.has(key)) headers.set(key, value);
   }
+  // 认证 header 由运行面适配层提供：Docker 读 PocketBase authStore，Cloudflare 读本地 session cache。
   for (const [key, value] of Object.entries(getAuthHeader())) {
     if (!headers.has(key)) headers.set(key, value);
   }

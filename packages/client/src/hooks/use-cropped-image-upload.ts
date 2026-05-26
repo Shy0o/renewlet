@@ -25,10 +25,8 @@ import type { UploadKind } from "@/lib/api/schemas/media";
 import { getApiLocale } from "@/i18n/api-locale";
 import { translate } from "@/i18n/messages";
 
-/** 裁剪上传流程的状态机状态。 */
 export type UploadStatus = "idle" | "uploading" | "error";
 
-/** 裁剪上传 Hook 的调用参数。 */
 export interface UseCroppedImageUploadOptions {
   /** 上传用途：决定存储路径与后端校验逻辑。 */
   kind: UploadKind;
@@ -41,29 +39,17 @@ export interface UseCroppedImageUploadOptions {
 }
 
 export interface UseCroppedImageUploadResult {
-  /** 文件输入框 ref。 */
   fileInputRef: RefObject<HTMLInputElement | null>;
-  /** 裁剪弹窗开关。 */
   cropDialogOpen: boolean;
-  /** 设置裁剪弹窗开关。 */
   setCropDialogOpen: (open: boolean) => void;
-  /** 待裁剪图片 data URL（给 ImageCropDialog 用）。 */
   uploadedImage: string;
-  /** 当前上传状态。 */
   uploadStatus: UploadStatus;
   /** 上传完成前的预览（data URL）；成功后会清空并由外层 value 接管。 */
   previewUrl: string | undefined;
-  /** 最近一次上传/读取失败原因。 */
   uploadError: string | null;
-  /** `<input type=file>` 的 onChange。 */
   handleFileUpload: (e: ChangeEvent<HTMLInputElement>) => void;
-  /** ImageCropDialog 的 onCropComplete。 */
   handleCropComplete: (croppedImage: string) => Promise<void>;
-  /**
-   * 用户从“搜索结果”选择 URL 或点击“清空”时调用：
-   * - 会取消旧上传结果回写
-   * - 会把 uploadStatus 重置为 idle
-   */
+  /** 外部值接管时推进 token，明确把“本地上传链路”切到已废弃分支。 */
   applyValue: (value: string | undefined) => void;
 }
 
@@ -187,11 +173,10 @@ export function useCroppedImageUpload(options: UseCroppedImageUploadOptions): Us
 
   const handleCropComplete = useCallback(
     async (croppedImage: string) => {
-      // 立即更新预览（仅 UI，不往外层写 data URL，避免被持久化）
+      // data URL 只属于乐观预览分支，成功前不能流入外层表单。
       setPreviewUrl(croppedImage);
       setUploadedImage("");
 
-      // 后台上传，成功后把 data URL 替换成 /api/assets/... URL
       uploadTokenRef.current += 1;
       const token = uploadTokenRef.current;
       reportUploadStatus("uploading");
@@ -214,7 +199,7 @@ export function useCroppedImageUpload(options: UseCroppedImageUploadOptions): Us
       } catch (err: unknown) {
         console.error("Image upload failed:", err);
         if (uploadTokenRef.current !== token) return;
-        // 上传失败：继续展示预览，但禁止外层“保存/确认”，直到用户重试/改选/清空
+        // 上传失败时保留预览但不推进 onChange，避免用户把本地 data URL 当成已持久化资产保存。
         setUploadError(getDisplayErrorMessage(err, translate(getApiLocale(), "media.uploadFailedRetry")));
         reportUploadStatus("error");
       }
@@ -224,7 +209,6 @@ export function useCroppedImageUpload(options: UseCroppedImageUploadOptions): Us
 
   const applyValue = useCallback(
     (value: string | undefined) => {
-      // 选择远端 URL 或清空时，取消之前可能存在的上传结果回写
       uploadTokenRef.current += 1;
       fileReadTokenRef.current += 1;
       fileReaderRef.current?.abort();

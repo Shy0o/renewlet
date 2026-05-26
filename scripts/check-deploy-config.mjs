@@ -175,6 +175,7 @@ function checkDockerSelfUpdateLayout() {
   const compose = readFileSync(join(repoRoot, "deploy/docker-compose.yml"), "utf8");
   const releaseWorkflow = readFileSync(join(repoRoot, ".github/workflows/release-publish.yml"), "utf8");
 
+  // 页面内更新依赖 Dockerfile、entrypoint、compose、release 资产四处同频；这里把布局当契约锁住。
   for (const snippet of [
     "/opt/renewlet/current/renewlet",
     "RENEWLET_SELF_UPDATE_ENABLED=true",
