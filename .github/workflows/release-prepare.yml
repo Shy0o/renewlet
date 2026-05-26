@@ -14,20 +14,44 @@ on:
         default: dev
         type: string
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   prepare:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Validate release bot configuration
+        env:
+          RELEASE_APP_CLIENT_ID: ${{ vars.RENEWLET_RELEASE_APP_CLIENT_ID }}
+          RELEASE_APP_PRIVATE_KEY: ${{ secrets.RENEWLET_RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$RELEASE_APP_CLIENT_ID" || -z "$RELEASE_APP_PRIVATE_KEY" ]]; then
+            echo "Release Prepare requires a dedicated GitHub App token." >&2
+            echo "Set repository variable RENEWLET_RELEASE_APP_CLIENT_ID and repository secret RENEWLET_RELEASE_APP_PRIVATE_KEY." >&2
+            echo "The release bot app needs Contents: write, Pull requests: write, and Workflows: write on this repository." >&2
+            exit 1
+          fi
+
+      - name: Create release bot token
+        id: release-bot
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RENEWLET_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RENEWLET_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+
       - name: Checkout
         uses: actions/checkout@v6.0.2
         with:
           ref: ${{ inputs.base_branch }}
           fetch-depth: 0
+          token: ${{ steps.release-bot.outputs.token }}
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v6.0.0
@@ -50,7 +74,7 @@ jobs:
 
       - name: Create or update release pull request
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.release-bot.outputs.token }}
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
