@@ -11,6 +11,23 @@ Renewlet uses a tag-driven release process. `dev` is the integration branch, `ma
 
 Use Conventional Commits for PR titles and commits. Examples: `feat: add notification channel`, `fix: prevent duplicate reminder jobs`, `docs: clarify Docker upgrade`.
 
+## Release Bot GitHub App
+
+`Release Prepare` uses a dedicated GitHub App token instead of the default `GITHUB_TOKEN`. This matches mature release workflows such as n8n and Immich, and avoids repository-level `GITHUB_TOKEN` limits around creating pull requests and triggering follow-up CI.
+
+Create a GitHub App named `renewlet-release-bot`, disable webhooks, and install it only on `zhiyingzzhou/renewlet`. Grant the app these repository permissions:
+
+- Contents: read and write
+- Pull requests: read and write
+- Workflows: read and write
+
+Add these repository settings before running `Release Prepare`:
+
+- Variable `RENEWLET_RELEASE_APP_CLIENT_ID`: the GitHub App Client ID.
+- Secret `RENEWLET_RELEASE_APP_PRIVATE_KEY`: the full private key PEM generated for the app.
+
+The workflow fails early if either value is missing. Existing `release/vX.Y.Z` branches can stay in place; the release bot updates the branch and creates or updates the matching PR.
+
 ## Prepare A Release
 
 1. Make sure `dev` is green in CI.
