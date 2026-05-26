@@ -18,6 +18,7 @@ import {
   type ImportLogoAutoMatch,
   type PreparedImport,
 } from "./import-export-model";
+import { assetService } from "@/services/asset-service";
 
 type ImportSubscription = ImportPayload["subscriptions"][number];
 
@@ -138,7 +139,6 @@ export async function resolveImportAssets(
   const writableIndexes = new Set(previewItems.filter((item) => item.action === "create" || item.action === "replace").map((item) => item.index));
   const assets = prepared.assets.filter((asset) => writableIndexes.has(asset.subscriptionIndex));
   if (assets.length === 0) return prepared.payload;
-  const { assetService } = await import("@/services/asset-service");
   const logoOverrides = new Map<number, string | null>();
   let done = 0;
   onProgress?.(done, assets.length);
