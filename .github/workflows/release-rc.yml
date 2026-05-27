@@ -44,6 +44,20 @@ jobs:
           permission-pull-requests: write
           permission-workflows: write
 
+      - name: Check release branch
+        env:
+          RELEASE_BOT_TOKEN: ${{ steps.release-bot.outputs.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          RELEASE_BRANCH="release/v${VERSION}"
+          git remote set-url origin "https://x-access-token:${RELEASE_BOT_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if ! git ls-remote --exit-code --heads origin "${RELEASE_BRANCH}" > /dev/null 2>&1; then
+            echo "Release branch ${RELEASE_BRANCH} does not exist. Run Release Prepare for ${VERSION} before publishing an RC." >&2
+            exit 1
+          fi
+
       - name: Checkout release branch
         uses: actions/checkout@v6.0.2
         with:
