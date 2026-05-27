@@ -30,6 +30,7 @@ import {
 } from "@/modules/import-export/domain/wallos-import";
 import { formatImportMessage } from "@/modules/import-export/domain/import-message-format";
 import { importExportService } from "@/services/import-export-service";
+import { invalidateSubscriptionsQueries } from "@/hooks/use-subscriptions";
 import { mediaCandidateService } from "@/services/media-candidate-service";
 import {
   importApplyResponseSchema,
@@ -268,7 +269,7 @@ export function ImportDataDialog({ open, onOpenChange, settings, config }: Impor
       const payload = parseApplyPayload(await resolveImportAssets(prepared, effectivePreview.items, (done, total) => setAssetProgress({ done, total })));
       const result = parseApplyResult(await importExportService.applyChunked(payload, conflictMode, skipIndexList, (done, total) => setApplyProgress({ done, total })));
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["subscriptions"] }),
+        invalidateSubscriptionsQueries(queryClient),
         queryClient.invalidateQueries({ queryKey: ["settings"] }),
         queryClient.invalidateQueries({ queryKey: ["custom-config"] }),
       ]);

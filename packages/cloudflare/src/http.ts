@@ -58,6 +58,14 @@ export async function readJsonWithLimit<Schema extends z.ZodType>(
   limitBytes: number,
 ): Promise<z.infer<Schema>> {
   const text = await readLimitedTextWithLimit(request, locale, false, limitBytes);
+  return parseJsonText(text, schema, locale);
+}
+
+function parseJsonText<Schema extends z.ZodType>(
+  text: string,
+  schema: Schema,
+  locale: AppLocale,
+): z.infer<Schema> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -79,8 +87,7 @@ export async function readOptionalJson<Schema extends z.ZodType>(
 ): Promise<z.infer<Schema>> {
   const text = await readLimitedText(request, locale, true);
   if (!text) return schema.parse({});
-  // optional body 仍要重新走同一套 JSON/Zod 边界，手动 run 的空 body 只是语义上的 `{}`。
-  return readJson(new Request(request.url, { method: request.method, body: text }), schema, locale);
+  return parseJsonText(text, schema, locale);
 }
 
 async function readLimitedText(request: Request, locale: AppLocale, allowEmpty: boolean): Promise<string> {
@@ -88,15 +95,34 @@ async function readLimitedText(request: Request, locale: AppLocale, allowEmpty: 
 }
 
 async function readLimitedTextWithLimit(request: Request, locale: AppLocale, allowEmpty: boolean, limitBytes: number): Promise<string> {
-  const text = await request.text();
+  const declaredLength = Number.parseInt(request.headers.get("content-length") ?? "", 10);
+  if (Number.isFinite(declaredLength) && declaredLength > limitBytes) {
+    throw new HttpError(413, serverText(locale, "common.requestBodyTooLarge"), "BODY_TOO_LARGE");
+  }
+  const text = await readRequestTextUpToLimit(request, locale, limitBytes);
   if (!allowEmpty && text.trim() === "") {
     throw new HttpError(400, serverText(locale, "common.emptyBody"), "EMPTY_BODY");
   }
-  if (new TextEncoder().encode(text).byteLength > limitBytes) {
-    // Workers 会先把 body 读进内存；这里给 JSON API 一道固定上限，避免配置导入类请求撑爆运行时。
-    throw new HttpError(413, serverText(locale, "common.requestBodyTooLarge"), "BODY_TOO_LARGE");
-  }
   return text;
+}
+
+async function readRequestTextUpToLimit(request: Request, locale: AppLocale, limitBytes: number): Promise<string> {
+  const reader = request.body?.getReader();
+  if (!reader) return "";
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limitBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw new HttpError(413, serverText(locale, "common.requestBodyTooLarge"), "BODY_TOO_LARGE");
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
 }
 
 export class HttpError extends Error {

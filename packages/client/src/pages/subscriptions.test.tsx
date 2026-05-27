@@ -16,6 +16,7 @@ type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "custom
 
 const mocks = vi.hoisted(() => ({
   useSubscriptions: vi.fn(),
+  useInfiniteSubscriptions: vi.fn(),
   useSettings: vi.fn(),
   handleAddSubscription: vi.fn(),
   handleDeleteSubscription: vi.fn(),
@@ -29,6 +30,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/hooks/use-subscriptions", () => ({
   useSubscriptions: mocks.useSubscriptions,
+  useInfiniteSubscriptions: mocks.useInfiniteSubscriptions,
 }));
 
 vi.mock("@/hooks/use-settings", () => ({
@@ -226,8 +228,8 @@ describe("Subscriptions page sorting", () => {
         defaultCurrency: "CNY",
       },
     });
-    mocks.useSubscriptions.mockReturnValue({
-      data: [
+    mocks.useInfiniteSubscriptions.mockReturnValue({
+      subscriptions: [
         subscription({ id: "annual-usd", name: "Annual USD", price: 120, currency: "USD", billingCycle: "annual" }),
         subscription({ id: "monthly-cny", name: "Monthly CNY", price: 80, currency: "CNY", billingCycle: "monthly" }),
         subscription({ id: "quarterly-cny", name: "Quarterly CNY", price: 180, currency: "CNY", billingCycle: "quarterly" }),
@@ -311,8 +313,8 @@ describe("Subscriptions page sorting", () => {
 
   it("filters by expired using the effective status of legacy overdue subscriptions", async () => {
     const user = userEvent.setup();
-    mocks.useSubscriptions.mockReturnValue({
-      data: [
+    mocks.useInfiniteSubscriptions.mockReturnValue({
+      subscriptions: [
         subscription({ id: "legacy-overdue", name: "Legacy Overdue", status: "active", nextBillingDate: assertDateOnly("2000-05-15") }),
         subscription({ id: "active-future", name: "Active Future", status: "active", nextBillingDate: assertDateOnly("2099-05-20") }),
       ],
@@ -352,8 +354,8 @@ describe("Subscriptions page desktop tag filters", () => {
         defaultCurrency: "CNY",
       },
     });
-    mocks.useSubscriptions.mockReturnValue({
-      data: [
+    mocks.useInfiniteSubscriptions.mockReturnValue({
+      subscriptions: [
         subscription({ id: "cloud", name: "Tagged Cloud", tags: ["工作", "云服务", "Security"] }),
         subscription({ id: "docs", name: "Docs Notes", tags: ["Docs", "Planning"] }),
         subscription({ id: "design", name: "Design Suite", tags: ["Design"] }),
@@ -430,8 +432,8 @@ describe("Subscriptions page mobile tag filters", () => {
         defaultCurrency: "CNY",
       },
     });
-    mocks.useSubscriptions.mockReturnValue({
-      data: [
+    mocks.useInfiniteSubscriptions.mockReturnValue({
+      subscriptions: [
         subscription({ id: "cloud", name: "Tagged Cloud", tags: ["工作", "云服务", "Security"] }),
         subscription({ id: "docs", name: "Docs Notes", tags: ["Docs", "Planning"] }),
         subscription({ id: "design", name: "Design Suite", tags: ["Design"] }),
@@ -526,8 +528,8 @@ describe("Subscriptions page virtualization", () => {
         defaultCurrency: "CNY",
       },
     });
-    mocks.useSubscriptions.mockReturnValue({
-      data: manySubscriptions(90),
+    mocks.useInfiniteSubscriptions.mockReturnValue({
+      subscriptions: manySubscriptions(90),
       isPending: false,
     });
   });

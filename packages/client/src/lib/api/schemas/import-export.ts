@@ -1,6 +1,7 @@
 export {
   importApplyRequestSchema,
   importApplyResponseSchema,
+  IMPORT_APPLY_SUBSCRIPTION_LIMIT,
   importConflictModeSchema,
   importConfidenceSchema,
   importItemActionSchema,
@@ -10,6 +11,7 @@ export {
   importPreviewRequestSchema,
   importPreviewResponseSchema,
   importSourceSchema,
+  importApplySkipIndexesSchema,
   importSkipIndexesSchema,
   importSubscriptionSchema,
   importSummarySchema,

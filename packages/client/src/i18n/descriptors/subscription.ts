@@ -232,6 +232,7 @@ export const messages = [
   msg({ id: "import.warning.wallosCurrencyIdOnly", message: "Wallos API 内容只有 currency_id，没有 currencies.code，已使用当前默认货币。" }),
   msg({ id: "import.warning.currencySymbolAmbiguous", message: "Wallos 价格符号 {symbol} 可对应多个币种，已按 {currency} 导入，可在预览中修改。" }),
   msg({ id: "import.error.unrecognizedFile", message: "无法识别导入文件，请选择 Renewlet v1 导出或 Wallos 导出/备份。" }),
+  msg({ id: "import.error.wallosTableTooLarge", message: "Wallos SQLite 单表超过 5000 行，请先拆分备份后再导入。" }),
   msg({ id: "import.error.workerUnsupported", message: "当前浏览器不支持后台解析导入文件。" }),
   msg({ id: "import.error.workerParseFailed", message: "导入文件后台解析失败。" }),
   msg({ id: "import.error.sourceIdDuplicate", message: "同一个导入文件里存在重复来源 ID，请先移除重复项或跳过其中一条。" }),

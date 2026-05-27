@@ -227,9 +227,60 @@ export async function getSubscription(env: Env, userId: string, id: string): Pro
   return await env.DB.prepare(`SELECT ${SUBSCRIPTION_COLUMNS} FROM subscriptions WHERE user_id = ? AND id = ? LIMIT 1`).bind(userId, id).first<SubscriptionRow>();
 }
 
+export async function countSubscriptions(env: Env, userId: string): Promise<number> {
+  const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM subscriptions WHERE user_id = ? LIMIT 1").bind(userId).first<{ count: number }>();
+  return row?.count ?? 0;
+}
+
 export async function listSubscriptions(env: Env, userId: string): Promise<SubscriptionRow[]> {
-  const result = await env.DB.prepare(`SELECT ${SUBSCRIPTION_COLUMNS} FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC`).bind(userId).all<SubscriptionRow>();
+  const rows: SubscriptionRow[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await listSubscriptionsPage(env, userId, { limit: 100, cursor });
+    rows.push(...page);
+    if (page.length < 100) return rows;
+    cursor = subscriptionCursor(page[page.length - 1]!);
+  }
+}
+
+export async function listSubscriptionsPage(
+  env: Env,
+  userId: string,
+  options: { limit: number; cursor?: string | undefined },
+): Promise<SubscriptionRow[]> {
+  const cursor = parseSubscriptionCursor(options.cursor);
+  const limit = Math.max(1, Math.min(options.limit, 101));
+  if (!cursor) {
+    const result = await env.DB.prepare(`SELECT ${SUBSCRIPTION_COLUMNS} FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`)
+      .bind(userId, limit)
+      .all<SubscriptionRow>();
+    return result.results;
+  }
+  // 游标排序字段必须和 ORDER BY 完全一致，避免同一 created_at 下漏读或重复读。
+  const result = await env.DB.prepare(`
+    SELECT ${SUBSCRIPTION_COLUMNS} FROM subscriptions
+    WHERE user_id = ? AND (created_at < ? OR (created_at = ? AND id < ?))
+    ORDER BY created_at DESC, id DESC
+    LIMIT ?
+  `).bind(userId, cursor.createdAt, cursor.createdAt, cursor.id, limit).all<SubscriptionRow>();
   return result.results;
+}
+
+export function subscriptionCursor(row: SubscriptionRow): string {
+  return btoa(JSON.stringify({ createdAt: row.created_at, id: row.id }));
+}
+
+export function parseSubscriptionCursor(value?: string): { createdAt: string; id: string } | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(atob(value)) as unknown;
+    if (!parsed || typeof parsed !== "object") return null;
+    const record = parsed as Record<string, unknown>;
+    if (typeof record["createdAt"] !== "string" || typeof record["id"] !== "string") return null;
+    return { createdAt: record["createdAt"], id: record["id"] };
+  } catch {
+    return null;
+  }
 }
 
 export async function getAsset(env: Env, userId: string, id: string): Promise<AssetRow | null> {

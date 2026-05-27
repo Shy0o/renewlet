@@ -293,6 +293,7 @@ export const MESSAGE_KEYS = [
   "import.error.sourceInvalid",
   "import.error.statusInvalid",
   "import.error.unrecognizedFile",
+  "import.error.wallosTableTooLarge",
   "import.error.workerParseFailed",
   "import.error.workerUnsupported",
   "import.field.renewletDueDate",

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -206,6 +207,24 @@ func TestImportApplyHonorsManualSkipIndex(t *testing.T) {
 	}
 }
 
+func TestImportApplyRejectsMoreThanTwoHundredSubscriptions(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	registerRecordHooks(app)
+	_, token := createRouteTestUser(t, app, "user")
+	prices := make([]int, maxImportApplySubscriptions+1)
+	for index := range prices {
+		prices[index] = index + 1
+	}
+
+	res := serveTestRequest(t, app, http.MethodPost, "/api/app/import/apply", importRequestBodyWithGeneratedSourceIds("skip", "wallos", prices...), token)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected apply over limit to fail, got %d: %s", res.Code, res.Body.String())
+	}
+}
+
 func TestImportPreviewMatchesLowConfidenceWallosByName(t *testing.T) {
 	app := newSchemaTestApp(t)
 	if err := ensureSchema(app); err != nil {
@@ -277,35 +296,7 @@ func importRequestBodyWithReminderDays(conflictMode string, source string, sourc
 func importRequestBodyWithOptions(conflictMode string, source string, sourceID string, confidence string, skipIndexes []int, prices ...int) string {
 	subscriptions := make([]map[string]interface{}, 0, len(prices))
 	for _, price := range prices {
-		subscriptions = append(subscriptions, map[string]interface{}{
-			"name":                         "GitHub",
-			"logo":                         nil,
-			"price":                        price,
-			"currency":                     "USD",
-			"billingCycle":                 "monthly",
-			"customDays":                   nil,
-			"category":                     "developer_tools",
-			"status":                       "active",
-			"paymentMethod":                nil,
-			"startDate":                    "2026-01-01",
-			"nextBillingDate":              "2026-02-01",
-			"autoCalculateNextBillingDate": true,
-			"trialEndDate":                 nil,
-			"website":                      nil,
-			"notes":                        nil,
-			"tags":                         []string{},
-			"reminderDays":                 3,
-			"repeatReminderEnabled":        false,
-			"repeatReminderInterval":       "1h",
-			"repeatReminderWindow":         "72h",
-			"extra": map[string]interface{}{
-				"import": map[string]interface{}{
-					"source":     source,
-					"sourceId":   sourceID,
-					"confidence": confidence,
-				},
-			},
-		})
+		subscriptions = append(subscriptions, importSubscriptionBody(source, sourceID, confidence, price))
 	}
 	body := map[string]interface{}{
 		"conflictMode": conflictMode,
@@ -319,4 +310,52 @@ func importRequestBodyWithOptions(conflictMode string, source string, sourceID s
 	}
 	data, _ := json.Marshal(body)
 	return string(data)
+}
+
+func importRequestBodyWithGeneratedSourceIds(conflictMode string, source string, prices ...int) string {
+	subscriptions := make([]map[string]interface{}, 0, len(prices))
+	for index, price := range prices {
+		subscriptions = append(subscriptions, importSubscriptionBody(source, fmt.Sprintf("%d", index), "high", price))
+	}
+	body := map[string]interface{}{
+		"conflictMode": conflictMode,
+		"payload": map[string]interface{}{
+			"source":        source,
+			"subscriptions": subscriptions,
+		},
+	}
+	data, _ := json.Marshal(body)
+	return string(data)
+}
+
+func importSubscriptionBody(source string, sourceID string, confidence string, price int) map[string]interface{} {
+	return map[string]interface{}{
+		"name":                         "GitHub",
+		"logo":                         nil,
+		"price":                        price,
+		"currency":                     "USD",
+		"billingCycle":                 "monthly",
+		"customDays":                   nil,
+		"category":                     "developer_tools",
+		"status":                       "active",
+		"paymentMethod":                nil,
+		"startDate":                    "2026-01-01",
+		"nextBillingDate":              "2026-02-01",
+		"autoCalculateNextBillingDate": true,
+		"trialEndDate":                 nil,
+		"website":                      nil,
+		"notes":                        nil,
+		"tags":                         []string{},
+		"reminderDays":                 3,
+		"repeatReminderEnabled":        false,
+		"repeatReminderInterval":       "1h",
+		"repeatReminderWindow":         "72h",
+		"extra": map[string]interface{}{
+			"import": map[string]interface{}{
+				"source":     source,
+				"sourceId":   sourceID,
+				"confidence": confidence,
+			},
+		},
+	}
 }

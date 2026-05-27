@@ -13,6 +13,9 @@ import (
 )
 
 const maxImportJSONBodyBytes int64 = 50 << 20
+const maxImportPreviewSubscriptions = 5000
+const maxImportApplySubscriptions = 200
+const importExistingPageSize = 500
 const importWarningLowConfidenceKey = "IMPORT_WARNING_LOW_CONFIDENCE_KEY"
 const importWarningLowConfidenceNameMatched = "IMPORT_WARNING_LOW_CONFIDENCE_NAME_MATCHED"
 
@@ -104,11 +107,11 @@ type importExistingMatches struct {
 }
 
 func (r *importPreviewRequest) Validate(locale appLocale) error {
-	return validateImportPayload(r.Payload, r.ConflictMode, r.SkipIndexes, locale)
+	return validateImportPayload(r.Payload, r.ConflictMode, r.SkipIndexes, maxImportPreviewSubscriptions, locale)
 }
 
 func (r *importApplyRequest) Validate(locale appLocale) error {
-	return validateImportPayload(r.Payload, r.ConflictMode, r.SkipIndexes, locale)
+	return validateImportPayload(r.Payload, r.ConflictMode, r.SkipIndexes, maxImportApplySubscriptions, locale)
 }
 
 func handleImportPreview(app core.App, e *core.RequestEvent) error {
@@ -145,14 +148,14 @@ func handleImportApply(app core.App, e *core.RequestEvent) error {
 	return e.JSON(http.StatusOK, importApplyResponse{OK: true, importPreviewResponse: preview})
 }
 
-func validateImportPayload(payload importPayload, conflictMode string, skipIndexes []int, _ appLocale) error {
+func validateImportPayload(payload importPayload, conflictMode string, skipIndexes []int, maxSubscriptions int, _ appLocale) error {
 	if conflictMode != "replace" && conflictMode != "skip" {
 		return errors.New("IMPORT_CONFLICT_MODE_INVALID")
 	}
 	if payload.Source != "renewlet" && payload.Source != "wallos" {
 		return errors.New("IMPORT_SOURCE_INVALID")
 	}
-	if len(payload.Subscriptions) > 5000 {
+	if len(payload.Subscriptions) > maxSubscriptions {
 		return errors.New("IMPORT_TOO_MANY_SUBSCRIPTIONS")
 	}
 	if _, err := importSkippedIndexSet(skipIndexes, len(payload.Subscriptions)); err != nil {
@@ -179,7 +182,7 @@ func validateImportPayload(payload importPayload, conflictMode string, skipIndex
 }
 
 func previewImportPayload(app core.App, user *core.Record, payload importPayload, conflictMode string, skipIndexes []int) (importPreviewResponse, error) {
-	rows, err := app.FindAllRecords("subscriptions", dbx.HashExp{"user": user.Id})
+	rows, err := listImportExistingSubscriptions(app, user.Id)
 	if err != nil {
 		return importPreviewResponse{}, err
 	}
@@ -257,7 +260,7 @@ func previewImportPayload(app core.App, user *core.Record, payload importPayload
 func applyImportPayload(app core.App, user *core.Record, payload importPayload, conflictMode string, skipIndexes []int) error {
 	// 导入写入包在 PocketBase 事务内完成；任意订阅、settings 或 custom config 失败都不能留下半套迁移数据。
 	return app.RunInTransaction(func(txApp core.App) error {
-		rows, err := txApp.FindAllRecords("subscriptions", dbx.HashExp{"user": user.Id})
+		rows, err := listImportExistingSubscriptions(txApp, user.Id)
 		if err != nil {
 			return err
 		}
@@ -299,6 +302,20 @@ func applyImportPayload(app core.App, user *core.Record, payload importPayload, 
 		}
 		return nil
 	})
+}
+
+func listImportExistingSubscriptions(app core.App, userID string) ([]*core.Record, error) {
+	rows := []*core.Record{}
+	for offset := 0; ; offset += importExistingPageSize {
+		page, err := app.FindRecordsByFilter("subscriptions", "user = {:user}", "-created", importExistingPageSize, offset, dbx.Params{"user": userID})
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, page...)
+		if len(page) < importExistingPageSize {
+			return rows, nil
+		}
+	}
 }
 
 func validateImportSubscription(app core.App, user *core.Record, subscription importSubscription) error {

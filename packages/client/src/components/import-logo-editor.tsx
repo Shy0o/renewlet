@@ -18,6 +18,10 @@ import { cn } from "@/lib/utils";
 const loadImageCropDialog = () => import("@/components/image-crop-dialog");
 const LazyImageCropDialog = lazy(() => loadImageCropDialog().then((mod) => ({ default: mod.ImageCropDialog })));
 
+function CropDialogFallback() {
+  return <div className="fixed inset-0 z-50 bg-background/80" aria-hidden="true" />;
+}
+
 export interface DeferredLogoAsset {
   blob: Blob;
   filename: string;
@@ -236,7 +240,7 @@ export function ImportLogoEditor({ name, value, assetPreviewUrl, onChange }: Imp
       </Popover>
 
       {cropDialogOpen ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<CropDialogFallback />}>
           <LazyImageCropDialog
             open={cropDialogOpen}
             onOpenChange={setCropDialogOpen}

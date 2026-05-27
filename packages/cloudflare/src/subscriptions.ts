@@ -1,5 +1,5 @@
-import { subscriptionCreateBodySchema, subscriptionUpdateBodySchema } from "@renewlet/shared/schemas/subscriptions";
-import { boolToInt, getSubscription, listSubscriptions, newId, nowIso, parseJsonObject, toApiSubscription } from "./db";
+import { subscriptionCreateBodySchema, subscriptionsListQuerySchema, subscriptionUpdateBodySchema } from "@renewlet/shared/schemas/subscriptions";
+import { boolToInt, countSubscriptions, getSubscription, listSubscriptionsPage, newId, nowIso, parseJsonObject, parseSubscriptionCursor, subscriptionCursor, toApiSubscription } from "./db";
 import { HttpError, json, ok, readJson, requestLocale } from "./http";
 import { serverText } from "./server-i18n";
 import { requireAuth } from "./auth";
@@ -7,8 +7,22 @@ import type { Env, SubscriptionRow } from "./types";
 
 export async function readSubscriptions(request: Request, env: Env): Promise<Response> {
   const auth = await requireAuth(request, env);
-  const rows = await listSubscriptions(env, auth.user.id);
-  return json({ subscriptions: rows.map(toApiSubscription) });
+  const url = new URL(request.url);
+  const parsed = subscriptionsListQuerySchema.parse({
+    limit: url.searchParams.get("limit") ?? undefined,
+    cursor: url.searchParams.get("cursor") ?? undefined,
+  });
+  if (parsed.cursor && !parseSubscriptionCursor(parsed.cursor)) {
+    throw new HttpError(400, serverText(requestLocale(request), "common.invalidRequestParameters"), "INVALID_CURSOR");
+  }
+  const rows = await listSubscriptionsPage(env, auth.user.id, { limit: parsed.limit + 1, cursor: parsed.cursor });
+  const pageRows = rows.slice(0, parsed.limit);
+  const nextCursor = rows.length > parsed.limit ? subscriptionCursor(pageRows[pageRows.length - 1]!) : null;
+  return json({
+    subscriptions: pageRows.map(toApiSubscription),
+    nextCursor,
+    total: await countSubscriptions(env, auth.user.id),
+  });
 }
 
 export async function createSubscription(request: Request, env: Env): Promise<Response> {
@@ -20,7 +34,7 @@ export async function createSubscription(request: Request, env: Env): Promise<Re
   await env.DB.prepare(`
     INSERT INTO subscriptions (
       id, user_id, name, logo, price, currency, billing_cycle, custom_days, category, status, payment_method,
-      start_date, next_billing_date, auto_calculate_next_billing_dateial_end_date, website, notes, tags_json,
+      start_date, next_billing_date, auto_calculate_next_billing_date, trial_end_date, website, notes, tags_json,
       reminder_days, repeat_reminder_enabled, repeat_reminder_interval, repeat_reminder_window, extra_json, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(...subscriptionRowValues(row)).run();

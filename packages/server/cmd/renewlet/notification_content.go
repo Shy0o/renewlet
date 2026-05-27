@@ -17,17 +17,23 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
+const notificationSubscriptionPageSize = 500
+
 // listNotificationSubscriptions 读取通知计算所需的订阅投影。
 func listNotificationSubscriptions(app core.App, userID string) ([]notificationSubscription, error) {
-	rows, err := app.FindAllRecords("subscriptions", dbx.HashExp{"user": userID})
-	if err != nil {
-		return nil, err
+	subscriptions := []notificationSubscription{}
+	for offset := 0; ; offset += notificationSubscriptionPageSize {
+		rows, err := app.FindRecordsByFilter("subscriptions", "user = {:user}", "-created", notificationSubscriptionPageSize, offset, dbx.Params{"user": userID})
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			subscriptions = append(subscriptions, notificationSubscriptionFromRecord(row))
+		}
+		if len(rows) < notificationSubscriptionPageSize {
+			return subscriptions, nil
+		}
 	}
-	subscriptions := make([]notificationSubscription, 0, len(rows))
-	for _, row := range rows {
-		subscriptions = append(subscriptions, notificationSubscriptionFromRecord(row))
-	}
-	return subscriptions, nil
 }
 
 func notificationSubscriptionFromRecord(row *core.Record) notificationSubscription {

@@ -914,6 +914,11 @@ msgid "import.error.unrecognizedFile"
 msgstr "Import file is not recognized. Choose a Renewlet v1 export or a Wallos export/backup."
 
 #. js-lingui-explicit-id
+#: src/i18n/descriptors/subscription.ts:222
+msgid "import.error.wallosTableTooLarge"
+msgstr "A Wallos SQLite table has more than 5000 rows. Split the backup before importing."
+
+#. js-lingui-explicit-id
 #: src/i18n/descriptors/subscription.ts:49
 msgid "subscription.section.dates"
 msgstr "Date settings"

@@ -8,10 +8,8 @@ import {
   type ImportPreviewItem,
   type ImportPreviewResponse,
 } from "@/lib/api/schemas/import-export";
-import { isCloudflareRuntime } from "./runtime";
 
 const APPLY_CHUNK_SIZE = 200;
-const APPLY_CHUNK_THRESHOLD = 400;
 
 export const importExportService = {
   async preview(payload: ImportPayload, conflictMode: ImportConflictMode, skipIndexes: readonly number[] = []): Promise<ImportPreviewResponse> {
@@ -31,13 +29,13 @@ export const importExportService = {
     skipIndexes: readonly number[] = [],
     onProgress?: (done: number, total: number) => void,
   ): Promise<ImportApplyResponse> {
-    if (payload.subscriptions.length <= APPLY_CHUNK_THRESHOLD && !isCloudflareRuntime) {
+    if (payload.subscriptions.length <= APPLY_CHUNK_SIZE) {
       const result = await applyImportPayload(payload, conflictMode, skipIndexes);
       onProgress?.(payload.subscriptions.length, payload.subscriptions.length);
       return result;
     }
 
-    // Cloudflare D1 batch 有单请求资源限制；大导入顺序切小包，靠 extra.import 幂等键支持失败后重试收敛。
+    // Docker 与 Cloudflare 共享 200 条 apply 上限；顺序切包靠 extra.import 幂等键支持失败后重试收敛。
     const chunks = chunkSubscriptions(payload.subscriptions, APPLY_CHUNK_SIZE);
     if (chunks.length === 0) {
       return await applyImportPayload(payload, conflictMode);

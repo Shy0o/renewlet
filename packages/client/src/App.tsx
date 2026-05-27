@@ -24,9 +24,26 @@ const ForgotPassword = lazy(() => import("@/pages/forgot-password"));
 const ResetPassword = lazy(() => import("@/pages/reset-password"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
+function RouteFallback() {
+  return (
+    <div className="app-page bg-background">
+      <div className="h-16 border-b border-border bg-card/60" />
+      <main className="app-main mx-auto max-w-7xl">
+        <div className="mb-8 h-10 w-56 rounded-md bg-muted/60" />
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="h-28 rounded-lg border border-border bg-card/60" />
+          ))}
+        </div>
+        <div className="mt-8 h-[55dvh] rounded-lg border border-border bg-card/50" />
+      </main>
+    </div>
+  );
+}
+
 export default function App() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<RouteFallback />}>
       <Routes>
         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/subscriptions" element={<ProtectedRoute><Subscriptions /></ProtectedRoute>} />

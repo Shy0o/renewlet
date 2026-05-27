@@ -25,6 +25,7 @@ const (
 	maxSubscriptionTags          = 100
 	maxSubscriptionTagLength     = 40
 	maxSubscriptionTagsFieldSize = 16 * 1024
+	subscriptionCleanupPageSize  = 500
 )
 
 // ensureSchema 创建/修正 PocketBase collection schema。
@@ -197,21 +198,25 @@ func backfillAutodates(app core.App, names ...string) error {
 }
 
 func cleanupInvalidSubscriptionLogos(app core.App) error {
-	rows, err := app.FindAllRecords("subscriptions")
-	if err != nil {
-		return err
-	}
-	for _, record := range rows {
-		if validateOptionalLogoReference(record.GetString("logo")) == nil {
-			continue
-		}
-		// 破坏性切换只清空不再支持的持久化 Logo 形态；HTTP 外链仍是自托管 HTTP 场景的合法值。
-		record.Set("logo", "")
-		if err := app.SaveNoValidate(record); err != nil {
+	for offset := 0; ; offset += subscriptionCleanupPageSize {
+		rows, err := app.FindRecordsByFilter("subscriptions", "id != ''", "created", subscriptionCleanupPageSize, offset)
+		if err != nil {
 			return err
 		}
+		for _, record := range rows {
+			if validateOptionalLogoReference(record.GetString("logo")) == nil {
+				continue
+			}
+			// 破坏性切换只清空不再支持的持久化 Logo 形态；HTTP 外链仍是自托管 HTTP 场景的合法值。
+			record.Set("logo", "")
+			if err := app.SaveNoValidate(record); err != nil {
+				return err
+			}
+		}
+		if len(rows) < subscriptionCleanupPageSize {
+			return nil
+		}
 	}
-	return nil
 }
 
 func ownerRules(collection *core.Collection) {

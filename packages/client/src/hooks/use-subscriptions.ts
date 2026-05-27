@@ -12,15 +12,50 @@
  * 修改该转换会影响统计折算、表单回填和通知提醒。
  */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { subscriptionService } from "@/services/subscription-service";
 import type { Subscription, SubscriptionDraft } from "@/types/subscription";
 
+const SUBSCRIPTIONS_QUERY_KEY = ["subscriptions"] as const;
+const SUBSCRIPTIONS_LIST_QUERY_KEY = [...SUBSCRIPTIONS_QUERY_KEY, "list"] as const;
+const SUBSCRIPTIONS_INFINITE_QUERY_KEY = [...SUBSCRIPTIONS_QUERY_KEY, "infinite"] as const;
+const SUBSCRIPTIONS_PAGE_QUERY_KEY = [...SUBSCRIPTIONS_QUERY_KEY, "page"] as const;
+
 export function useSubscriptions() {
   return useQuery({
-    queryKey: ["subscriptions"],
+    queryKey: SUBSCRIPTIONS_LIST_QUERY_KEY,
     queryFn: () => subscriptionService.list(),
   });
+}
+
+export function useInfiniteSubscriptions() {
+  const query = useInfiniteQuery({
+    queryKey: SUBSCRIPTIONS_INFINITE_QUERY_KEY,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => subscriptionService.listPage(pageParam),
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  });
+  const subscriptions = useMemo(
+    () => query.data?.pages.flatMap((page) => page.subscriptions) ?? [],
+    [query.data?.pages],
+  );
+  return {
+    ...query,
+    subscriptions,
+    total: query.data?.pages[0]?.total,
+  };
+}
+
+export function useSubscriptionsPage(cursor?: string | null, limit?: number) {
+  return useQuery({
+    queryKey: [...SUBSCRIPTIONS_PAGE_QUERY_KEY, cursor ?? null, limit ?? subscriptionService.pageSize] as const,
+    queryFn: () => subscriptionService.listPage(cursor, limit),
+  });
+}
+
+export function invalidateSubscriptionsQueries(queryClient: QueryClient) {
+  return queryClient.invalidateQueries({ queryKey: SUBSCRIPTIONS_QUERY_KEY });
 }
 
 export function useCreateSubscription() {
@@ -31,7 +66,7 @@ export function useCreateSubscription() {
     },
     onSuccess: () => {
       // 订阅数据会驱动统计、日历和通知预览；写操作后统一让订阅列表成为失效源。
-      queryClient.invalidateQueries({ queryKey: ["subscriptions"] });
+      invalidateSubscriptionsQueries(queryClient);
     },
   });
 }
@@ -43,7 +78,7 @@ export function useUpdateSubscription() {
       return await subscriptionService.update(sub);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["subscriptions"] });
+      invalidateSubscriptionsQueries(queryClient);
     },
   });
 }
@@ -55,7 +90,7 @@ export function useDeleteSubscription() {
       await subscriptionService.delete(id);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["subscriptions"] });
+      invalidateSubscriptionsQueries(queryClient);
     },
   });
 }

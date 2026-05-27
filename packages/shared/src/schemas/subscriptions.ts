@@ -126,8 +126,15 @@ export const apiSubscriptionSchema = z.object({
   updatedAt: z.string().optional(),
 }).strict();
 
+export const subscriptionsListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().trim().min(1).max(512).optional(),
+}).strict();
+
 export const subscriptionsListResponseSchema = z.object({
   subscriptions: z.array(apiSubscriptionSchema),
+  nextCursor: z.string().nullable(),
+  total: z.number().int().nonnegative().optional(),
 }).strict();
 
 export const subscriptionResponseSchema = z.object({
@@ -144,3 +151,4 @@ export type ApiSubscription = z.infer<typeof apiSubscriptionSchema> & {
   repeatReminderInterval: RepeatReminderInterval;
   repeatReminderWindow: RepeatReminderWindow;
 };
+export type SubscriptionsListQuery = z.infer<typeof subscriptionsListQuerySchema>;

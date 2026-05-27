@@ -6,6 +6,7 @@ const IMPORT_MESSAGE_KEYS: Record<string, MessageKey> = {
   BILLING_CYCLE_INVALID: "import.error.billingCycleInvalid",
   IMPORT_CONFIDENCE_INVALID: "import.error.confidenceInvalid",
   IMPORT_ERROR_UNRECOGNIZED_FILE: "import.error.unrecognizedFile",
+  IMPORT_ERROR_WALLOS_TABLE_TOO_LARGE: "import.error.wallosTableTooLarge",
   IMPORT_ERROR_WORKER_PARSE_FAILED: "import.error.workerParseFailed",
   IMPORT_ERROR_WORKER_UNSUPPORTED: "import.error.workerUnsupported",
   IMPORT_KEY_REQUIRED: "import.error.keyRequired",

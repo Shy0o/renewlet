@@ -914,6 +914,11 @@ msgid "import.error.unrecognizedFile"
 msgstr "无法识别导入文件，请选择 Renewlet v1 导出或 Wallos 导出/备份。"
 
 #. js-lingui-explicit-id
+#: src/i18n/descriptors/subscription.ts:222
+msgid "import.error.wallosTableTooLarge"
+msgstr "Wallos SQLite 单表超过 5000 行，请先拆分备份后再导入。"
+
+#. js-lingui-explicit-id
 #: src/i18n/descriptors/subscription.ts:49
 msgid "subscription.section.dates"
 msgstr "日期设置"

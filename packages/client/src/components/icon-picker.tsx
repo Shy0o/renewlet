@@ -34,6 +34,10 @@ const LazyImageCropDialog = lazy(() =>
   loadImageCropDialog().then((mod) => ({ default: mod.ImageCropDialog })),
 );
 
+function CropDialogFallback() {
+  return <div className="fixed inset-0 z-50 bg-background/80" aria-hidden="true" />;
+}
+
 const preloadImageCropDialog = () => {
   void loadImageCropDialog();
 };
@@ -225,7 +229,7 @@ export function IconPicker({
       </div>
 
       {cropDialogOpen ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<CropDialogFallback />}>
           <LazyImageCropDialog
             open={cropDialogOpen}
             onOpenChange={setCropDialogOpen}

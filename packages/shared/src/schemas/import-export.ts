@@ -3,6 +3,8 @@ import { settingsUpdateBodySchema } from "./settings";
 import { customConfigSchema } from "./custom-config";
 import { apiSubscriptionSchema, subscriptionCreateBodySchema } from "./subscriptions";
 
+export const IMPORT_APPLY_SUBSCRIPTION_LIMIT = 200;
+
 export const importConflictModeSchema = z.enum(["replace", "skip"]);
 export type ImportConflictMode = z.infer<typeof importConflictModeSchema>;
 
@@ -37,6 +39,7 @@ export const importPayloadSchema = z.object({
 export type ImportPayload = z.infer<typeof importPayloadSchema>;
 
 export const importSkipIndexesSchema = z.array(z.number().int().nonnegative()).max(5000);
+export const importApplySkipIndexesSchema = z.array(z.number().int().nonnegative()).max(IMPORT_APPLY_SUBSCRIPTION_LIMIT);
 
 export const importPreviewRequestSchema = z.object({
   payload: importPayloadSchema,
@@ -47,9 +50,11 @@ export const importPreviewRequestSchema = z.object({
 export type ImportPreviewRequest = z.infer<typeof importPreviewRequestSchema>;
 
 export const importApplyRequestSchema = z.object({
-  payload: importPayloadSchema,
+  payload: importPayloadSchema.extend({
+    subscriptions: z.array(importSubscriptionSchema).max(IMPORT_APPLY_SUBSCRIPTION_LIMIT),
+  }),
   conflictMode: importConflictModeSchema,
-  skipIndexes: importSkipIndexesSchema.default([]),
+  skipIndexes: importApplySkipIndexesSchema.default([]),
 }).strict();
 export type ImportApplyRequest = z.infer<typeof importApplyRequestSchema>;
 

@@ -5,6 +5,7 @@ import { assertDateOnly } from "@/lib/time/date-only";
 import { translate } from "@/i18n/messages";
 import { parseJsonText } from "./wallos-import";
 import { formatImportMessage } from "./import-message-format";
+import { importApplyRequestSchema, importPayloadSchema } from "@/lib/api/schemas/import-export";
 
 const context = {
   config: DEFAULT_CUSTOM_CONFIG,
@@ -13,6 +14,42 @@ const context = {
 };
 
 describe("wallos import", () => {
+  it("keeps preview large but caps apply requests at 200 subscriptions", () => {
+    const subscription = {
+      name: "Bulk",
+      logo: null,
+      price: 1,
+      currency: "USD",
+      billingCycle: "monthly",
+      customDays: null,
+      category: "productivity",
+      status: "active",
+      paymentMethod: null,
+      startDate: "2026-05-21",
+      nextBillingDate: "2026-06-21",
+      autoCalculateNextBillingDate: true,
+      trialEndDate: null,
+      website: null,
+      notes: null,
+      tags: [],
+      reminderDays: 3,
+      repeatReminderEnabled: false,
+      repeatReminderInterval: "1h",
+      repeatReminderWindow: "72h",
+      extra: { import: { source: "wallos", sourceId: "bulk", confidence: "high" } },
+    };
+    const previewPayload = {
+      source: "wallos",
+      subscriptions: Array.from({ length: 201 }, (_, index) => ({
+        ...subscription,
+        extra: { import: { source: "wallos", sourceId: `bulk-${index}`, confidence: "high" } },
+      })),
+    };
+
+    expect(importPayloadSchema.safeParse(previewPayload).success).toBe(true);
+    expect(importApplyRequestSchema.safeParse({ payload: previewPayload, conflictMode: "skip" }).success).toBe(false);
+  });
+
   it("parses legacy Renewlet bare subscription arrays", async () => {
     const prepared = await parseJsonText(JSON.stringify([
       {

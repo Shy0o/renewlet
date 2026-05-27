@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apiSubscriptionSchema, subscriptionCreateBodySchema } from "./subscriptions";
+import { apiSubscriptionSchema, subscriptionsListResponseSchema, subscriptionCreateBodySchema } from "./subscriptions";
 
 const validSubscriptionCreateBody = {
   name: "Logo Test",
@@ -153,5 +153,17 @@ describe("subscription API schemas", () => {
       customDays: null,
       autoCalculateNextBillingDate: false,
     }).success).toBe(true);
+  });
+
+  it("requires paginated subscription list responses", () => {
+    expect(subscriptionsListResponseSchema.safeParse({
+      subscriptions: [validSubscriptionResponseBody],
+      nextCursor: null,
+      total: 1,
+    }).success).toBe(true);
+
+    expect(subscriptionsListResponseSchema.safeParse({
+      subscriptions: [validSubscriptionResponseBody],
+    }).success).toBe(false);
   });
 });

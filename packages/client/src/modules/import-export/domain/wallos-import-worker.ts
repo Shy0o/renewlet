@@ -23,6 +23,52 @@ type WorkerResponse =
   | { id: number; ok: true; prepared: PreparedImport }
   | { id: number; ok: false; error: string };
 
+const WALLOS_TABLE_PAGE_SIZE = 500;
+const WALLOS_TABLE_MAX_ROWS = 5000;
+class WallosTableTooLargeError extends Error {
+  constructor() {
+    super(IMPORT_MESSAGE_CODES.wallosTableTooLarge);
+  }
+}
+
+const WALLOS_TABLE_COLUMNS = {
+  subscriptions: [
+    "id",
+    "user_id",
+    "name",
+    "price",
+    "currency_id",
+    "currency_code",
+    "currency_symbol",
+    "category_id",
+    "category_name",
+    "payment_method_id",
+    "payment_method_name",
+    "payer_user_id",
+    "payer_user_name",
+    "url",
+    "logo",
+    "start_date",
+    "next_payment",
+    "notes",
+    "cycle",
+    "frequency",
+    "auto_renew",
+    "inactive",
+    "cancellation_date",
+    "cancelation_date",
+    "replacement_subscription_id",
+    "notify",
+    "notify_days_before",
+  ],
+  user: ["id", "name", "username", "email"],
+  currencies: ["id", "code", "symbol"],
+  categories: ["id", "name"],
+  payment_methods: ["id", "name"],
+  household: ["id", "name"],
+} as const;
+type WallosTableName = keyof typeof WALLOS_TABLE_COLUMNS;
+
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
   void (async () => {
@@ -121,15 +167,40 @@ async function readWallosDatabase(bytes: Uint8Array, logoFiles: Map<string, Impo
   }
 }
 
-function selectRows(db: { exec: (sql: string) => Array<{ columns: string[]; values: unknown[][] }> }, table: string): WallosTableRow[] {
+function selectRows(db: { exec: (sql: string) => Array<{ columns: string[]; values: unknown[][] }> }, table: WallosTableName): WallosTableRow[] {
   try {
-    const result = db.exec(`SELECT * FROM ${table}`);
-    const first = result[0];
-    if (!first) return [];
-    return first.values.map((values) => Object.fromEntries(first.columns.map((column, index) => [column, values[index]])));
-  } catch {
+    const availableColumns = selectExistingColumns(db, table);
+    const selectedColumns = WALLOS_TABLE_COLUMNS[table].filter((column) => availableColumns.has(column));
+    if (selectedColumns.length === 0) return [];
+    const columns = selectedColumns.map(quoteSqlIdentifier).join(", ");
+    const rows: WallosTableRow[] = [];
+    for (let offset = 0; offset <= WALLOS_TABLE_MAX_ROWS; offset += WALLOS_TABLE_PAGE_SIZE) {
+      const result = db.exec(`SELECT ${columns} FROM ${quoteSqlIdentifier(table)} LIMIT ${WALLOS_TABLE_PAGE_SIZE} OFFSET ${offset}`);
+      const first = result[0];
+      if (!first) return rows;
+      rows.push(...first.values.map((values) => Object.fromEntries(first.columns.map((column, index) => [column, values[index]]))));
+      if (rows.length > WALLOS_TABLE_MAX_ROWS) throw new WallosTableTooLargeError();
+      if (first.values.length < WALLOS_TABLE_PAGE_SIZE) return rows;
+    }
+    throw new WallosTableTooLargeError();
+  } catch (error) {
+    if (error instanceof WallosTableTooLargeError) throw error;
+    // Wallos 不同版本会缺少可选 lookup 表或列；容量上限之外的 SQL 结构差异降级为空表，保留可导入主订阅。
     return [];
   }
+}
+
+function selectExistingColumns(db: { exec: (sql: string) => Array<{ columns: string[]; values: unknown[][] }> }, table: WallosTableName): Set<string> {
+  const result = db.exec(`PRAGMA table_info(${quoteSqlIdentifier(table)})`);
+  const first = result[0];
+  if (!first) return new Set();
+  const nameIndex = first.columns.indexOf("name");
+  if (nameIndex < 0) return new Set();
+  return new Set(first.values.map((values) => String(values[nameIndex] ?? "")).filter(Boolean));
+}
+
+function quoteSqlIdentifier(value: string): string {
+  return `"${value.replace(/"/g, "\"\"")}"`;
 }
 
 function isZipBytes(bytes: Uint8Array): boolean {

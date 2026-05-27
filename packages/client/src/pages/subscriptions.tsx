@@ -34,7 +34,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useSubscriptions } from '@/hooks/use-subscriptions';
+import { useInfiniteSubscriptions } from '@/hooks/use-subscriptions';
 import { useCustomConfig } from '@/contexts/CustomConfigContext';
 import { useSettings } from '@/hooks/use-settings';
 import { useSubscriptionCrud } from '@/modules/subscriptions/application/use-subscription-crud';
@@ -164,8 +164,8 @@ function SubscriptionGrid({ subscriptions, viewMode, timeZone, onEdit, onDelete 
 
 /** 订阅列表页组件。 */
 const Subscriptions = () => {
-  const subscriptionsQuery = useSubscriptions();
-  const subscriptions = subscriptionsQuery.data ?? EMPTY_SUBSCRIPTIONS;
+  const subscriptionsQuery = useInfiniteSubscriptions();
+  const subscriptions = subscriptionsQuery.subscriptions ?? EMPTY_SUBSCRIPTIONS;
   const settingsQuery = useSettings();
   const timeZone = settingsQuery.data?.timezone ?? "UTC";
   const defaultCurrency = settingsQuery.data?.defaultCurrency ?? "CNY";
@@ -503,13 +503,28 @@ const Subscriptions = () => {
             )}
           </div>
         ) : (
-          <SubscriptionGrid
-            subscriptions={filteredSubscriptions}
-            viewMode={viewMode}
-            timeZone={timeZone}
-            onEdit={handleEditSubscription}
-            onDelete={handleDeleteSubscription}
-          />
+          <>
+            <SubscriptionGrid
+              subscriptions={filteredSubscriptions}
+              viewMode={viewMode}
+              timeZone={timeZone}
+              onEdit={handleEditSubscription}
+              onDelete={handleDeleteSubscription}
+            />
+            {subscriptionsQuery.hasNextPage && (
+              <div className="mt-6 flex justify-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void subscriptionsQuery.fetchNextPage()}
+                  disabled={subscriptionsQuery.isFetchingNextPage}
+                  className="min-w-32 border-border"
+                >
+                  {subscriptionsQuery.isFetchingNextPage ? t("common.loading") : t("notification.loadMore")}
+                </Button>
+              </div>
+            )}
+          </>
         )}
       </main>
 

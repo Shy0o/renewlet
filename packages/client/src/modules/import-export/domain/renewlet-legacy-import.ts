@@ -204,10 +204,16 @@ function normalizeName(value: unknown): string {
 }
 
 function normalizePrice(value: unknown, warnings: string[]): number {
-  const numberValue = typeof value === "number" ? value : Number(value);
+  const numberValue = legacyPriceNumber(value);
   if (Number.isFinite(numberValue) && numberValue >= 0) return numberValue;
-  warnings.push(IMPORT_MESSAGE_CODES.renewletLegacyPriceDefaulted);
+  warnings.push(importMessage(IMPORT_MESSAGE_CODES.renewletLegacyPriceDefaulted));
   return 0;
+}
+
+function legacyPriceNumber(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim() !== "") return Number(value);
+  return Number.NaN;
 }
 
 function normalizeCurrency(value: unknown, warnings: string[]): string {

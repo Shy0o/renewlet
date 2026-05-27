@@ -1,6 +1,7 @@
 import {
   importApplyRequestSchema,
   importApplyResponseSchema,
+  IMPORT_APPLY_SUBSCRIPTION_LIMIT,
   importPreviewRequestSchema,
   importPreviewResponseSchema,
   type ImportConflictMode,
@@ -13,7 +14,7 @@ import { appSettingsSchema } from "@renewlet/shared/schemas/settings";
 import { customConfigSchema } from "@renewlet/shared/schemas/custom-config";
 import { cleanBuiltInIconSourceSettingsPatch, mergeBuiltInIconSourceSettings } from "@renewlet/shared/built-in-icons";
 import { getSettings, listSubscriptions, newId, nowIso, parseJsonObject } from "./db";
-import { requestLocale, json, readJsonWithLimit, HttpError } from "./http";
+import { requestLocale, json, readJsonWithLimit, HttpError, type AppLocale } from "./http";
 import { serverText } from "./server-i18n";
 import { requireAuth } from "./auth";
 import { subscriptionRowValues, toSubscriptionRow } from "./subscriptions";
@@ -54,6 +55,7 @@ export async function applyImport(request: Request, env: Env): Promise<Response>
   const auth = await requireAuth(request, env);
   // apply 必须重新解析和预览请求体，不能信任浏览器上一轮 preview 的 action 结果。
   const body = await readJsonWithLimit(request, importApplyRequestSchema, locale, IMPORT_JSON_LIMIT_BYTES);
+  assertApplyPayloadSize(body.payload.subscriptions.length, locale);
   // 导入只在当前登录用户范围内查重；payload 里的来源用户仅用于 extra.import 幂等键，不能变成 owner。
   assertValidSkipIndexes(body.skipIndexes, body.payload.subscriptions.length, locale);
   const existing = await listSubscriptions(env, auth.user.id);
@@ -137,6 +139,12 @@ export async function applyImport(request: Request, env: Env): Promise<Response>
     await env.DB.batch(statements);
   }
   return json(importApplyResponseSchema.parse({ ok: true, ...preview }));
+}
+
+function assertApplyPayloadSize(count: number, locale: AppLocale): void {
+  if (count > IMPORT_APPLY_SUBSCRIPTION_LIMIT) {
+    throw new HttpError(400, serverText(locale, "import.invalid"), "IMPORT_TOO_MANY_SUBSCRIPTIONS");
+  }
 }
 
 type PreviewResult = {

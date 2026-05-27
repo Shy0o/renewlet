@@ -20,12 +20,26 @@ import {
   type SubscriptionDraft,
 } from "@/types/subscription";
 
+const SUBSCRIPTION_PAGE_SIZE = 50;
+const SUBSCRIPTION_AGGREGATE_LIMIT = 5000;
+
+export interface SubscriptionPage {
+  subscriptions: Subscription[];
+  nextCursor: string | null;
+  total?: number | undefined;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function optionalNonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
+function normalizeSubscriptionPageLimit(value: number): number {
+  if (!Number.isFinite(value)) return SUBSCRIPTION_PAGE_SIZE;
+  return Math.max(1, Math.min(Math.trunc(value), 100));
 }
 
 function normalizeRepeatReminderInterval(value: unknown): RepeatReminderInterval {
@@ -70,6 +84,7 @@ function normalizeSubscriptionRecord(row: unknown): unknown {
   if (createdAt !== undefined) normalized["createdAt"] = createdAt;
   const updatedAt = optionalNonEmptyString(row["updatedAt"]) ?? optionalNonEmptyString(row["updated"]);
   if (updatedAt !== undefined) normalized["updatedAt"] = updatedAt;
+  if (isRecord(row["extra"])) normalized["extra"] = row["extra"];
 
   return normalized;
 }
@@ -134,18 +149,43 @@ export function toSubscriptionWritePayload(sub: SubscriptionDraft | Subscription
 }
 
 export const subscriptionService = {
-  async list(): Promise<Subscription[]> {
+  pageSize: SUBSCRIPTION_PAGE_SIZE,
+
+  async listPage(cursor?: string | null, limit = SUBSCRIPTION_PAGE_SIZE): Promise<SubscriptionPage> {
     const userId = getCurrentUserId();
-    if (!userId) return [];
+    if (!userId) return { subscriptions: [], nextCursor: null, total: 0 };
+    const pageSize = normalizeSubscriptionPageLimit(limit);
     if (isCloudflareRuntime) {
-      const data = await apiFetch("/api/app/subscriptions", subscriptionsListResponseSchema);
-      return data.subscriptions.map(fromApiSubscription);
+      const params = new URLSearchParams({ limit: String(pageSize) });
+      if (cursor) params.set("cursor", cursor);
+      const data = await apiFetch(`/api/app/subscriptions?${params.toString()}`, subscriptionsListResponseSchema);
+      return {
+        subscriptions: data.subscriptions.map(fromApiSubscription),
+        nextCursor: data.nextCursor,
+        total: data.total,
+      };
     }
-    const rows = await pb.collection("subscriptions").getFullList<ApiSubscription>({
+    const page = Math.max(1, cursor ? Number.parseInt(cursor, 10) : 1);
+    const result = await pb.collection("subscriptions").getList<ApiSubscription>(page, pageSize, {
       filter: `user = "${userId}"`,
       sort: "-created",
     });
-    return rows.map(fromApiSubscription);
+    return {
+      subscriptions: result.items.map(fromApiSubscription),
+      nextCursor: page < result.totalPages ? String(page + 1) : null,
+      total: result.totalItems,
+    };
+  },
+
+  async list(): Promise<Subscription[]> {
+    const out: Subscription[] = [];
+    let cursor: string | null | undefined = null;
+    for (;;) {
+      const page = await this.listPage(cursor, SUBSCRIPTION_PAGE_SIZE);
+      out.push(...page.subscriptions);
+      if (!page.nextCursor || out.length >= SUBSCRIPTION_AGGREGATE_LIMIT) return out.slice(0, SUBSCRIPTION_AGGREGATE_LIMIT);
+      cursor = page.nextCursor;
+    }
   },
 
   async create(sub: SubscriptionDraft): Promise<Subscription> {

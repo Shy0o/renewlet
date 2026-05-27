@@ -16,6 +16,9 @@ import { requireAuth } from "./auth";
 import { notificationSmtpConfig, sendSmtpEmail } from "./smtp";
 import type { Env, NotificationJobRow } from "./types";
 
+const CRON_USER_PAGE_SIZE = 50;
+const CRON_USER_CONCURRENCY = 5;
+
 type Channel = ApiAppSettings["enabledChannels"][number];
 
 interface NotificationMessage {
@@ -80,9 +83,28 @@ export async function notificationHistory(request: Request, env: Env): Promise<R
 }
 
 export async function runScheduledNotifications(env: Env): Promise<void> {
-  const users = await env.DB.prepare("SELECT id FROM users WHERE banned = 0").all<{ id: string }>();
-  // 单个用户通知失败不能阻断其它用户；失败详情落到 notification_jobs 供 UI 查看。
-  await Promise.all(users.results.map((user) => runScheduledForUser(env, user.id).catch(() => undefined)));
+  for (let offset = 0; ; offset += CRON_USER_PAGE_SIZE) {
+    const users = await env.DB.prepare("SELECT id FROM users WHERE banned = 0 ORDER BY id LIMIT ? OFFSET ?")
+      .bind(CRON_USER_PAGE_SIZE, offset)
+      .all<{ id: string }>();
+    // Cron 运行在 Worker 平台限额内；分页加固定并发避免一次 tick 把 D1/通知 provider 打满。
+    await runBounded(users.results, CRON_USER_CONCURRENCY, (user) => runScheduledForUser(env, user.id).catch(() => undefined));
+    if (users.results.length < CRON_USER_PAGE_SIZE) break;
+  }
+}
+
+async function runBounded<T>(items: T[], concurrency: number, task: (item: T) => Promise<void>): Promise<void> {
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    for (;;) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const item = items[index];
+      if (item === undefined) return;
+      await task(item);
+    }
+  });
+  await Promise.all(workers);
 }
 
 async function runScheduledForUser(env: Env, userId: string): Promise<void> {
