@@ -57,8 +57,6 @@ jobs:
       contents: read
       packages: write
     runs-on: ubuntu-latest
-    outputs:
-      image-tags: ${{ steps.tags.outputs.tags }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.2
