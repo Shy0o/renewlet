@@ -106,16 +106,28 @@ function areJsonSnapshotsEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function createDraftSettingsFromRemote(remoteSettings: AppSettings, themeMode: ThemeMode): AppSettings {
-  if (!readAppearancePendingFromStorage()) return remoteSettings;
+function normalizeAccountRecipientEmail(accountEmail: string | null): string {
+  const email = (accountEmail ?? "").trim();
+  return email && email.includes("@") ? email : "";
+}
+
+function createDraftSettingsFromRemote(remoteSettings: AppSettings, themeMode: ThemeMode, accountEmail: string | null): AppSettings {
+  const recipientEmail = remoteSettings.recipientEmail.trim()
+    ? remoteSettings.recipientEmail
+    : normalizeAccountRecipientEmail(accountEmail);
+  const baseSettings = recipientEmail && recipientEmail !== remoteSettings.recipientEmail
+    ? { ...remoteSettings, recipientEmail }
+    : remoteSettings;
+
+  if (!readAppearancePendingFromStorage()) return baseSettings;
   // 外观预览先写 localStorage，远端刷新时要保留未保存预览，避免用户刚调好的主题被服务器旧值闪回。
   const storedVariant = readThemeVariantFromStorage();
   const storedCustomColor = readCustomThemeColorFromStorageOrNull();
   return {
-    ...remoteSettings,
+    ...baseSettings,
     themeMode,
-    themeVariant: storedVariant ?? remoteSettings.themeVariant,
-    themeCustomColor: storedCustomColor ?? remoteSettings.themeCustomColor,
+    themeVariant: storedVariant ?? baseSettings.themeVariant,
+    themeCustomColor: storedCustomColor ?? baseSettings.themeCustomColor,
   };
 }
 
@@ -213,7 +225,7 @@ export function useSettingsFormController(): SettingsFormController {
   const notificationTest = useNotificationTest(settings);
   const notificationHistory = useNotificationHistory();
   const { refetch: refetchNotificationHistory } = notificationHistory;
-  const hasAutoFilledRecipientEmailRef = useRef(false);
+  const hasResolvedDefaultRecipientEmailRef = useRef(false);
   const settingsDirtyRef = useRef(false);
   const customConfigDirtyRef = useRef(false);
 
@@ -243,33 +255,32 @@ export function useSettingsFormController(): SettingsFormController {
   }, [customConfigDirty]);
 
   useEffect(() => {
-    // 为什么等待远端初始化后再回填邮箱：避免默认邮箱覆盖数据库里已有的收件人配置。
-    if (hasAutoFilledRecipientEmailRef.current) return;
-    if (!hasInitializedFromRemote) return;
-    const email = (accountEmail ?? "").trim();
-    if (!email || !email.includes("@")) return;
-
-    setSettings((prev) => {
-      hasAutoFilledRecipientEmailRef.current = true;
-      if (prev.recipientEmail.trim()) return prev;
-      return { ...prev, recipientEmail: email };
-    });
-  }, [accountEmail, hasInitializedFromRemote]);
-
-  useEffect(() => {
     if (!remoteSettings) return;
-    const nextDraft = createDraftSettingsFromRemote(remoteSettings, theme);
+    // 收件人邮箱默认值必须和远端 settings 同步在同一条 effect 里生成，避免 Cloudflare session 先恢复时被下一轮远端草稿覆盖。
+    const shouldDefaultRecipientEmail = !hasResolvedDefaultRecipientEmailRef.current;
+    const nextDraft = createDraftSettingsFromRemote(
+      remoteSettings,
+      theme,
+      shouldDefaultRecipientEmail ? accountEmail : null,
+    );
+    const hasResolvedRecipientEmail = Boolean(nextDraft.recipientEmail.trim());
     if (!hasInitializedFromRemote) {
       setSavedSettings(remoteSettings);
       setSettings(nextDraft);
+      if (hasResolvedRecipientEmail) hasResolvedDefaultRecipientEmailRef.current = true;
       setHasInitializedFromRemote(true);
       return;
     }
 
     setSavedSettings(remoteSettings);
     // 只有本地草稿未脏时才用远端刷新覆盖，避免 React Query 背景刷新吞掉用户未保存编辑。
-    if (!settingsDirtyRef.current) setSettings(nextDraft);
-  }, [hasInitializedFromRemote, remoteSettings, theme]);
+    if (!settingsDirtyRef.current) {
+      setSettings(nextDraft);
+      if (hasResolvedRecipientEmail) hasResolvedDefaultRecipientEmailRef.current = true;
+    } else if (remoteSettings.recipientEmail.trim()) {
+      hasResolvedDefaultRecipientEmailRef.current = true;
+    }
+  }, [accountEmail, hasInitializedFromRemote, remoteSettings, theme]);
 
   useEffect(() => {
     const normalized = normalizeCustomConfig(persistedCustomConfig);

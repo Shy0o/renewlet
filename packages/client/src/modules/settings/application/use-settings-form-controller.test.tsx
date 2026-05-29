@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_CUSTOM_CONFIG, type CustomConfig } from "@/types/config";
 import { DEFAULT_SETTINGS, type AppSettings } from "@/types/subscription";
@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   testConnection: vi.fn(),
   refetchNotificationHistory: vi.fn(),
   isCloudflareRuntime: false,
+  accountIdentity: { email: "alice@example.com" as string | null, role: "admin" },
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
@@ -108,10 +109,7 @@ vi.mock("@/i18n/I18nProvider", () => {
 });
 
 vi.mock("./use-account-email", () => ({
-  useAccountIdentity: () => ({
-    email: "alice@example.com",
-    role: "admin",
-  }),
+  useAccountIdentity: () => mocks.accountIdentity,
 }));
 
 vi.mock("./use-notification-test", () => ({
@@ -162,6 +160,7 @@ describe("useSettingsFormController", () => {
     mocks.remoteSettings = BASE_SETTINGS;
     mocks.customConfig = DEFAULT_CUSTOM_CONFIG;
     mocks.isCloudflareRuntime = false;
+    mocks.accountIdentity = { email: "alice@example.com", role: "admin" };
     mocks.updateSettingsMutateAsync.mockImplementation(async (settings: AppSettings) => settings);
     mocks.saveConfig.mockImplementation(async (config: CustomConfig) => config);
     mocks.refreshRates.mockResolvedValue(undefined);
@@ -188,6 +187,84 @@ describe("useSettingsFormController", () => {
     const { result } = renderHook(() => useSettingsFormController());
 
     expect(result.current.canAccessPocketBaseAdmin).toBe(false);
+  });
+
+  it("prefills an empty recipient email from the current account email", async () => {
+    mocks.remoteSettings = {
+      ...BASE_SETTINGS,
+      recipientEmail: "",
+    };
+
+    const { result } = renderHook(() => useSettingsFormController());
+
+    await waitFor(() => {
+      expect(result.current.settings.recipientEmail).toBe("alice@example.com");
+    });
+    expect(result.current.hasUnsavedChanges).toBe(true);
+  });
+
+  it("keeps an existing recipient email from remote settings", async () => {
+    mocks.remoteSettings = {
+      ...BASE_SETTINGS,
+      recipientEmail: "billing@example.com",
+    };
+
+    const { result } = renderHook(() => useSettingsFormController());
+
+    await waitFor(() => {
+      expect(result.current.settings.recipientEmail).toBe("billing@example.com");
+    });
+    expect(result.current.hasUnsavedChanges).toBe(false);
+  });
+
+  it("prefills the recipient email when the account email arrives after settings", async () => {
+    mocks.remoteSettings = {
+      ...BASE_SETTINGS,
+      recipientEmail: "",
+    };
+    mocks.accountIdentity = { email: null, role: "admin" };
+    const { result, rerender } = renderHook(() => useSettingsFormController());
+
+    expect(result.current.settings.recipientEmail).toBe("");
+
+    act(() => {
+      mocks.accountIdentity = { email: "late@example.com", role: "admin" };
+      rerender();
+    });
+
+    await waitFor(() => {
+      expect(result.current.settings.recipientEmail).toBe("late@example.com");
+    });
+    expect(result.current.hasUnsavedChanges).toBe(true);
+  });
+
+  it("does not refill after the user clears the default recipient email", async () => {
+    mocks.remoteSettings = {
+      ...BASE_SETTINGS,
+      recipientEmail: "",
+    };
+    const { result, rerender } = renderHook(() => useSettingsFormController());
+
+    await waitFor(() => {
+      expect(result.current.settings.recipientEmail).toBe("alice@example.com");
+    });
+
+    act(() => {
+      result.current.updateSetting("recipientEmail", "");
+    });
+
+    expect(result.current.settings.recipientEmail).toBe("");
+    expect(result.current.hasUnsavedChanges).toBe(false);
+
+    act(() => {
+      mocks.remoteSettings = {
+        ...BASE_SETTINGS,
+        recipientEmail: "",
+      };
+      rerender();
+    });
+
+    expect(result.current.settings.recipientEmail).toBe("");
   });
 
   it("saves draft settings and refreshes rates only after the provider is saved", async () => {
