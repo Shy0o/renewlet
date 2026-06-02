@@ -105,7 +105,6 @@ export type FeatureCard = {
   icon: LucideIcon
   title: LocalizedText
   body: LocalizedText
-  image: string
   imageAlt: LocalizedText
   stats: Array<{ label: LocalizedText; value: string }>
 }
@@ -119,7 +118,6 @@ export const featureCards: FeatureCard[] = [
       zh: '名称、Logo、价格、币种、周期、续费日、状态、分类、付款方式、标签、网站和备注都能放在同一张账里。',
       en: 'Track name, logo, price, currency, cycle, renewal date, status, category, payment method, tags, website, and notes in one ledger.',
     },
-    image: '/assets/renewlet/images/subscriptions-zh.png',
     imageAlt: {
       zh: 'Renewlet 订阅清单页面',
       en: 'Renewlet subscriptions page',
@@ -137,7 +135,6 @@ export const featureCards: FeatureCard[] = [
       zh: '按用户自己的时区和提醒时间生成任务，支持提前天数、重复提醒、发送历史和失败重试。',
       en: 'Schedule reminders with the user timezone and local reminder time, including advance days, repeat reminders, send history, and retry handling.',
     },
-    image: '/assets/renewlet/images/notifications-zh.png',
     imageAlt: {
       zh: 'Renewlet 通知设置页面',
       en: 'Renewlet notification settings page',
@@ -155,7 +152,6 @@ export const featureCards: FeatureCard[] = [
       zh: '全局私有 ICS Feed 和单订阅 Feed 都可以复制、下载或用 webcal 唤起系统日历。',
       en: 'Copy, download, or open private global and per-subscription ICS feeds with webcal-compatible calendar apps.',
     },
-    image: '/assets/renewlet/images/calendar-zh.png',
     imageAlt: {
       zh: 'Renewlet 续费日历页面',
       en: 'Renewlet renewal calendar page',
@@ -173,7 +169,6 @@ export const featureCards: FeatureCard[] = [
       zh: '月度/年度成本、预算使用、分类占比、付款方式占比和多币种换算都按当前订阅实时汇总。',
       en: 'Monthly and yearly cost, budget usage, category share, payment method share, and multi-currency conversion are summarized from your current subscriptions.',
     },
-    image: '/assets/renewlet/images/statistics-zh.png',
     imageAlt: {
       zh: 'Renewlet 统计分析页面',
       en: 'Renewlet statistics page',
@@ -191,7 +186,6 @@ export const featureCards: FeatureCard[] = [
       zh: 'React 前端、Go/PocketBase 后端、SQLite 数据和静态资源可以跑在单容器里，也能部署到 Cloudflare Workers + D1 + R2 + Cron。',
       en: 'Run the React app, Go/PocketBase backend, SQLite data, and static assets in one container, or deploy with Cloudflare Workers, D1, R2, and Cron.',
     },
-    image: '/assets/renewlet/images/dashboard-zh.png',
     imageAlt: {
       zh: 'Renewlet 仪表盘页面',
       en: 'Renewlet dashboard page',

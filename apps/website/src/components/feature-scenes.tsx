@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 
 import type { Locale } from '../content/site'
+import { responsiveScreenshotAsset, screenshotName, type ScreenshotAsset } from '../lib/renewlet-image-assets'
 
 type FeatureSceneProps = {
   locale: Locale
@@ -19,65 +20,18 @@ type FeatureSceneProps = {
 
 type SceneKey = 'subscriptions' | 'reminders' | 'calendar' | 'statistics' | 'hosting'
 
-type ScreenshotAsset = {
-  avif: string
-  fallback: string
-  height: number
-  png: string
-  sizes: string
-  webp: string
-  width: number
-}
-
-const imageBase = `${import.meta.env.BASE_URL}assets/renewlet/images/`
-// 这些 sizes 对应卡片视觉区的真实显示宽度；乱放大只会让 Retina 用户下载过量截图。
-const screenshotSizes = '(max-width: 768px) 88vw, 520px'
-const wideScreenshotSizes = '(max-width: 768px) 88vw, 680px'
-const phoneScreenshotSizes = '174px'
-
-function imageSuffix(locale: Locale) {
-  return locale === 'en' ? 'en' : 'zh'
-}
-
-// 资源命名由截图脚本生成：<页面>-<语言>-1400/2800，组件不要硬编码中文截图。
-function desktopAsset(name: string, sizes = screenshotSizes): ScreenshotAsset {
-  return {
-    avif: `${imageBase}${name}-1400.avif 1400w, ${imageBase}${name}-2800.avif 2800w`,
-    webp: `${imageBase}${name}-1400.webp 1400w, ${imageBase}${name}-2800.webp 2800w`,
-    png: `${imageBase}${name}.png 1400w, ${imageBase}${name}-2x.png 2800w`,
-    fallback: `${imageBase}${name}.png`,
-    width: 1400,
-    height: 900,
-    sizes,
-  }
-}
-
-function phoneAsset(name: string): ScreenshotAsset {
-  return {
-    avif: `${imageBase}${name}-430.avif 430w, ${imageBase}${name}-860.avif 860w`,
-    webp: `${imageBase}${name}-430.webp 430w, ${imageBase}${name}-860.webp 860w`,
-    png: `${imageBase}${name}.png 430w, ${imageBase}${name}-2x.png 860w`,
-    fallback: `${imageBase}${name}.png`,
-    width: 430,
-    height: 932,
-    sizes: phoneScreenshotSizes,
-  }
-}
-
 const images = {
   logo: `${import.meta.env.BASE_URL}assets/renewlet/logo.svg`,
 }
 
 // 官网语言切换时，所有可见产品截图都必须同步切换，避免英文页面混入中文 UI。
 function localizedImages(locale: Locale) {
-  const suffix = imageSuffix(locale)
-
   return {
-    subscriptions: desktopAsset(`subscriptions-${suffix}`),
-    reminders: phoneAsset(`notifications-h5-${suffix}`),
-    calendar: desktopAsset(`calendar-${suffix}`),
-    statistics: desktopAsset(`statistics-${suffix}`, wideScreenshotSizes),
-    dashboard: desktopAsset(`dashboard-${suffix}`),
+    subscriptions: responsiveScreenshotAsset(screenshotName('subscriptions', locale)),
+    reminders: responsiveScreenshotAsset(screenshotName('notifications-h5', locale), 'featurePhone'),
+    calendar: responsiveScreenshotAsset(screenshotName('calendar', locale)),
+    statistics: responsiveScreenshotAsset(screenshotName('statistics', locale), 'featureWide'),
+    dashboard: responsiveScreenshotAsset(screenshotName('dashboard', locale)),
   }
 }
 

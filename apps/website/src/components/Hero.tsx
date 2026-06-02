@@ -3,6 +3,7 @@ import { ArrowDown } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 import { copy, text, type Locale } from '../content/site'
+import { responsiveScreenshotAsset, screenshotName } from '../lib/renewlet-image-assets'
 import { GridPattern } from './icons'
 import { GlowButton } from './ui/GlowButton'
 
@@ -11,21 +12,10 @@ type HeroProps = {
   onDeployClick: () => void
 }
 
-const basePath = `${import.meta.env.BASE_URL}assets/renewlet/images/`
-
 // Hero 截图必须跟随官网语言切换，并通过 BASE_URL 兼容 GitHub Pages 子路径。
 function dashboardImage(locale: Locale) {
-  const suffix = locale === 'en' ? 'en' : 'zh'
-  const name = `dashboard-${suffix}`
-
-  return {
-    avif: `${basePath}${name}-1400.avif 1400w, ${basePath}${name}-2800.avif 2800w`,
-    webp: `${basePath}${name}-1400.webp 1400w, ${basePath}${name}-2800.webp 2800w`,
-    png: `${basePath}${name}.png 1400w, ${basePath}${name}-2x.png 2800w`,
-    fallback: `${basePath}${name}.png`,
-  }
+  return responsiveScreenshotAsset(screenshotName('dashboard', locale), 'heroDashboard')
 }
-const dashboardSizes = '(max-width: 768px) 100vw, (max-width: 1200px) 90vw, 1120px'
 const dashboardVariants = {
   show: {
     rotateX: 0,
@@ -117,18 +107,18 @@ export function Hero({ locale, onDeployClick }: HeroProps) {
               </div>
               <div className="rounded-md bg-zinc-950 ring-1 ring-white/10 lg:rounded-2xl">
                 <picture data-responsive-image="hero-dashboard">
-                  <source sizes={dashboardSizes} srcSet={image.avif} type="image/avif" />
-                  <source sizes={dashboardSizes} srcSet={image.webp} type="image/webp" />
+                  <source sizes={image.sizes} srcSet={image.avif} type="image/avif" />
+                  <source sizes={image.sizes} srcSet={image.webp} type="image/webp" />
                   <img
                     alt={text(copy.hero.imageAlt, locale)}
                     className="block h-auto w-full rounded-md lg:rounded-2xl"
                     decoding="async"
                     fetchPriority="high"
-                    height={900}
-                    sizes={dashboardSizes}
+                    height={image.height}
+                    sizes={image.sizes}
                     src={image.fallback}
                     srcSet={image.png}
-                    width={1400}
+                    width={image.width}
                   />
                 </picture>
               </div>

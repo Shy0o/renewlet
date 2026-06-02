@@ -1,0 +1,152 @@
+{
+  "assetBase": "assets/renewlet/images/",
+  "readmeBase": "docs/screenshots/",
+  "websiteOutputDir": "public/assets/renewlet/images",
+  "readmeOutputDir": "docs/screenshots",
+  "locales": [
+    {
+      "suffix": "zh",
+      "appLocale": "zh-CN",
+      "browserLocale": "zh-CN",
+      "login": {
+        "email": "邮箱",
+        "password": "密码",
+        "submit": "登录"
+      }
+    },
+    {
+      "suffix": "en",
+      "appLocale": "en-US",
+      "browserLocale": "en-US",
+      "login": {
+        "email": "Email",
+        "password": "Password",
+        "submit": "Log in"
+      }
+    }
+  ],
+  "viewports": {
+    "desktop": {
+      "width": 1400,
+      "height": 900,
+      "retinaScale": 2,
+      "websiteWidths": [1400, 2800],
+      "readmePng": true
+    },
+    "mobile": {
+      "width": 430,
+      "height": 932,
+      "retinaScale": 2,
+      "websiteWidths": [430, 860],
+      "readmePng": true
+    }
+  },
+  "sizes": {
+    "heroDashboard": "(max-width: 768px) 100vw, (max-width: 1200px) 90vw, 1120px",
+    "featureDesktop": "(max-width: 768px) 88vw, 520px",
+    "featureWide": "(max-width: 768px) 88vw, 680px",
+    "featurePhone": "174px"
+  },
+  "captures": [
+    {
+      "key": "dashboard",
+      "viewport": "desktop",
+      "path": "/",
+      "waitFor": {
+        "zh": "月度支出",
+        "en": "Monthly spend"
+      },
+      "website": true,
+      "readme": true,
+      "hero": true
+    },
+    {
+      "key": "subscriptions",
+      "viewport": "desktop",
+      "path": "/subscriptions",
+      "waitFor": {
+        "zh": "Linear Business",
+        "en": "Linear Business"
+      },
+      "website": true,
+      "readme": true,
+      "featureScene": "subscriptions"
+    },
+    {
+      "key": "calendar",
+      "viewport": "desktop",
+      "path": "/calendar",
+      "waitFor": {
+        "zh": "续费日历",
+        "en": "Renewal calendar"
+      },
+      "website": true,
+      "readme": true,
+      "featureScene": "calendar"
+    },
+    {
+      "key": "statistics",
+      "viewport": "desktop",
+      "path": "/statistics",
+      "waitFor": {
+        "zh": "统计分析",
+        "en": "Statistics"
+      },
+      "website": true,
+      "readme": true,
+      "featureScene": "statistics",
+      "sizesKey": "featureWide"
+    },
+    {
+      "key": "notifications",
+      "viewport": "desktop",
+      "path": "/settings",
+      "waitFor": {
+        "zh": "通知设置",
+        "en": "Notifications"
+      },
+      "scrollToHeading": {
+        "zh": "通知设置",
+        "en": "Notifications"
+      },
+      "website": true,
+      "readme": true
+    },
+    {
+      "key": "subscriptions-h5",
+      "viewport": "mobile",
+      "path": "/subscriptions",
+      "waitFor": {
+        "zh": "Linear Business",
+        "en": "Linear Business"
+      },
+      "website": true,
+      "readme": true
+    },
+    {
+      "key": "notifications-h5",
+      "viewport": "mobile",
+      "path": "/settings",
+      "waitFor": {
+        "zh": "通知设置",
+        "en": "Notifications"
+      },
+      "scrollToText": {
+        "zh": "SMTP 服务器",
+        "en": "SMTP server"
+      },
+      "website": true,
+      "readme": true,
+      "featureScene": "reminders",
+      "sizesKey": "featurePhone"
+    }
+  ],
+  "visualSnapshots": [
+    "apps/website/tests/__screenshots__/local-desktop/renewlet-feature-card-5-desktop.png",
+    "apps/website/tests/__screenshots__/local-mobile/renewlet-feature-card-5-mobile.png",
+    "apps/website/tests/__screenshots__/local-desktop/renewlet-hero-en-desktop.png",
+    "apps/website/tests/__screenshots__/local-mobile/renewlet-hero-en-mobile.png",
+    "apps/website/tests/__screenshots__/local-desktop/renewlet-features-en-desktop.png",
+    "apps/website/tests/__screenshots__/local-mobile/renewlet-features-en-mobile.png"
+  ]
+}

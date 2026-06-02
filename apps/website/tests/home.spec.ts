@@ -1,21 +1,45 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
+import {
+  renewletImageManifest,
+  screenshotName,
+  screenshotViewport,
+  type ScreenshotKey,
+} from '../src/lib/renewlet-image-assets'
+
+const dashboardViewport = screenshotViewport('dashboard')
+const dashboardRetinaWidth = dashboardViewport.websiteWidths[1]
+const desktopViewport = {
+  width: renewletImageManifest.viewports.desktop.width,
+  height: renewletImageManifest.viewports.desktop.height,
+}
+const featureScreenshotKeys: ScreenshotKey[] = ['subscriptions', 'calendar', 'statistics', 'dashboard']
+
+function retinaName(key: ScreenshotKey, suffix: 'zh' | 'en') {
+  return screenshotName(key, suffix)
+}
+
+function retinaCandidate(key: ScreenshotKey, suffix: 'zh' | 'en') {
+  return `${retinaName(key, suffix)}-${dashboardRetinaWidth}`
+}
+
 async function expectLocalizedScreenshots(page: Page, suffix: 'zh' | 'en') {
   const otherSuffix = suffix === 'zh' ? 'en' : 'zh'
   const heroPicture = page.locator('[data-responsive-image="hero-dashboard"]')
+  const dashboard = retinaName('dashboard', suffix)
 
   await expect(heroPicture.locator('source[type="image/avif"]')).toHaveAttribute(
     'srcset',
-    new RegExp(`dashboard-${suffix}-2800\\.avif 2800w`),
+    new RegExp(`${dashboard}-${dashboardRetinaWidth}\\.avif ${dashboardRetinaWidth}w`),
   )
   await expect(heroPicture.locator('source[type="image/webp"]')).toHaveAttribute(
     'srcset',
-    new RegExp(`dashboard-${suffix}-2800\\.webp 2800w`),
+    new RegExp(`${dashboard}-${dashboardRetinaWidth}\\.webp ${dashboardRetinaWidth}w`),
   )
   await expect(heroPicture.locator('img')).toHaveAttribute(
     'srcset',
-    new RegExp(`dashboard-${suffix}-2x\\.png 2800w`),
+    new RegExp(`${dashboard}-2x\\.png ${dashboardRetinaWidth}w`),
   )
 
   const featureSources = await page.locator('[data-section="features"] source, [data-section="features"] img').evaluateAll(
@@ -25,13 +49,13 @@ async function expectLocalizedScreenshots(page: Page, suffix: 'zh' | 'en') {
         .filter(Boolean),
   )
 
-  for (const name of ['subscriptions', 'calendar', 'statistics', 'dashboard']) {
-    expect(featureSources.some((value) => value.includes(`${name}-${suffix}`))).toBe(true)
-    expect(featureSources.some((value) => value.includes(`${name}-${otherSuffix}`))).toBe(false)
+  for (const key of featureScreenshotKeys) {
+    expect(featureSources.some((value) => value.includes(screenshotName(key, suffix)))).toBe(true)
+    expect(featureSources.some((value) => value.includes(screenshotName(key, otherSuffix)))).toBe(false)
   }
 
-  expect(featureSources.some((value) => value.includes(`notifications-h5-${suffix}`))).toBe(true)
-  expect(featureSources.some((value) => value.includes(`notifications-h5-${otherSuffix}`))).toBe(false)
+  expect(featureSources.some((value) => value.includes(screenshotName('notifications-h5', suffix)))).toBe(true)
+  expect(featureSources.some((value) => value.includes(screenshotName('notifications-h5', otherSuffix)))).toBe(false)
 }
 
 test('renders the Renewlet homepage and opens deployment dialog from both entry points', async ({ page }) => {
@@ -91,7 +115,7 @@ test('switches the homepage copy to English', async ({ page }) => {
 
 test('requests the Chinese retina hero candidate on high density screens', async ({ browser }) => {
   const context = await browser.newContext({
-    viewport: { width: 1400, height: 900 },
+    viewport: desktopViewport,
     deviceScaleFactor: 2,
   })
   const page = await context.newPage()
@@ -105,23 +129,23 @@ test('requests the Chinese retina hero candidate on high density screens', async
 
   await page.goto('/')
   await expect(page.locator('[data-responsive-image="hero-dashboard"] img')).toBeVisible()
-  await page.waitForFunction(() => {
+  await page.waitForFunction((candidate) => {
     const image = document.querySelector('[data-responsive-image="hero-dashboard"] img')
     return (
       image instanceof HTMLImageElement &&
       image.complete &&
       image.naturalWidth > 0 &&
-      image.currentSrc.includes('dashboard-zh-2800')
+      image.currentSrc.includes(candidate)
     )
-  })
+  }, retinaCandidate('dashboard', 'zh'))
 
-  expect(requestedImages.some((url) => /dashboard-zh-2800\.(avif|webp)$/.test(url))).toBe(true)
+  expect(requestedImages.some((url) => new RegExp(`${retinaCandidate('dashboard', 'zh')}\\.(avif|webp)$`).test(url))).toBe(true)
   await context.close()
 })
 
 test('requests the English retina hero candidate after switching language on high density screens', async ({ browser }) => {
   const context = await browser.newContext({
-    viewport: { width: 1400, height: 900 },
+    viewport: desktopViewport,
     deviceScaleFactor: 2,
   })
   const page = await context.newPage()
@@ -140,19 +164,19 @@ test('requests the English retina hero candidate after switching language on hig
   await page.getByRole('banner').getByRole('button', { name: /Switch to English/i }).click()
   await expect(page.locator('[data-responsive-image="hero-dashboard"] source[type="image/avif"]')).toHaveAttribute(
     'srcset',
-    /dashboard-en-2800\.avif 2800w/,
+    new RegExp(`${retinaName('dashboard', 'en')}-${dashboardRetinaWidth}\\.avif ${dashboardRetinaWidth}w`),
   )
-  await page.waitForFunction(() => {
+  await page.waitForFunction((candidate) => {
     const image = document.querySelector('[data-responsive-image="hero-dashboard"] img')
     return (
       image instanceof HTMLImageElement &&
       image.complete &&
       image.naturalWidth > 0 &&
-      image.currentSrc.includes('dashboard-en-2800')
+      image.currentSrc.includes(candidate)
     )
-  })
+  }, retinaCandidate('dashboard', 'en'))
 
-  expect(requestedImages.some((url) => /dashboard-en-2800\.(avif|webp)$/.test(url))).toBe(true)
-  expect(requestedImages.some((url) => /dashboard-zh-2800\.(avif|webp)$/.test(url))).toBe(false)
+  expect(requestedImages.some((url) => new RegExp(`${retinaCandidate('dashboard', 'en')}\\.(avif|webp)$`).test(url))).toBe(true)
+  expect(requestedImages.some((url) => new RegExp(`${retinaCandidate('dashboard', 'zh')}\\.(avif|webp)$`).test(url))).toBe(false)
   await context.close()
 })
