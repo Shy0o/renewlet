@@ -280,6 +280,31 @@ describe("NotificationHistoryPanel", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent(reason);
   });
 
+  it("uses a fixed dialog frame so tab changes only scroll the content viewport", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <TooltipProvider delayDuration={0}>
+        <NotificationHistoryPanel
+          data={createSkippedHistoryResponse()}
+          isLoading={false}
+          isFetching={false}
+          error={null}
+          status="all"
+          setStatus={vi.fn()}
+          loadMore={vi.fn()}
+          refetch={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "查看调度与历史" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveClass("h5-dialog-frame", "flex", "min-h-0", "overflow-hidden");
+    expect(screen.getByTestId("notification-history-scroll")).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
+  });
+
   it("shows skipped empty-array history without a load failure", async () => {
     const user = userEvent.setup();
 
