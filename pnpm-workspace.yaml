@@ -1,7 +1,9 @@
-# Workspace 只纳入 packages/*，避免根脚本和部署文件被当成可发布包处理；allowBuilds 锁住需要 postinstall build 的依赖。
+# Workspace 明确纳入产品 packages 与独立官网 apps；官网不进入产品 Docker/Worker 构建链路。
 packages:
   - "packages/*"
+  - "apps/*"
 allowBuilds:
+  '@tsparticles/engine': true
   esbuild: true
   sharp: true
   workerd: true

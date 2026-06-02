@@ -1,0 +1,7 @@
+services:
+  website:
+    build:
+      context: ../..
+      dockerfile: apps/website/Dockerfile
+    ports:
+      - "4180:80"
