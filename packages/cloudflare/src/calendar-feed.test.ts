@@ -56,7 +56,12 @@ describe("calendar feed worker handlers", () => {
     expect(ics).toContain("BEGIN:VCALENDAR");
     expect(ics).toContain("SUMMARY:Active Plan");
     expect(ics).toContain("DTSTART;VALUE=DATE:20990602");
+    expect(ics).toContain("Category: Developer Tools");
+    expect(ics).toContain("Payment method: Credit Card");
+    expect(ics).toContain("CATEGORIES:Developer Tools");
     expect(ics).toContain("TRIGGER:-P5D");
+    expect(ics).not.toContain("developer_tools");
+    expect(ics).not.toContain("credit_card");
     expect(ics).not.toContain("Paused Plan");
     expect(ics).not.toContain("Cancelled Plan");
     expect(ics).not.toContain("Expired Plan");
@@ -97,6 +102,11 @@ describe("calendar feed worker handlers", () => {
     expectCalendarIcsLineEndings(secondIcs);
     expect(firstIcs).toContain("NAME:Renewlet - Paused Plan");
     expect(firstIcs).toContain("SUMMARY:Paused Plan");
+    expect(firstIcs).toContain("Category: Developer Tools");
+    expect(firstIcs).toContain("Payment method: Credit Card");
+    expect(firstIcs).toContain("CATEGORIES:Developer Tools");
+    expect(firstIcs).not.toContain("developer_tools");
+    expect(firstIcs).not.toContain("credit_card");
     expect(firstIcs).not.toContain("Active Plan");
     expect(secondIcs).toContain("SUMMARY:Paused Plan");
 
@@ -196,6 +206,24 @@ describe("calendar feed worker handlers", () => {
     await expect(calendarFeedIcs(new Request("https://renewlet.example/calendar/renewals.ics?token=missing"), env)).rejects.toMatchObject({ status: 404 });
     expect(env.__state.calendarFeedsTableExists).toBe(false);
   });
+
+  it("falls back to subscription values when custom config is missing", async () => {
+    const env = await createCalendarFeedTestEnv({ customConfigJson: null });
+    const response = await createCalendarFeed(authorizedRequest("https://renewlet.example/api/app/calendar-feed", {
+      body: "{}",
+      headers: { "accept-language": "en-US" },
+      method: "POST",
+    }), env);
+    const created = await response.json() as { calendarFeed: { feedUrl: string } };
+
+    const ics = await (await calendarFeedIcs(new Request(created.calendarFeed.feedUrl), env)).text();
+
+    expect(ics).toContain("Category: developer_tools");
+    expect(ics).toContain("Payment method: credit_card");
+    expect(ics).toContain("CATEGORIES:developer_tools");
+    expect(ics).not.toContain("Developer Tools");
+    expect(ics).not.toContain("Credit Card");
+  });
 });
 
 type CalendarFeedTestEnv = Env & {
@@ -209,6 +237,7 @@ interface CalendarFeedTestState {
   feeds: CalendarFeedRow[];
   legacyFeeds: CalendarFeedRow[];
   sessionHash: string;
+  customConfigJson: string | null;
   settingsJson: string;
   subscriptions: SubscriptionRow[];
   user: UserRow;
@@ -218,6 +247,7 @@ interface CalendarFeedTestOptions {
   calendarFeedSchemaError?: Error | null;
   calendarFeedScopedSchema?: boolean;
   calendarFeedsTableExists?: boolean;
+  customConfigJson?: string | null;
   feeds?: CalendarFeedRow[];
 }
 
@@ -248,6 +278,9 @@ async function createCalendarFeedTestEnv(options: CalendarFeedTestOptions = {}):
     calendarFeedsTableExists: options.calendarFeedsTableExists ?? true,
     feeds: options.feeds ?? [],
     legacyFeeds: [],
+    customConfigJson: Object.hasOwn(options, "customConfigJson")
+      ? options.customConfigJson ?? null
+      : JSON.stringify(createCalendarFeedTestCustomConfig()),
     settingsJson: JSON.stringify(settings),
     subscriptions: [
       subscriptionRow("sub_active", "Active Plan", "active", "monthly", "2099-06-02"),
@@ -280,10 +313,10 @@ function subscriptionRow(id: string, name: string, status: string, billingCycle:
     currency: "USD",
     billing_cycle: billingCycle,
     custom_days: null,
-    category: "Productivity",
+    category: "developer_tools",
     status,
     pinned: 0,
-    payment_method: "Visa",
+    payment_method: "credit_card",
     start_date: "2099-01-01",
     next_billing_date: nextBillingDate,
     auto_calculate_next_billing_date: 1,
@@ -298,6 +331,30 @@ function subscriptionRow(id: string, name: string, status: string, billingCycle:
     extra_json: "{}",
     created_at: `2026-05-29T00:00:0${id.endsWith("active") ? 1 : 2}.000Z`,
     updated_at: "2026-05-29T00:00:00.000Z",
+  };
+}
+
+function createCalendarFeedTestCustomConfig() {
+  return {
+    categories: [{
+      id: "developer_tools",
+      value: "developer_tools",
+      labels: {
+        "zh-CN": "开发工具",
+        "en-US": "Developer Tools",
+      },
+      color: "hsl(265 68% 58%)",
+    }],
+    statuses: [],
+    paymentMethods: [{
+      id: "credit_card",
+      value: "credit_card",
+      labels: {
+        "zh-CN": "信用卡",
+        "en-US": "Credit Card",
+      },
+    }],
+    currencies: [],
   };
 }
 
@@ -363,6 +420,9 @@ class CalendarFeedTestStatement {
     }
     if (this.sql.includes("SELECT settings_json FROM settings")) {
       return { settings_json: this.state.settingsJson } as T;
+    }
+    if (this.sql.includes("SELECT config_json FROM custom_configs")) {
+      return this.state.customConfigJson === null ? null : { config_json: this.state.customConfigJson } as T;
     }
     if (this.sql.includes("FROM subscriptions WHERE user_id = ? AND id = ?")) {
       return this.state.subscriptions.find((row) => row.user_id === this.values[0] && row.id === this.values[1]) as T | undefined ?? null;

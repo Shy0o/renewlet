@@ -6,9 +6,10 @@ import {
 } from "@renewlet/shared/schemas/calendar-feed";
 import { buildRenewalCalendarEvent, buildRenewalCalendarIcs, type RenewalCalendarEvent } from "@renewlet/shared/ics";
 import { effectiveReminderDays, isValidDateOnly } from "@renewlet/shared/runtime";
+import { customConfigSchema, type ApiCustomConfig } from "@renewlet/shared/schemas/custom-config";
 import type { ApiAppSettings } from "@renewlet/shared/schemas/settings";
 import type { ApiSubscription } from "@renewlet/shared/schemas/subscriptions";
-import { getSettings, getSubscription, listSubscriptions, newId, nowIso, toApiSubscription } from "./db";
+import { getCustomConfig, getSettings, getSubscription, listSubscriptions, newId, nowIso, toApiSubscription } from "./db";
 import { randomToken } from "./crypto";
 import { requireAuth } from "./auth";
 import { HttpError, json, ok, readJson, requestLocale } from "./http";
@@ -16,6 +17,11 @@ import { serverFormat, serverText } from "./server-i18n";
 import type { CalendarFeedRow, Env } from "./types";
 
 type CalendarFeedScope = CalendarFeedRow["scope"];
+
+interface CalendarFeedLabelResolver {
+  categoryLabel(value: string): string;
+  paymentMethodLabel(value: string | undefined): string | undefined;
+}
 
 /** 读取全局续费日历 feed 状态；只返回 URL 展示态，不把 token 拆成独立字段。 */
 export async function readCalendarFeed(request: Request, env: Env): Promise<Response> {
@@ -143,6 +149,7 @@ async function renderCalendarFeed(
   settings: ApiAppSettings,
   feedUrl: string,
 ): Promise<{ filename: string; ics: string }> {
+  const labels = await newCalendarFeedLabelResolver(env, row.user_id, settings.locale);
   if (row.scope === "subscription") {
     const subscriptionId = row.subscription_id ?? "";
     const subscription = subscriptionId ? await getSubscription(env, row.user_id, subscriptionId) : null;
@@ -154,7 +161,7 @@ async function renderCalendarFeed(
         name: serverFormat(settings.locale, "calendarFeed.subscriptionCalendarName", { name: apiSubscription.name }),
         sourceUrl: feedUrl,
         generatedAt: new Date(),
-        events: subscriptionCalendarEvents(apiSubscription, settings),
+        events: subscriptionCalendarEvents(apiSubscription, settings, labels),
       }),
     };
   }
@@ -166,9 +173,51 @@ async function renderCalendarFeed(
       name: serverText(settings.locale, "calendarFeed.calendarName"),
       sourceUrl: feedUrl,
       generatedAt: new Date(),
-      events: calendarEvents(subscriptions, settings),
+      events: calendarEvents(subscriptions, settings, labels),
     }),
   };
+}
+
+async function newCalendarFeedLabelResolver(
+  env: Env,
+  userId: string,
+  locale: ApiAppSettings["locale"],
+): Promise<CalendarFeedLabelResolver> {
+  const empty = calendarFeedLabelResolver(new Map<string, string>(), new Map<string, string>());
+  const result = customConfigSchema.safeParse(await getCustomConfig(env, userId));
+  if (!result.success) return empty;
+  // 公开 ICS route 没有登录态上下文；每次请求只把用户配置建成一次查找表，事件渲染复用 O(1) label 查询。
+  return calendarFeedLabelResolver(
+    calendarFeedLabelMap(result.data.categories, locale),
+    calendarFeedLabelMap(result.data.paymentMethods, locale),
+  );
+}
+
+function calendarFeedLabelResolver(
+  categoryByValue: Map<string, string>,
+  paymentMethodByValue: Map<string, string>,
+): CalendarFeedLabelResolver {
+  return {
+    categoryLabel: (value) => categoryByValue.get(value) ?? value,
+    paymentMethodLabel: (value) => value ? paymentMethodByValue.get(value) ?? value : value,
+  };
+}
+
+function calendarFeedLabelMap(items: ApiCustomConfig["categories"], locale: ApiAppSettings["locale"]): Map<string, string> {
+  const labels = new Map<string, string>();
+  for (const item of items) {
+    labels.set(item.value, calendarFeedLocalizedConfigLabel(item.labels, locale, item.value));
+  }
+  return labels;
+}
+
+function calendarFeedLocalizedConfigLabel(
+  labels: ApiCustomConfig["categories"][number]["labels"],
+  locale: ApiAppSettings["locale"],
+  fallback: string,
+): string {
+  if (locale === "en-US") return labels["en-US"] || labels["zh-CN"] || fallback;
+  return labels["zh-CN"] || labels["en-US"] || fallback;
 }
 
 async function ensureCalendarFeedSchema(env: Env, locale: ReturnType<typeof requestLocale>): Promise<void> {
@@ -286,7 +335,11 @@ function calendarFeedUrl(request: Request, token: string): string {
   return `${url.origin}/calendar/renewals.ics?token=${encodeURIComponent(token)}`;
 }
 
-function calendarEvents(subscriptions: ApiSubscription[], settings: ApiAppSettings): RenewalCalendarEvent[] {
+function calendarEvents(
+  subscriptions: ApiSubscription[],
+  settings: ApiAppSettings,
+  labels: CalendarFeedLabelResolver,
+): RenewalCalendarEvent[] {
   const today = dateOnlyInZone(new Date(), settings.timezone);
   return subscriptions
     .filter((subscription) => (
@@ -295,22 +348,30 @@ function calendarEvents(subscriptions: ApiSubscription[], settings: ApiAppSettin
       && isValidDateOnly(subscription.nextBillingDate)
       && subscription.nextBillingDate >= today
     ))
-    .map((subscription) => calendarEvent(subscription, settings));
+    .map((subscription) => calendarEvent(subscription, settings, labels));
 }
 
-function subscriptionCalendarEvents(subscription: ApiSubscription, settings: ApiAppSettings): RenewalCalendarEvent[] {
-  return isValidDateOnly(subscription.nextBillingDate) ? [calendarEvent(subscription, settings)] : [];
+function subscriptionCalendarEvents(
+  subscription: ApiSubscription,
+  settings: ApiAppSettings,
+  labels: CalendarFeedLabelResolver,
+): RenewalCalendarEvent[] {
+  return isValidDateOnly(subscription.nextBillingDate) ? [calendarEvent(subscription, settings, labels)] : [];
 }
 
-function calendarEvent(subscription: ApiSubscription, settings: ApiAppSettings): RenewalCalendarEvent {
+function calendarEvent(
+  subscription: ApiSubscription,
+  settings: ApiAppSettings,
+  labels: CalendarFeedLabelResolver,
+): RenewalCalendarEvent {
   const locale = settings.locale;
   return buildRenewalCalendarEvent({
     subscription,
     labels: {
       amount: formatAmount(subscription.price),
       billingCycle: billingCycleLabel(subscription.billingCycle, locale),
-      category: subscription.category,
-      paymentMethod: subscription.paymentMethod,
+      category: labels.categoryLabel(subscription.category),
+      paymentMethod: labels.paymentMethodLabel(subscription.paymentMethod),
     },
     reminderDays: effectiveReminderDays(subscription.reminderDays, settings.notificationReminderDays),
     text: {

@@ -134,6 +134,14 @@ function createDraftSettingsFromRemote(remoteSettings: AppSettings, accountEmail
   };
 }
 
+function createSavedSettingsBaseline(remoteSettings: AppSettings, draftSettings: AppSettings): AppSettings {
+  if (readAppearancePendingFromStorage()) return remoteSettings;
+  // 账号邮箱自动补全属于初始化默认值；只有外观 pending 草稿才应在进页时保留为未保存改动。
+  return draftSettings.recipientEmail !== remoteSettings.recipientEmail
+    ? { ...remoteSettings, recipientEmail: draftSettings.recipientEmail }
+    : remoteSettings;
+}
+
 interface SettingsSubscriptionsQuery {
   data: Subscription[] | undefined;
   isPending: boolean;
@@ -216,7 +224,6 @@ export function useSettingsFormController(): SettingsFormController {
   const [savedSettings, setSavedSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [customConfig, setCustomConfig] = useState<CustomConfig>(() => normalizeCustomConfig(null));
   const [savedCustomConfig, setSavedCustomConfig] = useState<CustomConfig>(() => normalizeCustomConfig(null));
-  const [hasInitializedFromRemote, setHasInitializedFromRemote] = useState(false);
   const [hasInitializedCustomConfig, setHasInitializedCustomConfig] = useState(false);
   const [monthlyBudgetError, setMonthlyBudgetError] = useState<string | null>(null);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -246,6 +253,7 @@ export function useSettingsFormController(): SettingsFormController {
   const createCalendarFeed = useCreateCalendarFeed();
   const deleteCalendarFeed = useDeleteCalendarFeed();
   const { refetch: refetchNotificationHistory } = notificationHistory;
+  const hasInitializedFromRemoteRef = useRef(false);
   const hasResolvedDefaultRecipientEmailRef = useRef(false);
   const settingsDirtyRef = useRef(false);
   const customConfigDirtyRef = useRef(false);
@@ -284,24 +292,25 @@ export function useSettingsFormController(): SettingsFormController {
       remoteSettings,
       shouldDefaultRecipientEmail ? accountEmail : null,
     );
+    const nextSavedSettings = createSavedSettingsBaseline(remoteSettings, nextDraft);
     const hasResolvedRecipientEmail = Boolean(nextDraft.recipientEmail.trim());
-    if (!hasInitializedFromRemote) {
-      setSavedSettings(remoteSettings);
+    if (!hasInitializedFromRemoteRef.current) {
+      setSavedSettings(nextSavedSettings);
       setSettings(nextDraft);
       if (hasResolvedRecipientEmail) hasResolvedDefaultRecipientEmailRef.current = true;
-      setHasInitializedFromRemote(true);
+      hasInitializedFromRemoteRef.current = true;
       return;
     }
 
-    setSavedSettings(remoteSettings);
     // 只有本地草稿未脏时才用远端刷新覆盖，避免 React Query 背景刷新吞掉用户未保存编辑。
     if (!settingsDirtyRef.current) {
+      setSavedSettings(nextSavedSettings);
       setSettings(nextDraft);
       if (hasResolvedRecipientEmail) hasResolvedDefaultRecipientEmailRef.current = true;
     } else if (remoteSettings.recipientEmail.trim()) {
       hasResolvedDefaultRecipientEmailRef.current = true;
     }
-  }, [accountEmail, hasInitializedFromRemote, remoteSettings]);
+  }, [accountEmail, remoteSettings]);
 
   useEffect(() => {
     const normalized = normalizeCustomConfig(persistedCustomConfig);
