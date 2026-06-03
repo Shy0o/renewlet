@@ -226,7 +226,6 @@ describe("SubscriptionDialog", () => {
       repeatReminderEnabled: true,
       repeatReminderInterval: "1h",
       repeatReminderWindow: "72h",
-      pinned: false,
     };
 
     render(

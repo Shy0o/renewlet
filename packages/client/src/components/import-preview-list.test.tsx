@@ -21,6 +21,7 @@ const payload = {
       currency: "USD",
       category: "developer_tools",
       status: "active",
+      pinned: false,
       paymentMethod: undefined,
       startDate: "2026-05-01",
       nextBillingDate: "2026-06-01",
@@ -34,7 +35,7 @@ const payload = {
       tags: [],
       repeatReminderEnabled: false,
       repeatReminderInterval: "24h",
-      repeatReminderWindow: "same-day",
+      repeatReminderWindow: "24h",
       extra: {
         import: {
           source: "renewlet",
@@ -92,10 +93,10 @@ describe("ImportPreviewList", () => {
 
     const logo = screen.getByAltText("ngrok");
     const logoTile = logo.closest(".subscription-logo-tile");
+    if (!logoTile) throw new Error("Expected preview logo to use the subscription logo tile.");
 
     expect(logo).toHaveClass("subscription-logo-image", "object-contain");
     expect(logo).not.toHaveClass("media-thumbnail-image", "invert", "brightness-125", "mix-blend-screen");
-    expect(logoTile).not.toBeNull();
     expect(logoTile).not.toHaveClass("media-thumbnail-canvas");
     expect(logoTile).not.toHaveClass("bg-gradient-to-br");
   });

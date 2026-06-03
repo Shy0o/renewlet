@@ -94,6 +94,7 @@ function subscription(overrides: Partial<FixedCycleSubscription> = {}): FixedCyc
     customDays: undefined,
     category: "productivity",
     status: "active",
+    pinned: false,
     paymentMethod: undefined,
     startDate: assertDateOnly("2026-04-18"),
     nextBillingDate: assertDateOnly("2026-05-18"),

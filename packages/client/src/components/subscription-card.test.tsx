@@ -128,7 +128,7 @@ function renderSubscriptionCard(overrides: SubscriptionOverrides = {}, handlers:
         timeZone="Asia/Shanghai"
         onEdit={handlers.onEdit ?? vi.fn()}
         onDelete={handlers.onDelete ?? vi.fn()}
-        onTogglePinned={handlers.onTogglePinned}
+        {...(handlers.onTogglePinned ? { onTogglePinned: handlers.onTogglePinned } : {})}
       />
     </TooltipProvider>,
   );
@@ -274,11 +274,14 @@ describe("SubscriptionCard", () => {
     const categoryBadge = screen.getByText(mocks.shortCategoryLabel).closest("div");
     const badgeGroup = categoryBadge?.parentElement;
     const statusBadge = screen.getByText("活跃").closest("div");
+    if (!categoryBadge || !badgeGroup || !statusBadge) {
+      throw new Error("Expected category and status badges to render.");
+    }
 
     expect(badgeGroup).toHaveTextContent(mocks.shortCategoryLabel);
     expect(badgeGroup).toHaveTextContent("活跃");
     expect(badgeGroup).not.toHaveTextContent("置顶");
-    expect(categoryBadge?.compareDocumentPosition(statusBadge as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(categoryBadge.compareDocumentPosition(statusBadge) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("hides pin actions when the card is rendered without a pin handler", () => {

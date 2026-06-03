@@ -150,11 +150,12 @@ describe("ImportLogoEditor", () => {
     await user.click(screen.getByRole("button", { name: "修改 Logo" }));
 
     const logo = screen.getAllByAltText("Apple")[0];
+    if (!logo) throw new Error("Expected Apple logo preview to render.");
     const logoTile = logo.closest(".subscription-logo-tile");
+    if (!logoTile) throw new Error("Expected Apple logo preview to use the subscription logo tile.");
 
     expect(logo).toHaveClass("subscription-logo-image", "object-contain");
     expect(logo).not.toHaveClass("media-thumbnail-image", "invert", "brightness-125", "mix-blend-screen");
-    expect(logoTile).not.toBeNull();
     expect(logoTile).not.toHaveClass("media-thumbnail-canvas");
   });
 
