@@ -11,6 +11,7 @@
  */
 
 import { useState } from 'react';
+import type { ConfigItem } from '@/types/config';
 import {
   DEFAULT_NOTIFICATION_REMINDER_DAYS,
   INHERIT_REMINDER_DAYS,
@@ -19,7 +20,6 @@ import {
   type Subscription,
   type SubscriptionStatus,
 } from '@/types/subscription';
-import { useCustomConfig } from '@/contexts/CustomConfigContext';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { colorWithAlpha } from '@/lib/color';
@@ -51,9 +51,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useI18n } from '@/i18n/I18nProvider';
 import { localizedLabel } from '@/i18n/locales';
-import { useSettings } from '@/hooks/use-settings';
 import { AddToCalendarDialog } from '@/components/add-to-calendar-dialog';
 import { SubscriptionLogo } from '@/components/subscription-logo';
+
+export type SubscriptionCardLookup = ReadonlyMap<string, ConfigItem>;
 
 interface SubscriptionCardProps {
   /** 订阅数据（前端 domain 类型）。 */
@@ -68,6 +69,12 @@ interface SubscriptionCardProps {
   onTogglePinned?: (id: string) => void;
   /** 用户 IANA 时区，用于续费/试用提示窗口。 */
   timeZone: string;
+  /** 分类配置查找表由页面级容器构建，避免虚拟列表 item 重复订阅全局配置。 */
+  categoryByValue: SubscriptionCardLookup;
+  /** 支付方式配置查找表由页面级容器构建，避免可见行滚动时重复查找全局配置。 */
+  paymentMethodByValue: SubscriptionCardLookup;
+  /** 订阅选择“继承”时展示的全局提醒天数。 */
+  inheritedReminderDays?: number | undefined;
 }
 
 /** 状态配色：用于 trial/active 等视觉提示。 */
@@ -82,11 +89,19 @@ const statusStyles: Record<SubscriptionStatus, string> = {
 const DEFAULT_BADGE_COLOR = "hsl(var(--primary))";
 
 /** 订阅卡片。 */
-export function SubscriptionCard({ subscription, viewMode = 'grid', onEdit, onDelete, onTogglePinned, timeZone }: SubscriptionCardProps) {
-  const { config } = useCustomConfig();
-  const { data: settings } = useSettings();
+export function SubscriptionCard({
+  subscription,
+  viewMode = 'grid',
+  onEdit,
+  onDelete,
+  onTogglePinned,
+  timeZone,
+  categoryByValue,
+  paymentMethodByValue,
+  inheritedReminderDays = DEFAULT_NOTIFICATION_REMINDER_DAYS,
+}: SubscriptionCardProps) {
   const { t, locale, label, formatCurrency, formatDateOnly } = useI18n();
-  const categoryConfig = config.categories.find((c) => c.value === subscription.category);
+  const categoryConfig = categoryByValue.get(subscription.category);
   const categoryLabel = categoryConfig ? label(categoryConfig.labels) : subscription.category;
   const categoryColor = categoryConfig?.color ?? DEFAULT_BADGE_COLOR;
   const categoryBadgeStyle = {
@@ -108,7 +123,6 @@ export function SubscriptionCard({ subscription, viewMode = 'grid', onEdit, onDe
   const isRenewingSoon = !isOneTime && !isExpired && daysUntilRenewal <= 7 && daysUntilRenewal >= 0;
   const isTrialEndingSoon = !isExpired && subscription.status === 'trial' && daysUntilTrialEnd !== null &&
     daysUntilTrialEnd <= 3 && daysUntilTrialEnd >= 0;
-  const inheritedReminderDays = settings?.notificationReminderDays ?? DEFAULT_NOTIFICATION_REMINDER_DAYS;
 
   const handleDeleteConfirm = () => {
     // 删除写入交给页面 mutation；卡片只关闭本地确认框，避免 mutation 失败后留下二次确认遮罩。
@@ -247,9 +261,7 @@ export function SubscriptionCard({ subscription, viewMode = 'grid', onEdit, onDe
             </div>
 
             {subscription.paymentMethod && (() => {
-              const paymentConfig = config.paymentMethods.find(
-                m => m.value === subscription.paymentMethod
-              );
+              const paymentConfig = paymentMethodByValue.get(subscription.paymentMethod);
               return (
                 <div className="flex items-center gap-1.5 text-muted-foreground">
                   {paymentConfig?.icon ? (

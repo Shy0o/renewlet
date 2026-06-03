@@ -31,6 +31,7 @@ import {
 import { formatImportMessage } from "@/modules/import-export/domain/import-message-format";
 import { importExportService } from "@/services/import-export-service";
 import { invalidateSubscriptionsQueries } from "@/hooks/use-subscriptions";
+import { SETTINGS_QUERY_KEY } from "@/hooks/use-settings";
 import { mediaCandidateService } from "@/services/media-candidate-service";
 import {
   importApplyResponseSchema,
@@ -275,7 +276,7 @@ export function ImportDataDialog({ open, onOpenChange, settings, config }: Impor
       // 导入可能同时写订阅、设置和自定义配置；成功后统一失效，避免页面继续展示导入前缓存。
       await Promise.all([
         invalidateSubscriptionsQueries(queryClient),
-        queryClient.invalidateQueries({ queryKey: ["settings"] }),
+        queryClient.invalidateQueries({ queryKey: SETTINGS_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: ["custom-config"] }),
       ]);
       toast({

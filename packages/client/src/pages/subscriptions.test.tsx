@@ -114,9 +114,18 @@ vi.mock("@/components/header", () => ({
 }));
 
 vi.mock("@/components/subscription-card", () => ({
-  SubscriptionCard: ({ subscription, onTogglePinned }: { subscription: Subscription; onTogglePinned?: (id: string) => void }) => (
+  SubscriptionCard: ({
+    subscription,
+    inheritedReminderDays,
+    onTogglePinned,
+  }: {
+    subscription: Subscription;
+    inheritedReminderDays: number;
+    onTogglePinned?: (id: string) => void;
+  }) => (
     <article data-testid="subscription-card">
       {subscription.name}
+      <span data-testid="subscription-card-reminder">{inheritedReminderDays}</span>
       <button type="button" onClick={() => onTogglePinned?.(subscription.id)}>
         置顶 {subscription.name}
       </button>
@@ -234,6 +243,7 @@ describe("Subscriptions page sorting", () => {
       data: {
         timezone: "Asia/Shanghai",
         defaultCurrency: "CNY",
+        notificationReminderDays: 5,
       },
     });
     mocks.useInfiniteSubscriptions.mockReturnValue({
@@ -379,6 +389,7 @@ describe("Subscriptions page desktop tag filters", () => {
       data: {
         timezone: "Asia/Shanghai",
         defaultCurrency: "CNY",
+        notificationReminderDays: 5,
       },
     });
     mocks.useInfiniteSubscriptions.mockReturnValue({
@@ -457,6 +468,7 @@ describe("Subscriptions page mobile tag filters", () => {
       data: {
         timezone: "Asia/Shanghai",
         defaultCurrency: "CNY",
+        notificationReminderDays: 5,
       },
     });
     mocks.useInfiniteSubscriptions.mockReturnValue({
@@ -553,6 +565,7 @@ describe("Subscriptions page virtualization", () => {
       data: {
         timezone: "Asia/Shanghai",
         defaultCurrency: "CNY",
+        notificationReminderDays: 5,
       },
     });
     mocks.useInfiniteSubscriptions.mockReturnValue({
@@ -571,6 +584,7 @@ describe("Subscriptions page virtualization", () => {
     });
     expect(screen.getAllByTestId("subscription-card").length).toBeLessThan(90);
     expect(visibleSubscriptionNames()[0]).toBe("Service 000");
+    expect(screen.getAllByTestId("subscription-card-reminder")[0]).toHaveTextContent("5");
 
     await user.click(screen.getByRole("combobox", { name: "排序" }));
     await user.click(await screen.findByRole("option", { name: "名称 Z-A" }));
@@ -626,5 +640,24 @@ describe("Subscriptions page virtualization", () => {
 
     expect(screen.getByTestId("virtualized-subscription-list")).toBe(virtualizedList);
     expect(screen.getAllByTestId("subscription-card").length).toBeLessThan(100);
+  });
+
+  it("does not re-read settings when virtualized rows change on scroll", async () => {
+    renderSubscriptionsPage();
+    const root = document.getElementById("root");
+    if (!root) throw new Error("Expected #root test scroll container");
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("subscription-card").length).toBeGreaterThan(0);
+    });
+    const settingsCallsAfterMount = mocks.useSettings.mock.calls.length;
+
+    root.scrollTop = 1200;
+    fireEvent.scroll(root);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("subscription-card").length).toBeGreaterThan(0);
+    });
+    expect(mocks.useSettings).toHaveBeenCalledTimes(settingsCallsAfterMount);
   });
 });

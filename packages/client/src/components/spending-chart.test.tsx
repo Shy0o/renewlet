@@ -61,22 +61,10 @@ vi.mock("recharts", () => ({
   },
 }));
 
-vi.mock("@/contexts/CustomConfigContext", () => ({
-  useCustomConfig: () => ({ config: DEFAULT_CUSTOM_CONFIG }),
-}));
-
 vi.mock("@/hooks/use-exchange-rates", () => ({
   useExchangeRates: () => ({
     convert: (amount: number) => amount,
     getCurrencySymbol: () => "¥",
-  }),
-}));
-
-vi.mock("@/hooks/use-settings", () => ({
-  useSettings: () => ({
-    data: {
-      defaultCurrency: "CNY",
-    },
   }),
 }));
 
@@ -131,8 +119,20 @@ describe("SpendingChart", () => {
     mocks.rechartsTooltipProps.length = 0;
   });
 
+  function renderSpendingChart(subscriptions: Subscription[]) {
+    return render(
+      <SpendingChart
+        subscriptions={subscriptions}
+        categories={DEFAULT_CUSTOM_CONFIG.categories}
+        defaultCurrency="CNY"
+        timeZone="Asia/Shanghai"
+        exchangeRateProvider="exchange-api"
+      />,
+    );
+  }
+
   it("disables tooltip animation while keeping the custom content", () => {
-    render(<SpendingChart subscriptions={[subscription()]} />);
+    renderSpendingChart([subscription()]);
 
     expect(mocks.rechartsTooltipProps).toEqual([
       expect.objectContaining({
@@ -147,7 +147,7 @@ describe("SpendingChart", () => {
   });
 
   it("keeps the legend outside Recharts so it cannot shrink the pie plot area", () => {
-    render(<SpendingChart subscriptions={[subscription()]} />);
+    renderSpendingChart([subscription()]);
 
     expect(mocks.rechartsLegendProps).toHaveLength(0);
     expect(mocks.rechartsPieChartProps).toEqual([
@@ -174,7 +174,7 @@ describe("SpendingChart", () => {
   });
 
   it("gives Recharts positive dimensions before ResizeObserver reports layout", () => {
-    render(<SpendingChart subscriptions={[subscription()]} />);
+    renderSpendingChart([subscription()]);
 
     expect(screen.getByTestId("spending-chart-frame")).toHaveClass("recharts-frame");
     expect(mocks.rechartsResponsiveContainerProps).toHaveLength(1);

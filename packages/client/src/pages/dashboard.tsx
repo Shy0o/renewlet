@@ -27,10 +27,12 @@ import { Button } from "@/components/ui/button";
 import { useExchangeRates } from "@/hooks/use-exchange-rates";
 import { useSubscriptions } from "@/hooks/use-subscriptions";
 import { useSettings } from "@/hooks/use-settings";
+import { useCustomConfig } from "@/contexts/CustomConfigContext";
 import { useDashboardStats } from "@/modules/subscriptions/application/use-dashboard-stats";
 import { useSubscriptionCrud } from "@/modules/subscriptions/application/use-subscription-crud";
 import { collectSubscriptionTags } from "@/modules/subscriptions/domain/subscription-filters";
 import { useI18n } from "@/i18n/I18nProvider";
+import { DEFAULT_NOTIFICATION_REMINDER_DAYS } from "@/types/subscription";
 
 const EMPTY_SUBSCRIPTIONS: Subscription[] = [];
 
@@ -40,10 +42,15 @@ export default function Index() {
   const subscriptions = subscriptionsQuery.data ?? EMPTY_SUBSCRIPTIONS;
   const settingsQuery = useSettings();
   const settings = settingsQuery.data;
+  const { config } = useCustomConfig();
   const { t, formatCurrency } = useI18n();
-  const { convert, loading: ratesLoading } = useExchangeRates(settings?.exchangeRateProvider);
+  const exchangeRateProvider = settings?.exchangeRateProvider;
+  const { convert, loading: ratesLoading } = useExchangeRates(exchangeRateProvider);
   const defaultCurrency = settings?.defaultCurrency ?? "CNY";
   const timeZone = settings?.timezone ?? "UTC";
+  const inheritedReminderDays = settings?.notificationReminderDays ?? DEFAULT_NOTIFICATION_REMINDER_DAYS;
+  const categoryByValue = useMemo(() => new Map(config.categories.map((category) => [category.value, category])), [config.categories]);
+  const paymentMethodByValue = useMemo(() => new Map(config.paymentMethods.map((method) => [method.value, method])), [config.paymentMethods]);
   const availableTags = useMemo(() => collectSubscriptionTags(subscriptions), [subscriptions]);
   const { activeSubscriptions, totalMonthly, upcomingCount, trialCount } = useDashboardStats(
     subscriptions,
@@ -135,6 +142,9 @@ export default function Index() {
                   <SubscriptionCard
                     subscription={sub}
                     timeZone={timeZone}
+                    inheritedReminderDays={inheritedReminderDays}
+                    categoryByValue={categoryByValue}
+                    paymentMethodByValue={paymentMethodByValue}
                     onEdit={handleEditSubscription}
                     onDelete={handleDeleteSubscription}
                   />
@@ -157,7 +167,13 @@ export default function Index() {
             {/* 支出图表 */}
             <div className="rounded-xl border border-border bg-card p-6 shadow-card">
               <h3 className="mb-3 text-lg font-semibold text-foreground">{t("dashboard.spendingDistribution")}</h3>
-              <SpendingChart subscriptions={subscriptions} />
+              <SpendingChart
+                subscriptions={subscriptions}
+                categories={config.categories}
+                defaultCurrency={defaultCurrency}
+                timeZone={timeZone}
+                exchangeRateProvider={exchangeRateProvider}
+              />
             </div>
 
             {/* 即将续费 */}

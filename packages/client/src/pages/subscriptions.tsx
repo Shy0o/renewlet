@@ -15,7 +15,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Header } from '@/components/header';
 import { BackToTopFloatButton } from '@/components/back-to-top-float-button';
-import { SubscriptionCard } from '@/components/subscription-card';
+import { SubscriptionCard, type SubscriptionCardLookup } from '@/components/subscription-card';
 import { AddSubscriptionDialog } from '@/components/add-subscription-dialog';
 import { EditSubscriptionDialog } from '@/components/edit-subscription-dialog';
 import { ImportDataDialog } from '@/components/import-data-dialog';
@@ -25,7 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { Category, Subscription, SubscriptionStatus } from '@/types/subscription';
-import { DEFAULT_SETTINGS } from '@/types/subscription';
+import { DEFAULT_NOTIFICATION_REMINDER_DAYS, DEFAULT_SETTINGS } from '@/types/subscription';
 import { Search, Plus, Grid, List as ListIcon, Download, Upload } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -93,12 +93,25 @@ type SubscriptionGridProps = {
   subscriptions: Subscription[];
   viewMode: "grid" | "list";
   timeZone: string;
+  inheritedReminderDays: number;
+  categoryByValue: SubscriptionCardLookup;
+  paymentMethodByValue: SubscriptionCardLookup;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onTogglePinned: (id: string) => void;
 };
 
-function SubscriptionGrid({ subscriptions, viewMode, timeZone, onEdit, onDelete, onTogglePinned }: SubscriptionGridProps) {
+function SubscriptionGrid({
+  subscriptions,
+  viewMode,
+  timeZone,
+  inheritedReminderDays,
+  categoryByValue,
+  paymentMethodByValue,
+  onEdit,
+  onDelete,
+  onTogglePinned,
+}: SubscriptionGridProps) {
   const isTwoColumnGrid = useMediaQuery("(min-width: 640px)");
   const isThreeColumnGrid = useMediaQuery("(min-width: 1024px)");
   const columnCount = getSubscriptionColumnCount(viewMode, isTwoColumnGrid, isThreeColumnGrid);
@@ -127,6 +140,9 @@ function SubscriptionGrid({ subscriptions, viewMode, timeZone, onEdit, onDelete,
               subscription={sub}
               viewMode={viewMode}
               timeZone={timeZone}
+              inheritedReminderDays={inheritedReminderDays}
+              categoryByValue={categoryByValue}
+              paymentMethodByValue={paymentMethodByValue}
               onEdit={onEdit}
               onDelete={onDelete}
               onTogglePinned={onTogglePinned}
@@ -147,7 +163,10 @@ function SubscriptionGrid({ subscriptions, viewMode, timeZone, onEdit, onDelete,
   const timeZone = settingsQuery.data?.timezone ?? "UTC";
   const defaultCurrency = settingsQuery.data?.defaultCurrency ?? "CNY";
   const exchangeRateProvider = settingsQuery.data?.exchangeRateProvider;
+  const inheritedReminderDays = settingsQuery.data?.notificationReminderDays ?? DEFAULT_NOTIFICATION_REMINDER_DAYS;
   const { config } = useCustomConfig();
+  const categoryByValue = useMemo(() => new Map(config.categories.map((category) => [category.value, category])), [config.categories]);
+  const paymentMethodByValue = useMemo(() => new Map(config.paymentMethods.map((method) => [method.value, method])), [config.paymentMethods]);
   const { t, label, locale } = useI18n();
   const { convert } = useExchangeRates(exchangeRateProvider);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -487,6 +506,9 @@ function SubscriptionGrid({ subscriptions, viewMode, timeZone, onEdit, onDelete,
               subscriptions={filteredSubscriptions}
               viewMode={viewMode}
               timeZone={timeZone}
+              inheritedReminderDays={inheritedReminderDays}
+              categoryByValue={categoryByValue}
+              paymentMethodByValue={paymentMethodByValue}
               onEdit={handleEditSubscription}
               onDelete={handleDeleteSubscription}
               onTogglePinned={handleTogglePinnedSubscription}
