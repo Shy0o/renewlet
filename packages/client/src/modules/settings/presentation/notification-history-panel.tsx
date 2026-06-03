@@ -33,6 +33,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { formatTimeZoneOffset } from "@/lib/time/time-zone";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nProvider";
+import { CHANNEL_LABELS, type NotificationChannel } from "@/types/subscription";
 import type {
   NotificationJobResult,
   NotificationHistoryJob,
@@ -100,6 +101,16 @@ function getResultChannels(job: NotificationHistoryJob) {
 
 function getMessageContent(job: NotificationHistoryJob) {
   return hasCronResult(job.result) ? job.result.message.content : "";
+}
+
+function formatNotificationChannel(channel: NotificationChannel, label: ReturnType<typeof useI18n>["label"]) {
+  return label(CHANNEL_LABELS[channel]);
+}
+
+function formatNotificationChannels(channels: NotificationChannel[], label: ReturnType<typeof useI18n>["label"], emptyLabel: string) {
+  return channels.length > 0
+    ? channels.map((channel) => formatNotificationChannel(channel, label)).join(", ")
+    : emptyLabel;
 }
 
 function SummaryValue({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
@@ -239,27 +250,28 @@ function HistoryRow({ job, selected, onSelect }: { job: NotificationHistoryJob; 
 }
 
 function HistoryDetail({ job, className, testId }: { job: NotificationHistoryJob; className?: string; testId?: string }) {
-  const { t, formatDateTime } = useI18n();
+  const { t, label, formatDateTime } = useI18n();
   const channels = getResultChannels(job);
   const content = getMessageContent(job);
   const failed = channels.failed;
   const attempted = channels.attempted;
   const succeeded = channels.succeeded;
+  const emptyChannelsLabel = t("common.none");
 
   return (
     <div className={cn("min-w-0 rounded-lg border border-border bg-secondary/30 p-3 sm:p-4", className)} data-testid={testId}>
       <div className="grid gap-3 sm:grid-cols-2">
         <SummaryValue label={t("notification.createdAt")} value={formatDateTime(job.createdAt, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })} />
         <SummaryValue label={t("notification.updatedAt")} value={formatDateTime(job.updatedAt, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })} />
-        <SummaryValue label={t("notification.attemptedChannels")} value={Array.isArray(attempted) && attempted.length > 0 ? attempted.join(", ") : t("common.none")} />
-        <SummaryValue label={t("notification.succeededChannels")} value={Array.isArray(succeeded) && succeeded.length > 0 ? succeeded.join(", ") : t("common.none")} />
+        <SummaryValue label={t("notification.attemptedChannels")} value={formatNotificationChannels(attempted, label, emptyChannelsLabel)} />
+        <SummaryValue label={t("notification.succeededChannels")} value={formatNotificationChannels(succeeded, label, emptyChannelsLabel)} />
       </div>
 
       {Array.isArray(failed) && failed.length > 0 ? (
         <div className="mt-4 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
           {failed.map((item, index) => (
             <div key={index} className="break-words">
-              {item.channel}：{item.error}
+              {formatNotificationChannel(item.channel, label)}：{item.error}
             </div>
           ))}
         </div>

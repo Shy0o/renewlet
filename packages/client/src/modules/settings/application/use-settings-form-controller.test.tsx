@@ -268,7 +268,7 @@ describe("useSettingsFormController", () => {
     expect(result.current.canAccessPocketBaseAdmin).toBe(false);
   });
 
-  it("prefills an empty recipient email from the current account email", async () => {
+  it("prefills an empty recipient email from the current account email without marking the form dirty", async () => {
     mocks.remoteSettings = {
       ...BASE_SETTINGS,
       recipientEmail: "",
@@ -279,6 +279,25 @@ describe("useSettingsFormController", () => {
     await waitFor(() => {
       expect(result.current.settings.recipientEmail).toBe("alice@example.com");
     });
+    expect(result.current.hasUnsavedChanges).toBe(false);
+  });
+
+  it("marks the form dirty when the prefilled recipient email is changed", async () => {
+    mocks.remoteSettings = {
+      ...BASE_SETTINGS,
+      recipientEmail: "",
+    };
+
+    const { result } = renderHook(() => useSettingsFormController());
+
+    await waitFor(() => {
+      expect(result.current.settings.recipientEmail).toBe("alice@example.com");
+    });
+
+    act(() => {
+      result.current.updateSetting("recipientEmail", "billing@example.com");
+    });
+
     expect(result.current.hasUnsavedChanges).toBe(true);
   });
 
@@ -370,7 +389,7 @@ describe("useSettingsFormController", () => {
     expect(result.current.hasUnsavedChanges).toBe(BASE_SETTINGS.themeMode !== "light");
   });
 
-  it("prefills the recipient email when the account email arrives after settings", async () => {
+  it("prefills the recipient email when the account email arrives after settings without marking the form dirty", async () => {
     mocks.remoteSettings = {
       ...BASE_SETTINGS,
       recipientEmail: "",
@@ -388,7 +407,7 @@ describe("useSettingsFormController", () => {
     await waitFor(() => {
       expect(result.current.settings.recipientEmail).toBe("late@example.com");
     });
-    expect(result.current.hasUnsavedChanges).toBe(true);
+    expect(result.current.hasUnsavedChanges).toBe(false);
   });
 
   it("does not refill after the user clears the default recipient email", async () => {
@@ -407,7 +426,7 @@ describe("useSettingsFormController", () => {
     });
 
     expect(result.current.settings.recipientEmail).toBe("");
-    expect(result.current.hasUnsavedChanges).toBe(false);
+    expect(result.current.hasUnsavedChanges).toBe(true);
 
     act(() => {
       mocks.remoteSettings = {
@@ -418,6 +437,7 @@ describe("useSettingsFormController", () => {
     });
 
     expect(result.current.settings.recipientEmail).toBe("");
+    expect(result.current.hasUnsavedChanges).toBe(true);
   });
 
   it("saves draft settings and refreshes rates only after the provider is saved", async () => {

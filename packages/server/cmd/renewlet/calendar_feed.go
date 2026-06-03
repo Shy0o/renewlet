@@ -75,6 +75,12 @@ type calendarFeedEvent struct {
 	ReminderDays int
 }
 
+type calendarFeedLabelResolver struct {
+	locale               appLocale
+	categoryByValue      map[string]string
+	paymentMethodByValue map[string]string
+}
+
 func handleCalendarFeedStatus(app core.App, e *core.RequestEvent) error {
 	record, err := findGlobalCalendarFeedForUser(app, e.Auth.Id)
 	if err != nil {
@@ -193,6 +199,10 @@ func renderCalendarFeedICS(app core.App, request *http.Request, feed *core.Recor
 	if err != nil {
 		return "", "", err
 	}
+	labels, err := newCalendarFeedLabelResolver(app, userID, settings)
+	if err != nil {
+		return "", "", err
+	}
 	sourceURL := calendarFeedURL(request, feed.GetString("token"))
 	switch feed.GetString("scope") {
 	case calendarFeedScopeSubscription:
@@ -205,7 +215,7 @@ func renderCalendarFeedICS(app core.App, request *http.Request, feed *core.Recor
 			SourceURL: sourceURL,
 			Now:       time.Now().UTC(),
 			Settings:  settings,
-			Events:    subscriptionCalendarFeedEvents(subscription, settings),
+			Events:    subscriptionCalendarFeedEvents(subscription, settings, labels),
 		})
 		return body, "renewlet-subscription.ics", nil
 	case calendarFeedScopeAll:
@@ -218,7 +228,7 @@ func renderCalendarFeedICS(app core.App, request *http.Request, feed *core.Recor
 			SourceURL: sourceURL,
 			Now:       time.Now().UTC(),
 			Settings:  settings,
-			Events:    globalCalendarFeedEvents(subscriptions, settings, time.Now().UTC()),
+			Events:    globalCalendarFeedEvents(subscriptions, settings, time.Now().UTC(), labels),
 		})
 		return body, "renewlet-renewals.ics", nil
 	default:
@@ -423,6 +433,73 @@ func calendarFeedSubscriptionFromRecord(row *core.Record) calendarFeedSubscripti
 	}
 }
 
+func newCalendarFeedLabelResolver(app core.App, userID string, settings appSettings) (calendarFeedLabelResolver, error) {
+	resolver := calendarFeedLabelResolver{
+		locale:               normalizeAppLocale(settings.Locale),
+		categoryByValue:      map[string]string{},
+		paymentMethodByValue: map[string]string{},
+	}
+	record, err := app.FindFirstRecordByFilter("custom_configs", "user = {:user}", dbx.Params{"user": userID})
+	if err != nil {
+		if errorsIsNoRows(err) {
+			return resolver, nil
+		}
+		return resolver, err
+	}
+	config, err := customConfigFromValue(record.Get("config"))
+	if err != nil {
+		return resolver, err
+	}
+	// 公开 ICS route 没有登录态上下文；一次性把用户配置转成查找表，避免每个事件扫描配置数组。
+	resolver.categoryByValue = calendarFeedLabelMap(config.Categories, resolver.locale)
+	resolver.paymentMethodByValue = calendarFeedLabelMap(config.PaymentMethods, resolver.locale)
+	return resolver, nil
+}
+
+func calendarFeedLabelMap(items []customConfigItem, locale appLocale) map[string]string {
+	labels := make(map[string]string, len(items))
+	for _, item := range items {
+		if item.Value == "" {
+			continue
+		}
+		labels[item.Value] = calendarFeedLocalizedConfigLabel(item.Labels, locale, item.Value)
+	}
+	return labels
+}
+
+func calendarFeedLocalizedConfigLabel(labels customConfigLabels, locale appLocale, fallback string) string {
+	if locale == localeEnUS {
+		if labels.EnUS != "" {
+			return labels.EnUS
+		}
+		if labels.ZhCN != "" {
+			return labels.ZhCN
+		}
+		return fallback
+	}
+	if labels.ZhCN != "" {
+		return labels.ZhCN
+	}
+	if labels.EnUS != "" {
+		return labels.EnUS
+	}
+	return fallback
+}
+
+func (resolver calendarFeedLabelResolver) categoryLabel(value string) string {
+	if label, ok := resolver.categoryByValue[value]; ok {
+		return label
+	}
+	return value
+}
+
+func (resolver calendarFeedLabelResolver) paymentMethodLabel(value string) string {
+	if label, ok := resolver.paymentMethodByValue[value]; ok {
+		return label
+	}
+	return value
+}
+
 type calendarFeedBuildOptions struct {
 	Name      string
 	SourceURL string
@@ -475,7 +552,7 @@ func normalizeCalendarFeedLineEndings(value string) string {
 	return strings.ReplaceAll(normalized, "\n", "\r\n")
 }
 
-func globalCalendarFeedEvents(items []calendarFeedSubscription, settings appSettings, now time.Time) []calendarFeedEvent {
+func globalCalendarFeedEvents(items []calendarFeedSubscription, settings appSettings, now time.Time, labels calendarFeedLabelResolver) []calendarFeedEvent {
 	localDate := todayDateOnly(now, settings.Timezone)
 	events := []calendarFeedEvent{}
 	for _, item := range items {
@@ -485,7 +562,7 @@ func globalCalendarFeedEvents(items []calendarFeedSubscription, settings appSett
 		if !isValidDateOnly(item.NextBillingDate) || item.NextBillingDate < localDate {
 			continue
 		}
-		events = append(events, calendarFeedEventFromSubscription(item, settings))
+		events = append(events, calendarFeedEventFromSubscription(item, settings, labels))
 	}
 	sort.Slice(events, func(i, j int) bool {
 		if events[i].Date == events[j].Date {
@@ -496,34 +573,35 @@ func globalCalendarFeedEvents(items []calendarFeedSubscription, settings appSett
 	return events
 }
 
-func subscriptionCalendarFeedEvents(item calendarFeedSubscription, settings appSettings) []calendarFeedEvent {
+func subscriptionCalendarFeedEvents(item calendarFeedSubscription, settings appSettings, labels calendarFeedLabelResolver) []calendarFeedEvent {
 	if !isValidDateOnly(item.NextBillingDate) {
 		return []calendarFeedEvent{}
 	}
-	return []calendarFeedEvent{calendarFeedEventFromSubscription(item, settings)}
+	return []calendarFeedEvent{calendarFeedEventFromSubscription(item, settings, labels)}
 }
 
-func calendarFeedEventFromSubscription(item calendarFeedSubscription, settings appSettings) calendarFeedEvent {
+func calendarFeedEventFromSubscription(item calendarFeedSubscription, settings appSettings, labels calendarFeedLabelResolver) calendarFeedEvent {
+	categoryLabel := labels.categoryLabel(item.Category)
 	return calendarFeedEvent{
 		UID:          "renewlet-renewal-" + item.ID + "@renewlet",
 		Date:         item.NextBillingDate,
 		Summary:      item.Name,
-		Description:  calendarFeedDescription(item, settings),
-		Category:     item.Category,
+		Description:  calendarFeedDescription(item, settings, labels),
+		Category:     categoryLabel,
 		URL:          item.Website,
 		ReminderDays: effectiveCalendarFeedReminderDays(item.ReminderDays, settings),
 	}
 }
 
-func calendarFeedDescription(item calendarFeedSubscription, settings appSettings) string {
+func calendarFeedDescription(item calendarFeedSubscription, settings appSettings, labels calendarFeedLabelResolver) string {
 	locale := normalizeAppLocale(settings.Locale)
 	lines := []string{
 		serverFormat(locale, "calendarFeed.description.amount", map[string]interface{}{"amount": formatAmount(item.Price), "currency": item.Currency}),
 		serverFormat(locale, "calendarFeed.description.billingCycle", map[string]interface{}{"cycle": calendarFeedBillingCycleLabel(item.BillingCycle, locale)}),
-		serverFormat(locale, "calendarFeed.description.category", map[string]interface{}{"category": item.Category}),
+		serverFormat(locale, "calendarFeed.description.category", map[string]interface{}{"category": labels.categoryLabel(item.Category)}),
 	}
 	if item.PaymentMethod != "" {
-		lines = append(lines, serverFormat(locale, "calendarFeed.description.paymentMethod", map[string]interface{}{"paymentMethod": item.PaymentMethod}))
+		lines = append(lines, serverFormat(locale, "calendarFeed.description.paymentMethod", map[string]interface{}{"paymentMethod": labels.paymentMethodLabel(item.PaymentMethod)}))
 	}
 	if strings.TrimSpace(item.Notes) != "" {
 		lines = append(lines, serverFormat(locale, "calendarFeed.description.notes", map[string]interface{}{"notes": strings.TrimSpace(item.Notes)}))

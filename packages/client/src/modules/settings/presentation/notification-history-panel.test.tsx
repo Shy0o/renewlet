@@ -83,7 +83,7 @@ function createHistoryResponse(reason: string): NotificationHistoryResponse {
       },
       channels: {
         attempted: ["email"],
-        succeeded: [],
+        succeeded: ["telegram", "webhook"],
         failed: [{ channel: "email", error: reason }],
       },
     },
@@ -266,6 +266,11 @@ describe("NotificationHistoryPanel", () => {
     expect(screen.getByText("调度尝试 2 次")).toBeInTheDocument();
     expect(screen.getByText("累计尝试渠道")).toBeInTheDocument();
     expect(screen.getByText("累计成功渠道")).toBeInTheDocument();
+    const detail = screen.getByTestId("notification-history-desktop-detail");
+    expect(within(detail).getByText("邮件通知")).toBeInTheDocument();
+    expect(within(detail).getByText("Telegram, Webhook 通知")).toBeInTheDocument();
+    expect(within(detail).getByText(`邮件通知：${reason}`)).toBeInTheDocument();
+    expect(detail).not.toHaveTextContent("email");
 
     let trigger: HTMLElement | undefined;
     await waitFor(() => {
@@ -363,7 +368,8 @@ describe("NotificationHistoryPanel", () => {
     expect(drawer).toHaveClass("h5-drawer-panel", "h5-notification-history-detail-drawer", "overflow-hidden");
     expect(within(drawer).getByText("发送详情")).toBeInTheDocument();
     expect(within(drawer).getByText("累计尝试渠道")).toBeInTheDocument();
-    expect(within(drawer).getByText("email：smtp: 550 mailbox unavailable")).toBeInTheDocument();
+    expect(within(drawer).getByText("邮件通知：smtp: 550 mailbox unavailable")).toBeInTheDocument();
+    expect(drawer).not.toHaveTextContent("email");
   });
 
   it("labels upcoming repeat reminder items", async () => {

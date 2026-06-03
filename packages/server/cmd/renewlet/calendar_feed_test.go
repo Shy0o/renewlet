@@ -23,13 +23,14 @@ func TestCalendarFeedLifecycleAndICSRoute(t *testing.T) {
 	settings.Timezone = "UTC"
 	settings.NotificationReminderDays = 5
 	createCalendarFeedTestSettings(t, app, user, settings)
+	createCalendarFeedTestCustomConfig(t, app, user.Id)
 	createCalendarFeedTestSubscription(t, app, user.Id, calendarFeedTestSubscription{
 		Name:            "Active Plan",
 		Price:           12.5,
 		BillingCycle:    "monthly",
-		Category:        "Productivity",
+		Category:        "developer_tools",
 		Status:          "active",
-		PaymentMethod:   "Visa",
+		PaymentMethod:   "credit_card",
 		NextBillingDate: "2099-06-02",
 		Website:         "https://example.com/active",
 		Notes:           "Team, shared; admin",
@@ -88,8 +89,8 @@ func TestCalendarFeedLifecycleAndICSRoute(t *testing.T) {
 		"DTSTART;VALUE=DATE:20990602",
 		"DTEND;VALUE=DATE:20990603",
 		"SUMMARY:Active Plan",
-		"DESCRIPTION:Amount: 12.5 USD\\nBilling cycle: Monthly\\nCategory: Productivity\\nPayment method: Visa\\nNotes: Team\\, shared\\; admin",
-		"CATEGORIES:Productivity",
+		"DESCRIPTION:Amount: 12.5 USD\\nBilling cycle: Monthly\\nCategory: Developer Tools\\nPayment method: Credit Card\\nNotes: Team\\, shared\\; admin",
+		"CATEGORIES:Developer Tools",
 		"URL:https://example.com/active",
 		"BEGIN:VALARM",
 		"TRIGGER:-P5D",
@@ -101,6 +102,11 @@ func TestCalendarFeedLifecycleAndICSRoute(t *testing.T) {
 	for _, excluded := range []string{"Paused Plan", "Cancelled Plan", "Expired Plan", "One Time Plan", "Past Plan", "RRULE"} {
 		if strings.Contains(unfoldedICS, excluded) {
 			t.Fatalf("expected ICS to exclude %q, got:\n%s", excluded, unfoldedICS)
+		}
+	}
+	for _, rawValue := range []string{"developer_tools", "credit_card"} {
+		if strings.Contains(unfoldedICS, rawValue) {
+			t.Fatalf("expected ICS to use localized labels instead of %q, got:\n%s", rawValue, unfoldedICS)
 		}
 	}
 
@@ -147,6 +153,7 @@ func TestSubscriptionCalendarFeedLifecycleAndICSRoute(t *testing.T) {
 	settings.Timezone = "UTC"
 	settings.NotificationReminderDays = 5
 	createCalendarFeedTestSettings(t, app, user, settings)
+	createCalendarFeedTestCustomConfig(t, app, user.Id)
 	createCalendarFeedTestSubscription(t, app, user.Id, calendarFeedTestSubscription{
 		Name:            "Active Plan",
 		BillingCycle:    "monthly",
@@ -157,8 +164,9 @@ func TestSubscriptionCalendarFeedLifecycleAndICSRoute(t *testing.T) {
 		Name:            "Paused Plan",
 		Price:           9,
 		BillingCycle:    "monthly",
-		Category:        "Ops",
+		Category:        "developer_tools",
 		Status:          "paused",
+		PaymentMethod:   "credit_card",
 		NextBillingDate: "2099-06-03",
 		Notes:           "Paused but user requested calendar subscription",
 	})
@@ -200,7 +208,8 @@ func TestSubscriptionCalendarFeedLifecycleAndICSRoute(t *testing.T) {
 	for _, expected := range []string{
 		"NAME:Renewlet - Paused Plan",
 		"SUMMARY:Paused Plan",
-		"DESCRIPTION:Amount: 9 USD\\nBilling cycle: Monthly\\nCategory: Ops\\nNotes: Paused but user requested calendar subscription",
+		"DESCRIPTION:Amount: 9 USD\\nBilling cycle: Monthly\\nCategory: Developer Tools\\nPayment method: Credit Card\\nNotes: Paused but user requested calendar subscription",
+		"CATEGORIES:Developer Tools",
 		"DTSTART;VALUE=DATE:20990603",
 	} {
 		if !strings.Contains(unfoldedICS, expected) {
@@ -209,6 +218,11 @@ func TestSubscriptionCalendarFeedLifecycleAndICSRoute(t *testing.T) {
 	}
 	if strings.Contains(unfoldedICS, "Active Plan") {
 		t.Fatalf("expected subscription ICS to only contain the selected subscription, got:\n%s", unfoldedICS)
+	}
+	for _, rawValue := range []string{"developer_tools", "credit_card"} {
+		if strings.Contains(unfoldedICS, rawValue) {
+			t.Fatalf("expected subscription ICS to use localized labels instead of %q, got:\n%s", rawValue, unfoldedICS)
+		}
 	}
 
 	oneTimeRes := serveTestRequest(t, app, http.MethodPost, "/api/app/subscriptions/"+oneTime.Id+"/calendar-feed", `{}`, token)
@@ -256,6 +270,39 @@ func createCalendarFeedTestSettings(t *testing.T, app core.App, user *core.Recor
 	record := core.NewRecord(collection)
 	record.Set("user", user.Id)
 	record.Set("settings", settings)
+	if err := app.Save(record); err != nil {
+		t.Fatal(err)
+	}
+	return record
+}
+
+func createCalendarFeedTestCustomConfig(t *testing.T, app core.App, userID string) *core.Record {
+	t.Helper()
+	collection, err := app.FindCollectionByNameOrId("custom_configs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := core.NewRecord(collection)
+	record.Set("user", userID)
+	record.Set("config", customConfigPayload{
+		Categories: []customConfigItem{{
+			ID:    "developer_tools",
+			Value: "developer_tools",
+			Labels: customConfigLabels{
+				ZhCN: "开发工具",
+				EnUS: "Developer Tools",
+			},
+			Color: "hsl(265 68% 58%)",
+		}},
+		PaymentMethods: []customConfigItem{{
+			ID:    "credit_card",
+			Value: "credit_card",
+			Labels: customConfigLabels{
+				ZhCN: "信用卡",
+				EnUS: "Credit Card",
+			},
+		}},
+	})
 	if err := app.Save(record); err != nil {
 		t.Fatal(err)
 	}
