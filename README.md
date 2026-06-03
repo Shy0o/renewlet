@@ -36,12 +36,14 @@ Idle memory usage is around 20-30MiB in local testing, making it comfortable for
 - Get renewal reminders: jobs are generated from each user's IANA time zone and local notification time, with reminder days, repeat reminders, delivery history, and failed-send retries.
 - Subscribe from calendar apps: generate a global private ICS feed URL in settings, or create an independent per-subscription feed from a subscription card or calendar detail dialog to open the system calendar subscription flow.
 - Send notifications through six channels: Telegram, Notifyx, Webhook, WeCom Bot, SMTP email, and Bark.
+- Choose subscription artwork: upload a Logo, paste an image URL, search built-in icon sources, or use favicon fallback suggestions.
 - Handle multiple currencies: choose Exchange API or FloatRates JSON Feeds, with fallback rates when remote providers are unavailable.
-- Customize your lists: categories, payment methods, and currencies can be adjusted in settings, with built-in icons for common payment methods.
+- Move subscription data in and out: export from Renewlet, import Renewlet or Wallos files, preview mapped subscriptions, and adjust Logos before saving.
+- Customize your lists: categories, statuses, payment methods, and currencies can be adjusted in settings, with built-in icons for common payment methods.
+- Adjust the app: switch languages, choose light, dark, or system themes, pick a color variant, and manage account password settings.
 - Self-host one container: React frontend, Go/PocketBase backend, SQLite data, and static assets run together, with data persisted to `data/`.
 - Deploy to Cloudflare Workers: React static assets, Worker API, D1, R2, and Cron Triggers can run without the Go/PocketBase server.
 - Mobile-web friendly: bottom navigation, subscription cards, tag-filter drawers, and settings screens are adapted for small screens.
-- Switch languages in the app: Simplified Chinese and English are supported.
 
 ## Cloudflare Workers Deploy
 
