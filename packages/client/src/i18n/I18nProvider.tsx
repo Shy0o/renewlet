@@ -15,7 +15,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { setApiLocale } from "@/i18n/api-locale";
 import { getInitialLocale, isLocale, localizedLabel, writeStoredLocale, type Locale, type LocalizedLabels } from "@/i18n/locales";
 import { activateLinguiLocale, linguiI18n, translate, type MessageKey, type MessageParams } from "@/i18n/messages";
-import { useSettings, useUpdateSettings } from "@/hooks/use-settings";
+import { SETTINGS_QUERY_KEY, useSettings, useUpdateSettings } from "@/hooks/use-settings";
 import { getCurrentUserId } from "@/lib/pocketbase";
 import { formatCurrency as formatCurrencyValue } from "@/lib/currency";
 import { toPlainDate, type DateOnly } from "@/lib/time/date-only";
@@ -124,7 +124,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       }
 
       hasLocalPreviewRef.current = false;
-      queryClient.setQueryData(["settings"], (current: unknown) => {
+      queryClient.setQueryData(SETTINGS_QUERY_KEY, (current: unknown) => {
         // 先更新缓存可以让 Settings 页和 Header 立即看到新语言，失败回滚交给保存流程处理。
         if (!current || typeof current !== "object") return current;
         return { ...current, locale: nextLocale };

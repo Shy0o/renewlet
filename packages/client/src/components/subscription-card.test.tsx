@@ -20,29 +20,34 @@ type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "custom
 const mocks = vi.hoisted(() => {
   const longCategoryLabel = "生产力平台和开发者基础设施";
   const shortCategoryLabel = "生产力";
+  const creditCardLabel = "信用卡";
 
   return {
     longCategoryLabel,
     shortCategoryLabel,
-    config: {
-      categories: [
-        {
-          id: "developer-tools",
-          value: "developer-tools",
-          labels: { "zh-CN": longCategoryLabel, "en-US": longCategoryLabel },
-          color: "hsl(200 80% 50%)",
-        },
-        {
-          id: "productivity",
-          value: "productivity",
-          labels: { "zh-CN": shortCategoryLabel, "en-US": shortCategoryLabel },
-          color: "hsl(200 80% 50%)",
-        },
-      ],
-      statuses: [],
-      paymentMethods: [],
-      currencies: [],
-    },
+    creditCardLabel,
+    categories: [
+      {
+        id: "developer-tools",
+        value: "developer-tools",
+        labels: { "zh-CN": longCategoryLabel, "en-US": longCategoryLabel },
+        color: "hsl(200 80% 50%)",
+      },
+      {
+        id: "productivity",
+        value: "productivity",
+        labels: { "zh-CN": shortCategoryLabel, "en-US": shortCategoryLabel },
+        color: "hsl(200 80% 50%)",
+      },
+    ],
+    paymentMethods: [
+      {
+        id: "credit-card",
+        value: "credit_card",
+        labels: { "zh-CN": creditCardLabel, "en-US": creditCardLabel },
+        icon: "/icons/payment-methods/credit_card.svg",
+      },
+    ],
     createSubscriptionCalendarFeed: vi.fn(),
     deleteSubscriptionCalendarFeed: vi.fn(),
     subscriptionCalendarFeedStatus: { data: { enabled: false, feedUrl: undefined as string | undefined }, isLoading: false },
@@ -51,11 +56,12 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("@/contexts/CustomConfigContext", () => ({
   useCustomConfig: () => ({
-    config: mocks.config,
-    updateCategories: vi.fn(),
-    updateStatuses: vi.fn(),
-    updatePaymentMethods: vi.fn(),
-    updateCurrencies: vi.fn(),
+    config: {
+      categories: mocks.categories,
+      statuses: [],
+      paymentMethods: mocks.paymentMethods,
+      currencies: [],
+    },
   }),
 }));
 
@@ -126,6 +132,9 @@ function renderSubscriptionCard(overrides: SubscriptionOverrides = {}, handlers:
       <SubscriptionCard
         subscription={createSubscription(overrides)}
         timeZone="Asia/Shanghai"
+        inheritedReminderDays={5}
+        categoryByValue={new Map(mocks.categories.map((category) => [category.value, category]))}
+        paymentMethodByValue={new Map(mocks.paymentMethods.map((method) => [method.value, method]))}
         onEdit={handlers.onEdit ?? vi.fn()}
         onDelete={handlers.onDelete ?? vi.fn()}
         {...(handlers.onTogglePinned ? { onTogglePinned: handlers.onTogglePinned } : {})}
@@ -170,6 +179,13 @@ describe("SubscriptionCard", () => {
   afterEach(() => {
     vi.useRealTimers();
     Object.defineProperty(window, "open", { configurable: true, value: originalWindowOpen });
+  });
+
+  it("keeps the card body free of global settings and config hooks", () => {
+    const source = readFileSync(join(process.cwd(), "src/components/subscription-card.tsx"), "utf8");
+
+    expect(source).not.toContain("useSettings");
+    expect(source).not.toContain("useCustomConfig");
   });
 
   it("renders subscription logos through the unified theme-aware logo surface", () => {
@@ -500,6 +516,9 @@ describe("SubscriptionCard", () => {
           subscription={createSubscription({ reminderDays: -1 })}
           viewMode="list"
           timeZone="Asia/Shanghai"
+          inheritedReminderDays={5}
+          categoryByValue={new Map(mocks.categories.map((category) => [category.value, category]))}
+          paymentMethodByValue={new Map(mocks.paymentMethods.map((method) => [method.value, method]))}
           onEdit={vi.fn()}
           onDelete={vi.fn()}
         />
