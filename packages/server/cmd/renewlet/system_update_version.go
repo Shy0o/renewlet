@@ -26,26 +26,62 @@ func parseSystemVersion(rawVersion string) (string, semanticVersion, bool) {
 	if errMajor != nil || errMinor != nil || errPatch != nil || major < 0 || minor < 0 || patch < 0 {
 		return "", semanticVersion{}, false
 	}
-	return version, semanticVersion{major: major, minor: minor, patch: patch, prerelease: prerelease}, true
+	parsed := semanticVersion{major: major, minor: minor, patch: patch, prerelease: prerelease, rc: -1}
+	if prerelease != "" {
+		if !strings.HasPrefix(prerelease, "rc.") {
+			return "", semanticVersion{}, false
+		}
+		rcValue := strings.TrimPrefix(prerelease, "rc.")
+		rc, err := strconv.Atoi(rcValue)
+		if err != nil || rc <= 0 {
+			return "", semanticVersion{}, false
+		}
+		parsed.rc = rc
+	}
+	return version, parsed, true
 }
 
 func isNewerSystemVersion(current string, latest string) bool {
 	_, currentVersion, currentOK := parseSystemVersion(current)
 	_, latestVersion, latestOK := parseSystemVersion(latest)
-	// 页面内更新只接受稳定版 Release；RC 可用于发布验证，但不能成为管理员后台的一键升级目标。
-	if !currentOK || !latestOK || latestVersion.prerelease != "" {
+	if !currentOK || !latestOK || currentVersion.prerelease != "" || latestVersion.prerelease != "" {
 		return false
 	}
-	if latestVersion.major != currentVersion.major {
-		return latestVersion.major > currentVersion.major
+	return compareSemanticVersion(latestVersion, currentVersion) > 0
+}
+
+func isNewerSystemRCVersion(current string, latest string) bool {
+	_, currentVersion, currentOK := parseSystemVersion(current)
+	_, latestVersion, latestOK := parseSystemVersion(latest)
+	// RC 通道只允许候选版之间前进，不能把 stable 实例带到 prerelease，也不能用 stable 覆盖 RC。
+	if !currentOK || !latestOK || currentVersion.rc <= 0 || latestVersion.rc <= 0 {
+		return false
 	}
-	if latestVersion.minor != currentVersion.minor {
-		return latestVersion.minor > currentVersion.minor
+	return compareSemanticVersion(latestVersion, currentVersion) > 0
+}
+
+func compareSemanticVersion(left semanticVersion, right semanticVersion) int {
+	if left.major != right.major {
+		return compareInt(left.major, right.major)
 	}
-	if latestVersion.patch != currentVersion.patch {
-		return latestVersion.patch > currentVersion.patch
+	if left.minor != right.minor {
+		return compareInt(left.minor, right.minor)
 	}
-	return currentVersion.prerelease != ""
+	if left.patch != right.patch {
+		return compareInt(left.patch, right.patch)
+	}
+	return compareInt(left.rc, right.rc)
+}
+
+func compareInt(left int, right int) int {
+	switch {
+	case left > right:
+		return 1
+	case left < right:
+		return -1
+	default:
+		return 0
+	}
 }
 
 func systemArchiveName(version string) string {

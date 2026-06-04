@@ -184,6 +184,8 @@ function checkDockerSelfUpdateLayout() {
     "/opt/renewlet/current/renewlet",
     "RENEWLET_SELF_UPDATE_ENABLED=true",
     "ln -s /opt/renewlet/current/renewlet /renewlet",
+    "ARG UPDATE_CHANNEL=stable",
+    "-X main.UpdateChannel=${UPDATE_CHANNEL}",
   ]) {
     if (!dockerfile.includes(snippet)) {
       throw new Error(`Dockerfile must keep self-update layout snippet: ${snippet}`);
@@ -201,6 +203,9 @@ function checkDockerSelfUpdateLayout() {
   }
   for (const snippet of [
     "Build Linux self-update binaries",
+    "Resolve update channel",
+    "UPDATE_CHANNEL=${{ steps.update-channel.outputs.value }}",
+    "-X main.UpdateChannel=${UPDATE_CHANNEL}",
     "pnpm --filter @renewlet/client build",
     "renewlet_${{ needs.metadata.outputs.version }}_linux_amd64.tar.gz",
     "renewlet_${{ needs.metadata.outputs.version }}_linux_arm64.tar.gz",

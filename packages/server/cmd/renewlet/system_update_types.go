@@ -13,9 +13,13 @@ const (
 	systemUpdateRepository       = "zhiyingzzhou/renewlet"
 	systemUpdateGitHubAPIVersion = "2026-03-10"
 	systemUpdateGitHubTokenEnv   = "RENEWLET_GITHUB_TOKEN"
+	systemUpdateChannelStable    = "stable"
+	systemUpdateChannelRC        = "rc"
 	systemUpdateCacheTTL         = 20 * time.Minute
 	systemUpdateAPITimeout       = 15 * time.Second
 	systemUpdateDownloadTimeout  = 2 * time.Minute
+	systemUpdateReleaseListPages = 2
+	systemUpdateReleaseListSize  = 30
 	systemUpdateMaxArchiveBytes  = 200 * 1024 * 1024
 	systemUpdateMaxChecksumBytes = 2 * 1024 * 1024
 	defaultSelfUpdateBinaryPath  = "/opt/renewlet/current/renewlet"
@@ -48,6 +52,7 @@ func (e systemUpdateError) Is(target error) bool {
 
 type systemReleaseClient interface {
 	FetchLatestRelease(ctx context.Context) (*githubRelease, error)
+	FetchReleases(ctx context.Context, page int, perPage int) ([]githubRelease, error)
 	DownloadFile(ctx context.Context, sourceURL string, targetPath string, maxBytes int64) error
 	FetchText(ctx context.Context, sourceURL string, maxBytes int64) ([]byte, error)
 }
@@ -120,6 +125,7 @@ type semanticVersion struct {
 	minor      int
 	patch      int
 	prerelease string
+	rc         int
 }
 
 type httpSystemReleaseClient struct {

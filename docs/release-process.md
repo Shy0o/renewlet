@@ -116,6 +116,7 @@ git push origin v0.1.0
 - Users on images older than this layout must still run `docker compose pull && docker compose up -d` once. Later stable releases can be installed from System Update, opened from the top version badge.
 - Release binary archives must be Linux `amd64` and `arm64` tarballs named `renewlet_<version>_linux_<arch>.tar.gz`, with matching SHA-256 entries in `checksums.txt`.
 - `/api/app/admin/system/version` reports `deployment` as `docker`, `cloudflare`, or `source`, and `updateMode` as `in-app-binary`, `docker-compose`, `cloudflare-deploy`, or `source-manual`. `updateSupported` only means the admin dialog may execute the in-app binary update.
+- The release workflow bakes the update channel into Docker images and self-update binaries: stable builds only check stable Releases, while RC builds only check valid `x.y.z-rc.N` prereleases and may update from a lower RC to a higher RC.
 - Docker release images with the new layout return `deployment=docker`, `updateMode=in-app-binary`, and `updateSupported=true`. Disabled self-update, old bridge layouts, and non-release builds must return the correct manual mode and a single unsupported reason.
 - Cloudflare builds return `deployment=cloudflare`, `updateMode=cloudflare-deploy`, and `updateSupported=false`; they expose the injected build version and release link, but must not claim `checkSucceeded=true` unless a trusted GitHub latest-release check has actually succeeded.
 

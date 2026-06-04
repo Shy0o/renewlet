@@ -95,6 +95,15 @@ jobs:
         id: build-time
         run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve update channel
+        id: update-channel
+        run: |
+          if [[ "${{ needs.metadata.outputs.is-stable }}" == "true" ]]; then
+            echo "value=stable" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=rc" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4.0.0
 
@@ -123,6 +132,7 @@ jobs:
             VERSION=${{ needs.metadata.outputs.version }}
             COMMIT=${{ github.sha }}
             BUILD_TIME=${{ steps.build-time.outputs.value }}
+            UPDATE_CHANNEL=${{ steps.update-channel.outputs.value }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.tags.outputs.tags }}
@@ -213,6 +223,11 @@ jobs:
         run: |
           mkdir -p tmp/release
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          if [[ "${{ needs.metadata.outputs.is-stable }}" == "true" ]]; then
+            UPDATE_CHANNEL="stable"
+          else
+            UPDATE_CHANNEL="rc"
+          fi
           pnpm --filter @renewlet/client build
           mkdir -p packages/server/internal/static/public
           find packages/server/internal/static/public -mindepth 1 ! -name .gitkeep -delete
@@ -221,7 +236,7 @@ jobs:
             out_dir="tmp/release/renewlet_${{ needs.metadata.outputs.version }}_linux_${arch}"
             mkdir -p "$out_dir"
             CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -C packages/server -trimpath \
-              -ldflags="-s -w -X main.Version=${{ needs.metadata.outputs.version }} -X main.Commit=${GITHUB_SHA} -X main.BuildTime=${BUILD_TIME} -X main.BuildType=release" \
+              -ldflags="-s -w -X main.Version=${{ needs.metadata.outputs.version }} -X main.Commit=${GITHUB_SHA} -X main.BuildTime=${BUILD_TIME} -X main.BuildType=release -X main.UpdateChannel=${UPDATE_CHANNEL}" \
               -o "../../${out_dir}/renewlet" ./cmd/renewlet
             tar -C "$out_dir" -czf "tmp/release/renewlet_${{ needs.metadata.outputs.version }}_linux_${arch}.tar.gz" renewlet
             rm -rf "$out_dir"

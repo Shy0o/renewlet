@@ -56,6 +56,33 @@ func (client *httpSystemReleaseClient) FetchLatestRelease(ctx context.Context) (
 	return &release, nil
 }
 
+// FetchReleases 读取有限页 Release 列表；RC 通道只需要发布队列头部，不能为版本弹窗无限扫描历史。
+func (client *httpSystemReleaseClient) FetchReleases(ctx context.Context, page int, perPage int) ([]githubRelease, error) {
+	if page <= 0 || perPage <= 0 {
+		return nil, errors.New("invalid release list pagination")
+	}
+	requestURL := fmt.Sprintf("https://api.github.com/repos/%s/releases?page=%d&per_page=%d", systemUpdateRepository, page, perPage)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	applyGitHubAPIHeaders(request)
+	response, err := client.apiClient.Do(request)
+	if err != nil {
+		return nil, classifyGitHubNetworkError(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return nil, newGitHubAPIError(response)
+	}
+	var releases []githubRelease
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 4<<20))
+	if err := decoder.Decode(&releases); err != nil {
+		return nil, err
+	}
+	return releases, nil
+}
+
 // DownloadFile 下载自更新产物到预先分配的临时路径，并限制可信 host、跳转次数和最大体积。
 func (client *httpSystemReleaseClient) DownloadFile(ctx context.Context, sourceURL string, targetPath string, maxBytes int64) error {
 	if err := validateTrustedDownloadURL(sourceURL); err != nil {

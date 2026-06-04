@@ -35,7 +35,7 @@ func (service *systemUpdateService) CheckVersion(ctx context.Context, locale app
 	}
 
 	response := service.baseVersionResponse(locale)
-	release, err := service.fetchLatestRelease(ctx)
+	release, err := service.fetchTargetRelease(ctx)
 	if err != nil {
 		if cached := service.cachedVersion(); cached != nil {
 			// 版本检查是管理页体验能力，不应因 GitHub 短暂失败阻断管理员查看上次可信结果。
@@ -48,13 +48,13 @@ func (service *systemUpdateService) CheckVersion(ctx context.Context, locale app
 
 	response.ReleaseInfo = release.dto
 	response.LatestVersion = release.dto.Version
-	response.HasUpdate = isNewerSystemVersion(Version, release.dto.Version)
+	response.HasUpdate = service.isTargetVersionNewer(release.dto.Version)
 	response.CheckSucceeded = true
 	service.storeVersion(response)
 	return cloneSystemVersionResponse(response, false), nil
 }
 
-// PerformUpdate 下载稳定 Release、校验 checksum、替换真实二进制，并把退出动作延后到显式 restart。
+// PerformUpdate 下载目标 Release、校验 checksum、替换真实二进制，并把退出动作延后到显式 restart。
 // 注意：这里不能在替换完成后立刻退出，否则前端拿不到 needsRestart 状态，也无法开始健康检查等待。
 func (service *systemUpdateService) PerformUpdate(ctx context.Context, locale appLocale) (*systemUpdateResponse, error) {
 	if !service.beginUpdate() {
@@ -66,11 +66,11 @@ func (service *systemUpdateService) PerformUpdate(ctx context.Context, locale ap
 	if !capability.supported {
 		return nil, systemUpdateError{kind: errSystemUpdateUnsupported, message: capability.unsupportedReason}
 	}
-	release, err := service.fetchLatestRelease(ctx)
+	release, err := service.fetchTargetRelease(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if !isNewerSystemVersion(Version, release.dto.Version) {
+	if !service.isTargetVersionNewer(release.dto.Version) {
 		return nil, systemUpdateError{kind: errSystemUpdateNoUpdate, message: serverText(locale, "system.alreadyLatest")}
 	}
 
@@ -172,7 +172,14 @@ func (service *systemUpdateService) baseVersionResponse(locale appLocale) *syste
 	}
 }
 
-func (service *systemUpdateService) fetchLatestRelease(ctx context.Context) (*fetchedSystemRelease, error) {
+func (service *systemUpdateService) fetchTargetRelease(ctx context.Context) (*fetchedSystemRelease, error) {
+	if normalizedUpdateChannel() == systemUpdateChannelRC {
+		return service.fetchLatestRCRelease(ctx)
+	}
+	return service.fetchLatestStableRelease(ctx)
+}
+
+func (service *systemUpdateService) fetchLatestStableRelease(ctx context.Context) (*fetchedSystemRelease, error) {
 	release, err := service.client.FetchLatestRelease(ctx)
 	if err != nil {
 		return nil, err
@@ -181,6 +188,60 @@ func (service *systemUpdateService) fetchLatestRelease(ctx context.Context) (*fe
 	if !ok || parsed.prerelease != "" || release.Prerelease || release.Draft {
 		return nil, errSystemNoStableRelease
 	}
+	return systemReleaseFromGitHub(release, version), nil
+}
+
+func (service *systemUpdateService) fetchLatestRCRelease(ctx context.Context) (*fetchedSystemRelease, error) {
+	var best *githubRelease
+	var bestVersion string
+	var bestParsed semanticVersion
+	for page := 1; page <= systemUpdateReleaseListPages; page += 1 {
+		releases, err := service.client.FetchReleases(ctx, page, systemUpdateReleaseListSize)
+		if err != nil {
+			return nil, err
+		}
+		if len(releases) == 0 {
+			break
+		}
+		for index := range releases {
+			release := &releases[index]
+			version, parsed, ok := parseSystemVersion(release.TagName)
+			if !ok || parsed.rc <= 0 || release.Draft || !release.Prerelease {
+				continue
+			}
+			if !isNewerSystemRCVersion(Version, version) {
+				continue
+			}
+			if best == nil || compareSemanticVersion(parsed, bestParsed) > 0 {
+				copyRelease := *release
+				copyRelease.Assets = append([]githubAsset(nil), release.Assets...)
+				best = &copyRelease
+				bestVersion = version
+				bestParsed = parsed
+			}
+		}
+	}
+	if best == nil {
+		return nil, errSystemNoStableRelease
+	}
+	return systemReleaseFromGitHub(best, bestVersion), nil
+}
+
+func (service *systemUpdateService) isTargetVersionNewer(version string) bool {
+	if normalizedUpdateChannel() == systemUpdateChannelRC {
+		return isNewerSystemRCVersion(Version, version)
+	}
+	return isNewerSystemVersion(Version, version)
+}
+
+func normalizedUpdateChannel() string {
+	if strings.EqualFold(strings.TrimSpace(UpdateChannel), systemUpdateChannelRC) {
+		return systemUpdateChannelRC
+	}
+	return systemUpdateChannelStable
+}
+
+func systemReleaseFromGitHub(release *githubRelease, version string) *fetchedSystemRelease {
 	assets := make([]systemReleaseAssetDTO, 0, len(release.Assets))
 	for _, asset := range release.Assets {
 		assets = append(assets, systemReleaseAssetDTO{Name: asset.Name, Size: asset.Size})
@@ -195,8 +256,8 @@ func (service *systemUpdateService) fetchLatestRelease(ctx context.Context) (*fe
 			HTMLURL:     release.HTMLURL,
 			Assets:      assets,
 		},
-		assets: release.Assets,
-	}, nil
+		assets: append([]githubAsset(nil), release.Assets...),
+	}
 }
 
 func (service *systemUpdateService) cachedVersion() *systemVersionResponse {

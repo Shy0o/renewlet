@@ -23,6 +23,7 @@ import (
 
 type fakeSystemReleaseClient struct {
 	release     *githubRelease
+	releases    [][]githubRelease
 	fetchDelay  time.Duration
 	fetchCount  int32
 	downloadFn  func(targetPath string) error
@@ -42,6 +43,21 @@ func (client *fakeSystemReleaseClient) FetchLatestRelease(ctx context.Context) (
 		return nil, errors.New("missing release")
 	}
 	return client.release, nil
+}
+
+func (client *fakeSystemReleaseClient) FetchReleases(ctx context.Context, page int, _ int) ([]githubRelease, error) {
+	atomic.AddInt32(&client.fetchCount, 1)
+	if client.fetchDelay > 0 {
+		select {
+		case <-time.After(client.fetchDelay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	if page <= 0 || page > len(client.releases) {
+		return []githubRelease{}, nil
+	}
+	return client.releases[page-1], nil
 }
 
 func (client *fakeSystemReleaseClient) DownloadFile(_ context.Context, _ string, targetPath string, _ int64) error {
@@ -66,13 +82,36 @@ func TestSystemVersionComparison(t *testing.T) {
 		{name: "minor update", current: "0.1.9", latest: "0.2.0", want: true},
 		{name: "equal stable", current: "0.1.0", latest: "0.1.0", want: false},
 		{name: "ignore latest prerelease", current: "0.1.0", latest: "0.2.0-rc.1", want: false},
-		{name: "release beats current prerelease", current: "0.2.0-rc.1", latest: "0.2.0", want: true},
+		{name: "stable channel ignores current prerelease", current: "0.2.0-rc.1", latest: "0.2.0", want: false},
 		{name: "invalid current is not updateable", current: "dev", latest: "0.2.0", want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := isNewerSystemVersion(tc.current, tc.latest); got != tc.want {
 				t.Fatalf("isNewerSystemVersion(%q, %q) = %v, want %v", tc.current, tc.latest, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSystemRCVersionComparison(t *testing.T) {
+	cases := []struct {
+		name    string
+		current string
+		latest  string
+		want    bool
+	}{
+		{name: "same base rc increment", current: "0.1.0-rc.1", latest: "0.1.0-rc.2", want: true},
+		{name: "cross base rc increment", current: "0.1.0-rc.1", latest: "0.2.0-rc.1", want: true},
+		{name: "older rc rejected", current: "0.1.0-rc.2", latest: "0.1.0-rc.1", want: false},
+		{name: "stable target rejected", current: "0.1.0-rc.1", latest: "0.1.0", want: false},
+		{name: "stable current rejected", current: "0.1.0", latest: "0.2.0-rc.1", want: false},
+		{name: "invalid rc suffix rejected", current: "0.1.0-rc.1", latest: "0.2.0-beta.1", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isNewerSystemRCVersion(tc.current, tc.latest); got != tc.want {
+				t.Fatalf("isNewerSystemRCVersion(%q, %q) = %v, want %v", tc.current, tc.latest, got, tc.want)
 			}
 		})
 	}
@@ -160,9 +199,9 @@ func TestSelfUpdateCapabilityMatrix(t *testing.T) {
 		t.Skip("self-update capability matrix depends on linux Docker binary semantics")
 	}
 
-	oldVersion, oldBuildType := Version, BuildType
+	oldVersion, oldBuildType, oldUpdateChannel := Version, BuildType, UpdateChannel
 	t.Cleanup(func() {
-		Version, BuildType = oldVersion, oldBuildType
+		Version, BuildType, UpdateChannel = oldVersion, oldBuildType, oldUpdateChannel
 	})
 
 	cases := []struct {
@@ -247,6 +286,75 @@ func TestSelfUpdateCapabilityMatrix(t *testing.T) {
 	}
 }
 
+func TestStableChannelIgnoresPrereleaseTargets(t *testing.T) {
+	oldVersion, oldBuildType, oldUpdateChannel := Version, BuildType, UpdateChannel
+	Version, BuildType, UpdateChannel = "0.1.0", "release", systemUpdateChannelStable
+	t.Cleanup(func() {
+		Version, BuildType, UpdateChannel = oldVersion, oldBuildType, oldUpdateChannel
+	})
+
+	service := newSystemUpdateService(&fakeSystemReleaseClient{release: &githubRelease{
+		TagName:    "v0.2.0-rc.1",
+		Prerelease: true,
+	}})
+
+	response, err := service.CheckVersion(context.Background(), localeZhCN, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.CheckSucceeded || response.HasUpdate {
+		t.Fatalf("stable channel should not accept prerelease target: %#v", response)
+	}
+}
+
+func TestRCChannelSelectsHighestNewerPrerelease(t *testing.T) {
+	oldVersion, oldBuildType, oldUpdateChannel := Version, BuildType, UpdateChannel
+	Version, BuildType, UpdateChannel = "0.1.0-rc.1", "release", systemUpdateChannelRC
+	t.Cleanup(func() {
+		Version, BuildType, UpdateChannel = oldVersion, oldBuildType, oldUpdateChannel
+	})
+
+	service := newSystemUpdateService(&fakeSystemReleaseClient{releases: [][]githubRelease{{
+		releaseFixture("v0.1.0", false, false),
+		releaseFixture("v0.1.0-rc.2", true, false),
+		releaseFixture("v0.2.0-rc.1", true, false),
+		releaseFixture("v0.2.0-beta.1", true, false),
+		releaseFixture("v9.9.9-rc.1", true, true),
+		releaseFixture("v0.1.0-rc.1", true, false),
+	}}})
+
+	response, err := service.CheckVersion(context.Background(), localeZhCN, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !response.CheckSucceeded || !response.HasUpdate {
+		t.Fatalf("expected rc channel update, got %#v", response)
+	}
+	if response.LatestVersion != "0.2.0-rc.1" {
+		t.Fatalf("latestVersion = %q, want 0.2.0-rc.1", response.LatestVersion)
+	}
+}
+
+func TestRCChannelRejectsStableCurrentVersion(t *testing.T) {
+	oldVersion, oldBuildType, oldUpdateChannel := Version, BuildType, UpdateChannel
+	Version, BuildType, UpdateChannel = "0.1.0", "release", systemUpdateChannelRC
+	t.Cleanup(func() {
+		Version, BuildType, UpdateChannel = oldVersion, oldBuildType, oldUpdateChannel
+	})
+
+	service := newSystemUpdateService(&fakeSystemReleaseClient{releases: [][]githubRelease{{
+		releaseFixture("v0.2.0-rc.1", true, false),
+	}}})
+
+	response, err := service.CheckVersion(context.Background(), localeZhCN, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.CheckSucceeded || response.HasUpdate {
+		t.Fatalf("stable current version must not update to rc: %#v", response)
+	}
+}
+
 func TestChecksumForArchive(t *testing.T) {
 	hash := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	got, err := checksumForArchive("renewlet_1.0.0_linux_amd64.tar.gz", []byte(hash+"  renewlet_1.0.0_linux_amd64.tar.gz\n"))
@@ -308,10 +416,10 @@ func TestSystemUpdateRejectsConcurrentRun(t *testing.T) {
 	t.Setenv("RENEWLET_SELF_UPDATE_ENABLED", "true")
 	t.Setenv("RENEWLET_SELF_UPDATE_BINARY", binaryPath)
 	t.Setenv("RENEWLET_SELF_UPDATE_BACKUP_DIR", filepath.Join(tempDir, "backups"))
-	oldVersion, oldBuildType := Version, BuildType
+	oldVersion, oldBuildType, oldUpdateChannel := Version, BuildType, UpdateChannel
 	Version, BuildType = "1.0.0", "release"
 	t.Cleanup(func() {
-		Version, BuildType = oldVersion, oldBuildType
+		Version, BuildType, UpdateChannel = oldVersion, oldBuildType, oldUpdateChannel
 	})
 
 	client := &fakeSystemReleaseClient{release: release, fetchDelay: 200 * time.Millisecond}
@@ -355,10 +463,10 @@ func TestSystemUpdateWaitsForExplicitRestart(t *testing.T) {
 	t.Setenv("RENEWLET_SELF_UPDATE_ENABLED", "true")
 	t.Setenv("RENEWLET_SELF_UPDATE_BINARY", binaryPath)
 	t.Setenv("RENEWLET_SELF_UPDATE_BACKUP_DIR", filepath.Join(tempDir, "backups"))
-	oldVersion, oldBuildType := Version, BuildType
+	oldVersion, oldBuildType, oldUpdateChannel := Version, BuildType, UpdateChannel
 	Version, BuildType = "1.0.0", "release"
 	t.Cleanup(func() {
-		Version, BuildType = oldVersion, oldBuildType
+		Version, BuildType, UpdateChannel = oldVersion, oldBuildType, oldUpdateChannel
 	})
 
 	var exitCalled atomic.Bool
@@ -433,6 +541,22 @@ func writeTarGz(path string, files map[string]string) error {
 		return err
 	}
 	return os.WriteFile(path, buffer.Bytes(), 0o644)
+}
+
+func releaseFixture(tag string, prerelease bool, draft bool) githubRelease {
+	version := strings.TrimPrefix(tag, "v")
+	return githubRelease{
+		TagName:     tag,
+		Name:        "Renewlet " + version,
+		PublishedAt: "2026-06-04T00:00:00Z",
+		HTMLURL:     "https://github.com/zhiyingzzhou/renewlet/releases/tag/" + tag,
+		Prerelease:  prerelease,
+		Draft:       draft,
+		Assets: []githubAsset{
+			{Name: systemArchiveName(version), BrowserDownloadURL: "https://github.com/zhiyingzzhou/renewlet/releases/download/" + tag + "/" + systemArchiveName(version)},
+			{Name: "checksums.txt", BrowserDownloadURL: "https://github.com/zhiyingzzhou/renewlet/releases/download/" + tag + "/checksums.txt"},
+		},
+	}
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
