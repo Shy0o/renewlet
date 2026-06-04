@@ -240,6 +240,21 @@ function checkCloudflareDeployMigrationScript() {
   }
 }
 
+function checkCloudflareFreshD1Migrations() {
+  const tempDir = mkdtempSync(join(tmpdir(), "renewlet-d1-migrations-"));
+  try {
+    // Deploy Button 会创建全新的 D1；历史 migration 必须能从 0001 顺序跑到最新，不能只验证已有生产库增量路径。
+    run("pnpm", ["exec", "wrangler", "d1", "migrations", "apply", "DB", "--local", "--persist-to", tempDir], {
+      env: {
+        ...process.env,
+        CI: "1",
+      },
+    });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 function checkCloudflareDeployButtonVars() {
   const wranglerConfig = readFileSync(join(repoRoot, "wrangler.jsonc"), "utf8");
   const packageJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
@@ -291,6 +306,7 @@ checkGeneratedSecrets();
 checkInvalidExistingPBKeyIsRejected();
 checkDockerSelfUpdateLayout();
 checkCloudflareDeployMigrationScript();
+checkCloudflareFreshD1Migrations();
 checkCloudflareDeployButtonVars();
 checkCloudflareWorkflowBuildMetadata();
 checkComposeConfig();
