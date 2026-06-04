@@ -8,10 +8,7 @@ import { useI18n } from '@/i18n/I18nProvider';
 
 // H5 锚点定位需要同时避开全局顶部区和设置页局部 sticky 标题；scrollIntoView 会读取目标元素的 scroll-margin。
 export const SETTINGS_SECTION_SCROLL_CLASS = "scroll-mt-[calc(13rem+env(safe-area-inset-top))] lg:scroll-mt-24";
-const SETTINGS_SECTION_OBSERVER_ROOT_MARGIN = "-20% 0px -65% 0px";
 const PROGRAMMATIC_SCROLL_IDLE_MS = 160;
-const DESKTOP_ANCHOR_OFFSET_PX = 96;
-const MOBILE_ANCHOR_OFFSET_PX = 208;
 const BOTTOM_EDGE_TOLERANCE_PX = 4;
 
 const SETTINGS_SECTIONS = [
@@ -52,24 +49,80 @@ function getAppScrollRoot() {
   return typeof document === "undefined" ? null : document.getElementById("root");
 }
 
-function getAnchorOffsetPx() {
-  if (typeof window === "undefined") return DESKTOP_ANCHOR_OFFSET_PX;
-  return window.matchMedia("(min-width: 1024px)").matches ? DESKTOP_ANCHOR_OFFSET_PX : MOBILE_ANCHOR_OFFSET_PX;
+function parseCssLengthToPx(value: string): number | null {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  if (normalized.startsWith("calc(") && normalized.endsWith(")")) {
+    return parseCssCalcLengthToPx(normalized.slice(5, -1));
+  }
+  if (normalized.startsWith("env(")) return 0;
+
+  const match = /^(-?\d+(?:\.\d+)?)(px|rem)$/.exec(normalized);
+  if (!match) return null;
+  const valueNumber = Number.parseFloat(match[1] ?? "0");
+  const unit = match[2];
+  if (unit === "px") return valueNumber;
+  return valueNumber * getRootFontSizePx();
+}
+
+function parseCssCalcLengthToPx(expression: string): number | null {
+  const terms = expression
+    .replace(/\benv\([^)]*\)/g, "0px")
+    .match(/[+-]?\s*[^+-]+/g);
+  if (!terms) return null;
+
+  let total = 0;
+  for (const term of terms) {
+    const value = parseCssLengthToPx(term.replace(/\s+/g, ""));
+    if (value === null) return null;
+    total += value;
+  }
+  return total;
+}
+
+function getRootFontSizePx(): number {
+  const rootFontSize = window.getComputedStyle(document.documentElement).fontSize;
+  return parseCssLengthToPx(rootFontSize) ?? 16;
+}
+
+function getSectionElement(id: SettingsSectionId) {
+  const element = document.getElementById(id);
+  return element instanceof HTMLElement ? element : null;
+}
+
+function getFirstRenderedSection() {
+  for (const section of SETTINGS_SECTIONS) {
+    const element = getSectionElement(section.id);
+    if (element) return element;
+  }
+  return null;
+}
+
+function getAnchorLinePx(root: HTMLElement) {
+  const firstSection = getFirstRenderedSection();
+  const scrollMarginTop = firstSection
+    ? parseCssLengthToPx(window.getComputedStyle(firstSection).scrollMarginTop) ?? 0
+    : 0;
+  return root.getBoundingClientRect().top + scrollMarginTop;
 }
 
 function isRootScrolledToBottom(root: HTMLElement) {
-  return root.scrollHeight - root.scrollTop - root.clientHeight <= BOTTOM_EDGE_TOLERANCE_PX;
+  return root.scrollHeight > root.clientHeight + BOTTOM_EDGE_TOLERANCE_PX
+    && root.scrollHeight - root.scrollTop - root.clientHeight <= BOTTOM_EDGE_TOLERANCE_PX;
 }
 
 function resolveActiveSectionFromAnchor(root: HTMLElement): SettingsSectionId {
+  if (root.clientHeight <= 0) return SETTINGS_SECTIONS[0].id;
+
   const lastSection = SETTINGS_SECTIONS[SETTINGS_SECTIONS.length - 1];
   if (isRootScrolledToBottom(root)) return lastSection?.id ?? SETTINGS_SECTIONS[0].id;
 
-  const anchorLine = root.getBoundingClientRect().top + getAnchorOffsetPx();
+  // 激活锚点直接复用 section 的真实 scroll-margin，避免点击定位和滚动高亮使用两套顶部基准。
+  const anchorLine = getAnchorLinePx(root);
   let activeSectionId: SettingsSectionId = SETTINGS_SECTIONS[0].id;
 
   for (const section of SETTINGS_SECTIONS) {
-    const element = document.getElementById(section.id);
+    const element = getSectionElement(section.id);
     if (!element) continue;
     if (element.getBoundingClientRect().top <= anchorLine) {
       activeSectionId = section.id;
@@ -91,19 +144,28 @@ function isAnchorStillWithinSection(root: HTMLElement, id: SettingsSectionId) {
   if (resolveActiveSectionFromAnchor(root) !== id) return false;
   const nextSectionId = getNextSectionId(id);
   if (!nextSectionId) return true;
-  const nextSection = document.getElementById(nextSectionId);
+  const nextSection = getSectionElement(nextSectionId);
   if (!nextSection) return true;
-  return nextSection.getBoundingClientRect().top > root.getBoundingClientRect().top + getAnchorOffsetPx();
+  return nextSection.getBoundingClientRect().top > getAnchorLinePx(root);
 }
 
 export function useSettingsSectionNavigation() {
   const [activeSectionId, setActiveSectionId] = useState<SettingsSectionId>(SETTINGS_SECTIONS[0].id);
   const programmaticNavigationRef = useRef<ProgrammaticNavigation | null>(null);
+  const scrollFrameRef = useRef<number | null>(null);
 
   const applyAnchorActiveSection = useCallback(() => {
     const root = getAppScrollRoot();
     if (root) setActiveSectionId(resolveActiveSectionFromAnchor(root));
   }, []);
+
+  const scheduleAnchorActiveSection = useCallback(() => {
+    if (scrollFrameRef.current !== null) return;
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      if (!programmaticNavigationRef.current) applyAnchorActiveSection();
+    });
+  }, [applyAnchorActiveSection]);
 
   const endProgrammaticNavigation = useCallback((options: { applyAnchorSection?: boolean } = {}) => {
     const navigation = programmaticNavigationRef.current;
@@ -135,35 +197,6 @@ export function useSettingsSectionNavigation() {
 
   useEffect(() => {
     const root = getAppScrollRoot();
-    if (!root || typeof IntersectionObserver === "undefined") return;
-
-    // 设置页滚动面是 #root，scrollspy 必须绑定应用滚动容器，不能退回 window/document viewport。
-    const observer = new IntersectionObserver((entries) => {
-      if (!entries.some((entry) => getSectionFromHash(entry.target.id))) return;
-
-      if (programmaticNavigationRef.current) {
-        // 点击目录期间 active 表达用户导航意图，释放时也不能被相邻短分区的可见性覆盖。
-        return;
-      }
-      setActiveSectionId(resolveActiveSectionFromAnchor(root));
-    }, {
-      root,
-      rootMargin: SETTINGS_SECTION_OBSERVER_ROOT_MARGIN,
-      threshold: 0,
-    });
-
-    for (const section of SETTINGS_SECTIONS) {
-      const element = document.getElementById(section.id);
-      if (element) observer.observe(element);
-    }
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [endProgrammaticNavigation]);
-
-  useEffect(() => {
-    const root = getAppScrollRoot();
     if (!root) return;
 
     const cancelForUserScroll = () => {
@@ -179,7 +212,10 @@ export function useSettingsSectionNavigation() {
     };
     const handleScroll = () => {
       const navigation = programmaticNavigationRef.current;
-      if (!navigation) return;
+      if (!navigation) {
+        scheduleAnchorActiveSection();
+        return;
+      }
       if (navigation.idleTimer !== null) window.clearTimeout(navigation.idleTimer);
       navigation.idleTimer = window.setTimeout(
         () => {
@@ -205,6 +241,8 @@ export function useSettingsSectionNavigation() {
       }
     };
 
+    // #root 是唯一滚动面；scroll 事件每帧解析一次真实 DOM 位置，避免 IO 阈值没变化时 active 卡在上一段。
+    scheduleAnchorActiveSection();
     root.addEventListener("wheel", cancelForUserScroll, { passive: true, capture: true });
     root.addEventListener("touchstart", cancelForUserScroll, { passive: true, capture: true });
     root.addEventListener("pointerdown", cancelForUserScroll, { passive: true, capture: true });
@@ -219,9 +257,13 @@ export function useSettingsSectionNavigation() {
       root.removeEventListener("scroll", handleScroll);
       root.removeEventListener("scrollend", handleScrollEnd);
       window.removeEventListener("keydown", handleKeyDown, true);
+      if (scrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
       endProgrammaticNavigation();
     };
-  }, [endProgrammaticNavigation]);
+  }, [endProgrammaticNavigation, scheduleAnchorActiveSection]);
 
   const handleSectionClick = useCallback((id: SettingsSectionId) => {
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${id}`);

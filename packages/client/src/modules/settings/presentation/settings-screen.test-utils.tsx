@@ -1,5 +1,5 @@
 // SettingsScreen 测试夹具集中托管，避免页面主体测试和目录状态机测试再次长成单文件门禁问题。
-import { render } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -32,59 +32,6 @@ export const TEST_ACTIVE_SECTION_TOP_PX = TEST_MOBILE_ANCHOR_LINE_PX - 24;
 export const TEST_NEXT_SECTION_TOP_PX = TEST_MOBILE_ANCHOR_LINE_PX + 160;
 
 type TestSettingsSectionId = typeof SETTINGS_SECTION_IDS[number];
-type IntersectionObserverCallback = ConstructorParameters<typeof IntersectionObserver>[0];
-type IntersectionObserverOptions = ConstructorParameters<typeof IntersectionObserver>[1];
-
-export class SettingsIntersectionObserverMock implements IntersectionObserver {
-  readonly root: Element | Document | null;
-  readonly rootMargin: string;
-  readonly scrollMargin: string;
-  readonly thresholds: ReadonlyArray<number>;
-  readonly observedElements: Element[] = [];
-
-  static instances: SettingsIntersectionObserverMock[] = [];
-
-  constructor(
-    private readonly callback: IntersectionObserverCallback,
-    options: IntersectionObserverOptions = {},
-  ) {
-    this.root = options.root ?? null;
-    this.rootMargin = options.rootMargin ?? "0px";
-    this.scrollMargin = "0px";
-    this.thresholds = Array.isArray(options.threshold)
-      ? options.threshold
-      : [options.threshold ?? 0];
-    SettingsIntersectionObserverMock.instances.push(this);
-  }
-
-  disconnect = vi.fn(() => {
-    this.observedElements.length = 0;
-  });
-
-  observe = vi.fn((target: Element) => {
-    this.observedElements.push(target);
-  });
-
-  takeRecords = vi.fn((): IntersectionObserverEntry[] => []);
-
-  unobserve = vi.fn((target: Element) => {
-    const index = this.observedElements.indexOf(target);
-    if (index >= 0) this.observedElements.splice(index, 1);
-  });
-
-  trigger(targetIds: string[]) {
-    const visibleTargetIds = new Set(targetIds);
-    this.callback(this.observedElements.map((target) => ({
-      boundingClientRect: target.getBoundingClientRect(),
-      intersectionRatio: visibleTargetIds.has(target.id) ? 1 : 0,
-      intersectionRect: target.getBoundingClientRect(),
-      isIntersecting: visibleTargetIds.has(target.id),
-      rootBounds: null,
-      target,
-      time: performance.now(),
-    } satisfies IntersectionObserverEntry)), this);
-  }
-}
 
 export function setElementRect(element: Element | null, top: number, height = 160) {
   if (!element) throw new Error("Expected element to exist");
@@ -130,6 +77,21 @@ export function setSettingsSectionTops(tops: Partial<Record<string, number>>) {
   }
 }
 
+function setSettingsSectionScrollMargins() {
+  for (const id of SETTINGS_SECTION_IDS) {
+    const element = document.getElementById(id);
+    if (element instanceof HTMLElement) {
+      element.style.scrollMarginTop = `${TEST_MOBILE_ANCHOR_LINE_PX}px`;
+    }
+  }
+}
+
+export function dispatchRootScroll(root: HTMLElement) {
+  act(() => {
+    root.dispatchEvent(new Event("scroll"));
+  });
+}
+
 export function setSectionAnchorGeometry(
   activeId: TestSettingsSectionId,
   options: {
@@ -142,6 +104,7 @@ export function setSectionAnchorGeometry(
   const activeIndex = SETTINGS_SECTION_IDS.indexOf(activeId);
   const activeTop = options.activeTop ?? TEST_ACTIVE_SECTION_TOP_PX;
   const nextTop = options.nextTop ?? TEST_NEXT_SECTION_TOP_PX;
+  setSettingsSectionScrollMargins();
 
   SETTINGS_SECTION_IDS.forEach((id, index) => {
     const top = index < activeIndex

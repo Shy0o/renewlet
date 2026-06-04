@@ -11,12 +11,10 @@ import {
   createControllerState,
   mocks,
   renderSettingsScreen,
-  SettingsIntersectionObserverMock,
 } from "./settings-screen.test-utils";
 
 describe("SettingsScreen SMTP email settings", () => {
   beforeEach(() => {
-    SettingsIntersectionObserverMock.instances = [];
     vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
       matches: false,
       media: query,
@@ -27,7 +25,6 @@ describe("SettingsScreen SMTP email settings", () => {
       removeListener: vi.fn(),
       dispatchEvent: vi.fn(),
     })));
-    vi.stubGlobal("IntersectionObserver", SettingsIntersectionObserverMock);
     mocks.useSettingsFormController.mockReturnValue(createControllerState());
   });
 

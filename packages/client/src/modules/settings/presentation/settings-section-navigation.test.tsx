@@ -1,13 +1,13 @@
-// 设置目录测试聚焦 scrollspy 状态机，避免页面主体测试文件再次超过 CI 行数门禁。
+// 设置目录测试聚焦滚动状态机，避免页面主体测试文件再次超过 CI 行数门禁。
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createControllerState,
+  dispatchRootScroll,
   mocks,
   renderSettingsScreen,
   SETTINGS_SECTION_IDS,
-  SettingsIntersectionObserverMock,
   setRootMetrics,
   setSectionAnchorGeometry,
   setSettingsSectionTops,
@@ -17,10 +17,16 @@ import {
 
 describe("SettingsScreen section navigation", () => {
   beforeEach(() => {
-    SettingsIntersectionObserverMock.instances = [];
     Element.prototype.hasPointerCapture = vi.fn(() => false);
     Element.prototype.setPointerCapture = vi.fn();
     Element.prototype.releasePointerCapture = vi.fn();
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) =>
+      window.setTimeout(() => callback(performance.now()), 0)
+    );
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation((handle) => {
+      window.clearTimeout(handle);
+    });
+    vi.stubGlobal("IntersectionObserver", vi.fn());
     vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
       matches: false,
       media: query,
@@ -31,11 +37,11 @@ describe("SettingsScreen section navigation", () => {
       removeListener: vi.fn(),
       dispatchEvent: vi.fn(),
     })));
-    vi.stubGlobal("IntersectionObserver", SettingsIntersectionObserverMock);
     mocks.useSettingsFormController.mockReturnValue(createControllerState());
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     window.history.replaceState(null, "", "/");
   });
@@ -58,10 +64,7 @@ describe("SettingsScreen section navigation", () => {
     const desktopNav = screen.getByTestId("settings-section-nav-desktop");
     expect(desktopNav).toHaveClass("sticky", "top-28", "bg-card/70", "backdrop-blur", "overflow-y-auto");
     expect(within(desktopNav).getByRole("link", { name: "账户" })).toHaveAttribute("aria-current", "location");
-    const scrollSpy = SettingsIntersectionObserverMock.instances[0];
-    expect(scrollSpy).toBeDefined();
-    expect(scrollSpy?.root).toBe(document.getElementById("root"));
-    expect(scrollSpy?.rootMargin).toBe("-20% 0px -65% 0px");
+    expect(IntersectionObserver).not.toHaveBeenCalled();
     expect(screen.queryByTestId("settings-section-content-scroll")).not.toBeInTheDocument();
     const content = screen.getByTestId("settings-section-content");
     expect(content).not.toHaveClass("lg:overflow-y-auto");
@@ -110,9 +113,8 @@ describe("SettingsScreen section navigation", () => {
       const links = sectionNav.getAllByRole("link", { name: label });
       expect(links).toHaveLength(1);
       links.forEach((link) => expect(link).toHaveAttribute("href", `#${id}`));
-      expect(scrollSpy?.observedElements).toContain(container.querySelector(`section#${id}`));
     });
-    expect(scrollSpy?.observedElements.map((element) => element.id)).toEqual([...SETTINGS_SECTION_IDS]);
+    expect(SETTINGS_SECTION_IDS.map((id) => container.querySelector(`section#${id}`)?.id)).toEqual([...SETTINGS_SECTION_IDS]);
   });
 
   it("opens mobile section navigation as a left drawer", async () => {
@@ -150,24 +152,22 @@ describe("SettingsScreen section navigation", () => {
     expect(notificationLink).toHaveAttribute("aria-current", "location");
   });
 
-  it("updates the active section from the app scroll container observer without changing the hash", async () => {
+  it("updates the active section from the app scroll container without changing the hash", async () => {
     renderSettingsScreen();
 
     const desktopNav = screen.getByTestId("settings-section-nav-desktop");
-    const scrollSpy = SettingsIntersectionObserverMock.instances[0];
-    expect(scrollSpy).toBeDefined();
     expect(window.location.hash).toBe("");
 
-    setSectionAnchorGeometry("settings-timezone");
-    scrollSpy?.trigger(["settings-timezone"]);
+    let root = setSectionAnchorGeometry("settings-timezone");
+    dispatchRootScroll(root);
 
     await waitFor(() => {
       expect(within(desktopNav).getByRole("link", { name: "时区" })).toHaveAttribute("aria-current", "location");
     });
     expect(window.location.hash).toBe("");
 
-    setSectionAnchorGeometry("settings-notifications");
-    scrollSpy?.trigger(["settings-notifications"]);
+    root = setSectionAnchorGeometry("settings-notifications");
+    dispatchRootScroll(root);
 
     await waitFor(() => {
       expect(within(desktopNav).getByRole("link", { name: "通知" })).toHaveAttribute("aria-current", "location");
@@ -175,26 +175,41 @@ describe("SettingsScreen section navigation", () => {
     expect(window.location.hash).toBe("");
   });
 
+  it("moves from exchange to calendar feed on root scroll without observer threshold changes", async () => {
+    renderSettingsScreen();
+
+    const desktopNav = screen.getByTestId("settings-section-nav-desktop");
+    const root = setSectionAnchorGeometry("settings-exchange");
+    dispatchRootScroll(root);
+
+    await waitFor(() => {
+      expect(within(desktopNav).getByRole("link", { name: "汇率" })).toHaveAttribute("aria-current", "location");
+    });
+
+    setSectionAnchorGeometry("settings-calendar-feed");
+    dispatchRootScroll(root);
+
+    await waitFor(() => {
+      expect(within(desktopNav).getByRole("link", { name: "日历订阅" })).toHaveAttribute("aria-current", "location");
+    });
+    expect(within(desktopNav).getByRole("link", { name: "汇率" })).not.toHaveAttribute("aria-current");
+  });
+
   it("keeps clicked target active while smooth scrolling passes intermediate sections", async () => {
     const user = userEvent.setup();
     renderSettingsScreen();
 
     const desktopNav = screen.getByTestId("settings-section-nav-desktop");
-    const scrollSpy = SettingsIntersectionObserverMock.instances[0];
     await user.click(within(desktopNav).getByRole("link", { name: "通知" }));
 
-    setSectionAnchorGeometry("settings-appearance");
-    scrollSpy?.trigger(["settings-appearance"]);
-    setSectionAnchorGeometry("settings-display");
-    scrollSpy?.trigger(["settings-display"]);
-    setSectionAnchorGeometry("settings-timezone");
-    scrollSpy?.trigger(["settings-timezone"]);
+    dispatchRootScroll(setSectionAnchorGeometry("settings-appearance"));
+    dispatchRootScroll(setSectionAnchorGeometry("settings-display"));
+    dispatchRootScroll(setSectionAnchorGeometry("settings-timezone"));
 
     expect(within(desktopNav).getByRole("link", { name: "通知" })).toHaveAttribute("aria-current", "location");
 
-    setSectionAnchorGeometry("settings-notifications");
-    scrollSpy?.trigger(["settings-notifications"]);
-    scrollSpy?.trigger(["settings-timezone"]);
+    dispatchRootScroll(setSectionAnchorGeometry("settings-notifications"));
+    dispatchRootScroll(setSectionAnchorGeometry("settings-timezone"));
 
     expect(within(desktopNav).getByRole("link", { name: "通知" })).toHaveAttribute("aria-current", "location");
   });
@@ -205,14 +220,13 @@ describe("SettingsScreen section navigation", () => {
 
     const root = setSectionAnchorGeometry("settings-icon-sources");
     const desktopNav = screen.getByTestId("settings-section-nav-desktop");
-    const scrollSpy = SettingsIntersectionObserverMock.instances[0];
     await user.click(within(desktopNav).getByRole("link", { name: "图标来源" }));
 
     setSettingsSectionTops({
       "settings-icon-sources": TEST_ACTIVE_SECTION_TOP_PX,
       "settings-budget": TEST_NEXT_SECTION_TOP_PX,
     });
-    scrollSpy?.trigger(["settings-icon-sources", "settings-budget"]);
+    dispatchRootScroll(root);
     root.dispatchEvent(new Event("scrollend"));
 
     await waitFor(() => {
@@ -221,19 +235,17 @@ describe("SettingsScreen section navigation", () => {
     expect(within(desktopNav).getByRole("link", { name: "预算" })).not.toHaveAttribute("aria-current");
   });
 
-  it("hands active state back to scrollspy when the user interrupts a menu scroll", async () => {
+  it("hands active state back to root scroll when the user interrupts a menu scroll", async () => {
     const user = userEvent.setup();
     renderSettingsScreen();
 
     const root = setSectionAnchorGeometry("settings-account");
     const desktopNav = screen.getByTestId("settings-section-nav-desktop");
-    const scrollSpy = SettingsIntersectionObserverMock.instances[0];
     await user.click(within(desktopNav).getByRole("link", { name: "通知" }));
 
     setSectionAnchorGeometry("settings-timezone");
-    scrollSpy?.trigger(["settings-timezone"]);
     root.dispatchEvent(new WheelEvent("wheel", { bubbles: true }));
-    scrollSpy?.trigger(["settings-timezone"]);
+    dispatchRootScroll(root);
 
     await waitFor(() => {
       expect(within(desktopNav).getByRole("link", { name: "时区" })).toHaveAttribute("aria-current", "location");
@@ -246,28 +258,25 @@ describe("SettingsScreen section navigation", () => {
 
     const root = setSectionAnchorGeometry("settings-account");
     const desktopNav = screen.getByTestId("settings-section-nav-desktop");
-    const scrollSpy = SettingsIntersectionObserverMock.instances[0];
     await user.click(within(desktopNav).getByRole("link", { name: "通知" }));
 
     setSectionAnchorGeometry("settings-timezone");
-    scrollSpy?.trigger(["settings-timezone"]);
     root.dispatchEvent(new Event("scrollend"));
-    scrollSpy?.trigger(["settings-timezone"]);
+    dispatchRootScroll(root);
 
     await waitFor(() => {
       expect(within(desktopNav).getByRole("link", { name: "时区" })).toHaveAttribute("aria-current", "location");
     });
   });
 
-  it("keeps mobile section navigation active state in sync with scrollspy", async () => {
+  it("keeps mobile section navigation active state in sync with root scroll", async () => {
     const user = userEvent.setup();
     renderSettingsScreen();
 
-    const scrollSpy = SettingsIntersectionObserverMock.instances[0];
-    setSectionAnchorGeometry("settings-notifications", {
+    const root = setSectionAnchorGeometry("settings-notifications", {
       rootMetrics: { scrollTop: 1600, clientHeight: 800, scrollHeight: 2400 },
     });
-    scrollSpy?.trigger(["settings-notifications"]);
+    dispatchRootScroll(root);
 
     await user.click(within(screen.getByTestId("settings-mobile-page-header")).getByRole("button", { name: /打开设置目录/ }));
 
@@ -281,18 +290,17 @@ describe("SettingsScreen section navigation", () => {
     renderSettingsScreen();
 
     const desktopNav = screen.getByTestId("settings-section-nav-desktop");
-    const scrollSpy = SettingsIntersectionObserverMock.instances[0];
-    setSectionAnchorGeometry("settings-timezone", {
+    let root = setSectionAnchorGeometry("settings-timezone", {
       rootMetrics: { scrollTop: 1200, clientHeight: 800, scrollHeight: 2400 },
     });
-    scrollSpy?.trigger(["settings-timezone", "settings-notifications"]);
+    dispatchRootScroll(root);
 
     await waitFor(() => {
       expect(within(desktopNav).getByRole("link", { name: "时区" })).toHaveAttribute("aria-current", "location");
     });
 
-    setRootMetrics({ scrollTop: 1600, clientHeight: 800, scrollHeight: 2400 });
-    scrollSpy?.trigger(["settings-notifications"]);
+    root = setRootMetrics({ scrollTop: 1600, clientHeight: 800, scrollHeight: 2400 });
+    dispatchRootScroll(root);
 
     await waitFor(() => {
       expect(within(desktopNav).getByRole("link", { name: "通知" })).toHaveAttribute("aria-current", "location");
@@ -306,6 +314,9 @@ describe("SettingsScreen section navigation", () => {
     await user.click(within(screen.getByTestId("settings-mobile-page-header")).getByRole("button", { name: /打开设置目录/ }));
     const drawer = await screen.findByTestId("settings-section-nav-drawer");
     await user.click(within(drawer).getByRole("link", { name: "通知" }));
+    const root = setSectionAnchorGeometry("settings-notifications");
+    dispatchRootScroll(root);
+    root.dispatchEvent(new Event("scrollend"));
 
     await waitFor(() => expect(screen.queryByTestId("settings-section-nav-drawer")).not.toBeInTheDocument());
     expect(window.location.hash).toBe("#settings-notifications");
