@@ -1119,6 +1119,7 @@ export const MESSAGE_KEYS = [
   "system.checkFailedTitle",
   "system.checking",
   "system.cloudflareDeployGuide",
+  "system.commitLink",
   "system.currentVersion",
   "system.latestVersion",
   "system.noUpdateDescription",

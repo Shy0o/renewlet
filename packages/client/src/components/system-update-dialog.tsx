@@ -24,6 +24,8 @@ const RESTART_COUNTDOWN_SECONDS = 8;
 const HEALTH_RETRY_COUNT = 5;
 const HEALTH_RETRY_DELAY_MS = 1_000;
 const CLOUDFLARE_DEPLOY_GUIDE_URL = "https://github.com/zhiyingzzhou/renewlet/blob/main/docs/cloudflare-workers-deploy.md";
+const GITHUB_COMMIT_URL_PREFIX = "https://github.com/zhiyingzzhou/renewlet/commit/";
+const GITHUB_SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
 
 export const systemRestartBrowser = {
   reload() {
@@ -50,6 +52,7 @@ export function SystemUpdateDialog({ open, onOpenChange }: SystemUpdateDialogPro
   const canUpdate = Boolean(version?.hasUpdate && version.updateSupported && !updateMutation.isPending && !updateMutation.isSuccess);
   const isRestarting = restartMutation.isPending || restartCountdown > 0;
   const showCompletedRestart = updateMutation.isSuccess && updateMutation.data?.needsRestart;
+  const commitLink = version ? commitUrl(version.build.commit) : null;
 
   const resetUpdateState = useCallback(() => {
     setUpdateError("");
@@ -206,6 +209,7 @@ export function SystemUpdateDialog({ open, onOpenChange }: SystemUpdateDialogPro
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-border bg-background/40 px-3 py-2">
                     {version.updateMode === "cloudflare-deploy" ? <ReleaseLink href={CLOUDFLARE_DEPLOY_GUIDE_URL} label={t("system.cloudflareDeployGuide")} /> : null}
                     {version.releaseInfo?.htmlUrl ? <ReleaseLink href={version.releaseInfo.htmlUrl} label={t("system.releaseLink")} /> : null}
+                    {!version.releaseInfo?.htmlUrl && commitLink ? <ReleaseLink href={commitLink} label={t("system.commitLink")} /> : null}
                   </div>
                 </div>
               ) : version.hasUpdate ? (
@@ -310,6 +314,12 @@ function ReleaseLink({ href, label }: { href: string; label: string }) {
       <ExternalLink className="h-3 w-3 shrink-0" />
     </a>
   );
+}
+
+function commitUrl(commit: string): string | null {
+  const trimmed = commit.trim();
+  if (!GITHUB_SHA_PATTERN.test(trimmed)) return null;
+  return `${GITHUB_COMMIT_URL_PREFIX}${trimmed}`;
 }
 
 function StatePanel({ icon, tone, title, description }: { icon: ReactNode; tone: "danger" | "info" | "neutral" | "success" | "warning"; title: string; description: string }) {

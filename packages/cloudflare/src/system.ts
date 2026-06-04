@@ -1,10 +1,14 @@
 import { systemVersionResponseSchema } from "@renewlet/shared/schemas/app";
+import rootPackageJson from "../../../package.json";
 import { requireAdmin } from "./auth";
 import { HttpError, json, requestLocale } from "./http";
 import { serverText } from "./server-i18n";
 import type { Env } from "./types";
 
 const DEV_VERSION = "0.0.0-dev";
+const SHORT_COMMIT_LENGTH = 7;
+const RELEASE_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-rc\.\d+)?$/;
+const COMMIT_SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
 
 /**
  * systemVersion 返回 Cloudflare 运行面的版本状态。
@@ -14,31 +18,26 @@ const DEV_VERSION = "0.0.0-dev";
 export async function systemVersion(request: Request, env: Env): Promise<Response> {
   await requireAdmin(request, env);
   const locale = requestLocale(request);
-  const version = cloudflareBuildValue(env.RENEWLET_VERSION, DEV_VERSION);
-  // Cloudflare Worker 没有可替换的容器内二进制；未接入 GitHub latest 检查前不能声明“已是最新版本”。
+  const commit = cloudflareBuildValue(env.RENEWLET_COMMIT, "");
+  const buildTime = cloudflareBuildValue(env.RENEWLET_BUILD_TIME, "");
+  const version = resolveCloudflareVersion(env.RENEWLET_VERSION, commit);
+  const releaseInfo = releaseInfoForVersion(version, buildTime);
+  // Cloudflare 的 checkSucceeded 只表示“构建元数据和升级能力已读到”，不复用 Docker 的 GitHub Release 探测语义。
   return json(systemVersionResponseSchema.parse({
     currentVersion: version,
     latestVersion: version,
     hasUpdate: false,
-    checkSucceeded: false,
+    checkSucceeded: true,
     deployment: "cloudflare",
     updateMode: "cloudflare-deploy",
     updateSupported: false,
     unsupportedReason: serverText(locale, "system.cloudflareVersionUnsupportedReason"),
-    releaseInfo: {
-      tagName: `v${version}`,
-      version,
-      name: "Renewlet",
-      body: "",
-      publishedAt: cloudflareBuildValue(env.RENEWLET_BUILD_TIME, ""),
-      htmlUrl: `https://github.com/zhiyingzzhou/renewlet/releases/tag/v${version}`,
-      assets: [],
-    },
+    releaseInfo,
     cached: false,
     build: {
       version,
-      commit: cloudflareBuildValue(env.RENEWLET_COMMIT, ""),
-      buildTime: cloudflareBuildValue(env.RENEWLET_BUILD_TIME, ""),
+      commit,
+      buildTime,
       buildType: "cloudflare",
     },
   }));
@@ -70,4 +69,30 @@ function cloudflareBuildValue(value: string | undefined, fallback: string): stri
   const trimmed = value?.trim();
   if (!trimmed) return fallback;
   return trimmed;
+}
+
+function resolveCloudflareVersion(rawVersion: string | undefined, commit: string): string {
+  const version = cloudflareBuildValue(rawVersion, "");
+  if (version && version !== DEV_VERSION) return version;
+  const shortCommit = shortCommitSuffix(commit);
+  return `${rootPackageJson.version}-dev${shortCommit ? `+${shortCommit}` : ""}`;
+}
+
+function shortCommitSuffix(commit: string): string {
+  const trimmed = commit.trim();
+  if (!COMMIT_SHA_PATTERN.test(trimmed)) return "";
+  return trimmed.slice(0, SHORT_COMMIT_LENGTH);
+}
+
+function releaseInfoForVersion(version: string, buildTime: string) {
+  if (!RELEASE_VERSION_PATTERN.test(version)) return null;
+  return {
+    tagName: `v${version}`,
+    version,
+    name: "Renewlet",
+    body: "",
+    publishedAt: buildTime,
+    htmlUrl: `https://github.com/zhiyingzzhou/renewlet/releases/tag/v${version}`,
+    assets: [],
+  };
 }

@@ -73,6 +73,7 @@ export const messages = [
   msg({ id: "system.noUpdateTitle", message: "已是最新版本" }),
   msg({ id: "system.noUpdateDescription", message: "无需操作。" }),
   msg({ id: "system.releaseLink", message: "发布页" }),
+  msg({ id: "system.commitLink", message: "提交" }),
   msg({ id: "system.cloudflareDeployGuide", message: "Cloudflare 部署说明" }),
   msg({ id: "system.viewChangelog", message: "查看更新日志" }),
   msg({ id: "system.recheck", message: "重新检查" }),

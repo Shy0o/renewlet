@@ -226,11 +226,42 @@ function checkCloudflareDeployMigrationScript() {
   }
 }
 
+function checkCloudflareWorkflowBuildMetadata() {
+  const selfHostedWorkflow = readFileSync(join(repoRoot, ".github/workflows/cloudflare-worker.yml"), "utf8");
+  const releaseWorkflow = readFileSync(join(repoRoot, ".github/workflows/release-publish.yml"), "utf8");
+
+  // 自管 Cloudflare workflow 不是正式 Release，必须注入 packageVersion-dev+shortSha，避免生产界面暴露 0.0.0-dev。
+  if (selfHostedWorkflow.includes("RENEWLET_VERSION: 0.0.0-dev")) {
+    throw new Error("cloudflare-worker.yml must not deploy the 0.0.0-dev placeholder version.");
+  }
+  for (const snippet of [
+    "PACKAGE_VERSION=\"$(node -p \"require('./package.json').version\")\"",
+    "SHORT_SHA=\"${GITHUB_SHA::7}\"",
+    "RENEWLET_VERSION=${PACKAGE_VERSION}-dev+${SHORT_SHA}",
+    "RENEWLET_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  ]) {
+    if (!selfHostedWorkflow.includes(snippet)) {
+      throw new Error(`cloudflare-worker.yml must keep build metadata snippet: ${snippet}`);
+    }
+  }
+  for (const snippet of [
+    "Validate stable release version",
+    "RENEWLET_VERSION: ${{ needs.metadata.outputs.version }}",
+    "RENEWLET_COMMIT: ${{ github.sha }}",
+    "RENEWLET_BUILD_TIME: ${{ steps.build-time.outputs.value }}",
+  ]) {
+    if (!releaseWorkflow.includes(snippet)) {
+      throw new Error(`release-publish.yml must keep production Cloudflare metadata snippet: ${snippet}`);
+    }
+  }
+}
+
 run("bash", ["-n", deployScript]);
 checkGeneratedSecrets();
 checkInvalidExistingPBKeyIsRejected();
 checkDockerSelfUpdateLayout();
 checkCloudflareDeployMigrationScript();
+checkCloudflareWorkflowBuildMetadata();
 checkComposeConfig();
 
 console.log("Deployment configuration checks passed.");

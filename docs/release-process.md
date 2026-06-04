@@ -118,7 +118,7 @@ git push origin v0.1.0
 - `/api/app/admin/system/version` reports `deployment` as `docker`, `cloudflare`, or `source`, and `updateMode` as `in-app-binary`, `docker-compose`, `cloudflare-deploy`, or `source-manual`. `updateSupported` only means the admin dialog may execute the in-app binary update.
 - The running version selects the self-update channel: stable versions only check stable Releases, while `x.y.z-rc.N` versions only check valid prerelease RCs and may update from a lower RC to a higher RC. If the current channel has no higher valid target, the version check succeeds and reports the deployment as up to date.
 - Docker release images with the new layout return `deployment=docker`, `updateMode=in-app-binary`, and `updateSupported=true`. Disabled self-update, old bridge layouts, and non-release builds must return the correct manual mode and a single unsupported reason.
-- Cloudflare builds return `deployment=cloudflare`, `updateMode=cloudflare-deploy`, and `updateSupported=false`; they expose the injected build version and release link, but must not claim `checkSucceeded=true` unless a trusted GitHub latest-release check has actually succeeded.
+- Cloudflare builds return `deployment=cloudflare`, `updateMode=cloudflare-deploy`, and `updateSupported=false`; `checkSucceeded=true` only means the Worker read build metadata and deploy-only upgrade capability, not that it performed a GitHub latest-release check. Self-managed branch deployments show `packageVersion-dev+shortSha` and a commit link, while official stable production deployments show the tag version and release link. Cloudflare must not expose an executable update path.
 
 ## Hotfix
 
