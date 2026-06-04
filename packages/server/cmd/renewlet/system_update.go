@@ -45,11 +45,15 @@ func (service *systemUpdateService) CheckVersion(ctx context.Context, locale app
 		response.Warning = service.versionCheckWarning(locale, err)
 		return response, nil
 	}
+	response.CheckSucceeded = true
+	if release == nil {
+		service.storeVersion(response)
+		return cloneSystemVersionResponse(response, false), nil
+	}
 
 	response.ReleaseInfo = release.dto
 	response.LatestVersion = release.dto.Version
 	response.HasUpdate = service.isTargetVersionNewer(release.dto.Version)
-	response.CheckSucceeded = true
 	service.storeVersion(response)
 	return cloneSystemVersionResponse(response, false), nil
 }
@@ -69,6 +73,9 @@ func (service *systemUpdateService) PerformUpdate(ctx context.Context, locale ap
 	release, err := service.fetchTargetRelease(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if release == nil {
+		return nil, systemUpdateError{kind: errSystemUpdateNoUpdate, message: serverText(locale, "system.alreadyLatest")}
 	}
 	if !service.isTargetVersionNewer(release.dto.Version) {
 		return nil, systemUpdateError{kind: errSystemUpdateNoUpdate, message: serverText(locale, "system.alreadyLatest")}
@@ -173,7 +180,7 @@ func (service *systemUpdateService) baseVersionResponse(locale appLocale) *syste
 }
 
 func (service *systemUpdateService) fetchTargetRelease(ctx context.Context) (*fetchedSystemRelease, error) {
-	if normalizedUpdateChannel() == systemUpdateChannelRC {
+	if currentUpdateChannel() == systemUpdateChannelRC {
 		return service.fetchLatestRCRelease(ctx)
 	}
 	return service.fetchLatestStableRelease(ctx)
@@ -186,7 +193,7 @@ func (service *systemUpdateService) fetchLatestStableRelease(ctx context.Context
 	}
 	version, parsed, ok := parseSystemVersion(release.TagName)
 	if !ok || parsed.prerelease != "" || release.Prerelease || release.Draft {
-		return nil, errSystemNoStableRelease
+		return nil, nil
 	}
 	return systemReleaseFromGitHub(release, version), nil
 }
@@ -222,20 +229,22 @@ func (service *systemUpdateService) fetchLatestRCRelease(ctx context.Context) (*
 		}
 	}
 	if best == nil {
-		return nil, errSystemNoStableRelease
+		return nil, nil
 	}
 	return systemReleaseFromGitHub(best, bestVersion), nil
 }
 
 func (service *systemUpdateService) isTargetVersionNewer(version string) bool {
-	if normalizedUpdateChannel() == systemUpdateChannelRC {
+	if currentUpdateChannel() == systemUpdateChannelRC {
 		return isNewerSystemRCVersion(Version, version)
 	}
 	return isNewerSystemVersion(Version, version)
 }
 
-func normalizedUpdateChannel() string {
-	if strings.EqualFold(strings.TrimSpace(UpdateChannel), systemUpdateChannelRC) {
+func currentUpdateChannel() string {
+	// RC/stable 通道以当前运行版本为唯一真相；额外 build arg 会让候选版验收路径和实际二进制版本漂移。
+	_, parsed, ok := parseSystemVersion(Version)
+	if ok && parsed.rc > 0 {
 		return systemUpdateChannelRC
 	}
 	return systemUpdateChannelStable
@@ -299,9 +308,6 @@ func (service *systemUpdateService) versionCheckWarning(locale appLocale, err er
 		default:
 			return serverText(locale, "system.versionCheckUnavailableWarning")
 		}
-	}
-	if errors.Is(err, errSystemNoStableRelease) {
-		return serverText(locale, "system.versionCheckNoStableReleaseWarning")
 	}
 	return serverText(locale, "system.versionCheckUnavailableWarning")
 }

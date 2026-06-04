@@ -26,12 +26,15 @@ type fakeSystemReleaseClient struct {
 	releases    [][]githubRelease
 	fetchDelay  time.Duration
 	fetchCount  int32
+	latestCount int32
+	listCount   int32
 	downloadFn  func(targetPath string) error
 	checksumTxt []byte
 }
 
 func (client *fakeSystemReleaseClient) FetchLatestRelease(ctx context.Context) (*githubRelease, error) {
 	atomic.AddInt32(&client.fetchCount, 1)
+	atomic.AddInt32(&client.latestCount, 1)
 	if client.fetchDelay > 0 {
 		select {
 		case <-time.After(client.fetchDelay):
@@ -47,6 +50,7 @@ func (client *fakeSystemReleaseClient) FetchLatestRelease(ctx context.Context) (
 
 func (client *fakeSystemReleaseClient) FetchReleases(ctx context.Context, page int, _ int) ([]githubRelease, error) {
 	atomic.AddInt32(&client.fetchCount, 1)
+	atomic.AddInt32(&client.listCount, 1)
 	if client.fetchDelay > 0 {
 		select {
 		case <-time.After(client.fetchDelay):
@@ -199,9 +203,9 @@ func TestSelfUpdateCapabilityMatrix(t *testing.T) {
 		t.Skip("self-update capability matrix depends on linux Docker binary semantics")
 	}
 
-	oldVersion, oldBuildType, oldUpdateChannel := Version, BuildType, UpdateChannel
+	oldVersion, oldBuildType := Version, BuildType
 	t.Cleanup(func() {
-		Version, BuildType, UpdateChannel = oldVersion, oldBuildType, oldUpdateChannel
+		Version, BuildType = oldVersion, oldBuildType
 	})
 
 	cases := []struct {
@@ -286,72 +290,145 @@ func TestSelfUpdateCapabilityMatrix(t *testing.T) {
 	}
 }
 
-func TestStableChannelIgnoresPrereleaseTargets(t *testing.T) {
-	oldVersion, oldBuildType, oldUpdateChannel := Version, BuildType, UpdateChannel
-	Version, BuildType, UpdateChannel = "0.1.0", "release", systemUpdateChannelStable
+func TestStableVersionUsesLatestReleaseEndpointAndIgnoresPrereleaseTargets(t *testing.T) {
+	oldVersion, oldBuildType := Version, BuildType
+	Version, BuildType = "0.1.0", "release"
 	t.Cleanup(func() {
-		Version, BuildType, UpdateChannel = oldVersion, oldBuildType, oldUpdateChannel
+		Version, BuildType = oldVersion, oldBuildType
 	})
 
-	service := newSystemUpdateService(&fakeSystemReleaseClient{release: &githubRelease{
+	client := &fakeSystemReleaseClient{release: &githubRelease{
 		TagName:    "v0.2.0-rc.1",
 		Prerelease: true,
-	}})
+	}}
+	service := newSystemUpdateService(client)
 
 	response, err := service.CheckVersion(context.Background(), localeZhCN, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.CheckSucceeded || response.HasUpdate {
-		t.Fatalf("stable channel should not accept prerelease target: %#v", response)
+	if got := atomic.LoadInt32(&client.latestCount); got != 1 {
+		t.Fatalf("FetchLatestRelease calls = %d, want 1", got)
+	}
+	if got := atomic.LoadInt32(&client.listCount); got != 0 {
+		t.Fatalf("FetchReleases calls = %d, want 0", got)
+	}
+	if !response.CheckSucceeded || response.HasUpdate {
+		t.Fatalf("stable version should not accept prerelease target: %#v", response)
 	}
 }
 
-func TestRCChannelSelectsHighestNewerPrerelease(t *testing.T) {
-	oldVersion, oldBuildType, oldUpdateChannel := Version, BuildType, UpdateChannel
-	Version, BuildType, UpdateChannel = "0.1.0-rc.1", "release", systemUpdateChannelRC
+func TestRCVersionSelectsHighestNewerPrerelease(t *testing.T) {
+	oldVersion, oldBuildType := Version, BuildType
+	Version, BuildType = "0.1.0-rc.1", "release"
 	t.Cleanup(func() {
-		Version, BuildType, UpdateChannel = oldVersion, oldBuildType, oldUpdateChannel
+		Version, BuildType = oldVersion, oldBuildType
 	})
 
-	service := newSystemUpdateService(&fakeSystemReleaseClient{releases: [][]githubRelease{{
+	client := &fakeSystemReleaseClient{releases: [][]githubRelease{{
 		releaseFixture("v0.1.0", false, false),
 		releaseFixture("v0.1.0-rc.2", true, false),
 		releaseFixture("v0.2.0-rc.1", true, false),
 		releaseFixture("v0.2.0-beta.1", true, false),
 		releaseFixture("v9.9.9-rc.1", true, true),
 		releaseFixture("v0.1.0-rc.1", true, false),
-	}}})
+	}}}
+	service := newSystemUpdateService(client)
 
 	response, err := service.CheckVersion(context.Background(), localeZhCN, true)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if got := atomic.LoadInt32(&client.latestCount); got != 0 {
+		t.Fatalf("FetchLatestRelease calls = %d, want 0", got)
+	}
+	if got := atomic.LoadInt32(&client.listCount); got == 0 {
+		t.Fatalf("FetchReleases should be used for rc versions")
+	}
 	if !response.CheckSucceeded || !response.HasUpdate {
-		t.Fatalf("expected rc channel update, got %#v", response)
+		t.Fatalf("expected rc version update, got %#v", response)
 	}
 	if response.LatestVersion != "0.2.0-rc.1" {
 		t.Fatalf("latestVersion = %q, want 0.2.0-rc.1", response.LatestVersion)
 	}
 }
 
-func TestRCChannelRejectsStableCurrentVersion(t *testing.T) {
-	oldVersion, oldBuildType, oldUpdateChannel := Version, BuildType, UpdateChannel
-	Version, BuildType, UpdateChannel = "0.1.0", "release", systemUpdateChannelRC
+func TestStableCurrentVersionDoesNotUpdateToRC(t *testing.T) {
+	oldVersion, oldBuildType := Version, BuildType
+	Version, BuildType = "0.1.0", "release"
 	t.Cleanup(func() {
-		Version, BuildType, UpdateChannel = oldVersion, oldBuildType, oldUpdateChannel
+		Version, BuildType = oldVersion, oldBuildType
+	})
+
+	release := releaseFixture("v0.2.0-rc.1", true, false)
+	service := newSystemUpdateService(&fakeSystemReleaseClient{release: &release})
+
+	response, err := service.CheckVersion(context.Background(), localeZhCN, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !response.CheckSucceeded || response.HasUpdate {
+		t.Fatalf("stable current version must not update to rc: %#v", response)
+	}
+}
+
+func TestRCVersionReportsLatestWhenNoNewerCandidateExists(t *testing.T) {
+	oldVersion, oldBuildType := Version, BuildType
+	Version, BuildType = "0.1.0-rc.1", "release"
+	t.Cleanup(func() {
+		Version, BuildType = oldVersion, oldBuildType
 	})
 
 	service := newSystemUpdateService(&fakeSystemReleaseClient{releases: [][]githubRelease{{
-		releaseFixture("v0.2.0-rc.1", true, false),
+		releaseFixture("v0.1.0", false, false),
+		releaseFixture("v0.1.0-rc.1", true, false),
+		releaseFixture("v0.2.0-beta.1", true, false),
 	}}})
 
 	response, err := service.CheckVersion(context.Background(), localeZhCN, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.CheckSucceeded || response.HasUpdate {
-		t.Fatalf("stable current version must not update to rc: %#v", response)
+	if !response.CheckSucceeded || response.HasUpdate {
+		t.Fatalf("expected successful rc check without update, got %#v", response)
+	}
+	if response.Warning != "" {
+		t.Fatalf("warning = %q, want empty", response.Warning)
+	}
+	if response.LatestVersion != "0.1.0-rc.1" {
+		t.Fatalf("latestVersion = %q, want current version", response.LatestVersion)
+	}
+}
+
+func TestRCUpdateWithoutNewerCandidateReturnsAlreadyLatest(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("self-update execution is only supported for linux Docker images")
+	}
+	tempDir := t.TempDir()
+	binaryPath := filepath.Join(tempDir, "renewlet")
+	if err := os.WriteFile(binaryPath, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RENEWLET_SELF_UPDATE_ENABLED", "true")
+	t.Setenv("RENEWLET_SELF_UPDATE_BINARY", binaryPath)
+	t.Setenv("RENEWLET_SELF_UPDATE_BACKUP_DIR", filepath.Join(tempDir, "backups"))
+	oldVersion, oldBuildType := Version, BuildType
+	Version, BuildType = "0.1.0-rc.1", "release"
+	t.Cleanup(func() {
+		Version, BuildType = oldVersion, oldBuildType
+	})
+
+	service := newSystemUpdateService(&fakeSystemReleaseClient{releases: [][]githubRelease{{
+		releaseFixture("v0.1.0-rc.1", true, false),
+		releaseFixture("v0.1.0", false, false),
+	}}})
+
+	_, err := service.PerformUpdate(context.Background(), localeZhCN)
+	if !errors.Is(err, errSystemUpdateNoUpdate) {
+		t.Fatalf("PerformUpdate error = %v, want errSystemUpdateNoUpdate", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), serverText(localeZhCN, "system.alreadyLatest")) {
+		t.Fatalf("PerformUpdate error = %v, want already latest message", err)
 	}
 }
 
@@ -416,10 +493,10 @@ func TestSystemUpdateRejectsConcurrentRun(t *testing.T) {
 	t.Setenv("RENEWLET_SELF_UPDATE_ENABLED", "true")
 	t.Setenv("RENEWLET_SELF_UPDATE_BINARY", binaryPath)
 	t.Setenv("RENEWLET_SELF_UPDATE_BACKUP_DIR", filepath.Join(tempDir, "backups"))
-	oldVersion, oldBuildType, oldUpdateChannel := Version, BuildType, UpdateChannel
+	oldVersion, oldBuildType := Version, BuildType
 	Version, BuildType = "1.0.0", "release"
 	t.Cleanup(func() {
-		Version, BuildType, UpdateChannel = oldVersion, oldBuildType, oldUpdateChannel
+		Version, BuildType = oldVersion, oldBuildType
 	})
 
 	client := &fakeSystemReleaseClient{release: release, fetchDelay: 200 * time.Millisecond}
@@ -463,10 +540,10 @@ func TestSystemUpdateWaitsForExplicitRestart(t *testing.T) {
 	t.Setenv("RENEWLET_SELF_UPDATE_ENABLED", "true")
 	t.Setenv("RENEWLET_SELF_UPDATE_BINARY", binaryPath)
 	t.Setenv("RENEWLET_SELF_UPDATE_BACKUP_DIR", filepath.Join(tempDir, "backups"))
-	oldVersion, oldBuildType, oldUpdateChannel := Version, BuildType, UpdateChannel
+	oldVersion, oldBuildType := Version, BuildType
 	Version, BuildType = "1.0.0", "release"
 	t.Cleanup(func() {
-		Version, BuildType, UpdateChannel = oldVersion, oldBuildType, oldUpdateChannel
+		Version, BuildType = oldVersion, oldBuildType
 	})
 
 	var exitCalled atomic.Bool

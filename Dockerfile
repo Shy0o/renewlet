@@ -29,7 +29,6 @@ ARG TARGETARCH
 ARG VERSION=0.0.0-dev
 ARG COMMIT=dev
 ARG BUILD_TIME=dev
-ARG UPDATE_CHANNEL=stable
 
 WORKDIR /src/packages/server
 
@@ -42,7 +41,7 @@ RUN mkdir -p internal/static/public \
 COPY --from=client-builder /app/packages/client/dist ./internal/static/public
 
 RUN mkdir -p /out /pb_data \
-  && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-$(go env GOARCH)} go build -trimpath -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildTime=${BUILD_TIME} -X main.BuildType=release -X main.UpdateChannel=${UPDATE_CHANNEL}" -o /out/renewlet ./cmd/renewlet
+  && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-$(go env GOARCH)} go build -trimpath -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildTime=${BUILD_TIME} -X main.BuildType=release" -o /out/renewlet ./cmd/renewlet
 
 FROM alpine:3.22 AS runner
 

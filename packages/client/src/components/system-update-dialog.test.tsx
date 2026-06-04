@@ -155,6 +155,7 @@ describe("SystemUpdateDialog", () => {
     mockVersionEndpoint({
       latestVersion: "1.0.0",
       hasUpdate: false,
+      warning: undefined,
     });
 
     const user = userEvent.setup();
@@ -162,7 +163,9 @@ describe("SystemUpdateDialog", () => {
 
     await user.click(await screen.findByRole("button", { name: "打开系统更新" }));
 
+    expect((await screen.findAllByText("已是最新版本")).length).toBeGreaterThan(0);
     expect(await screen.findByText("当前部署不需要更新。")).toBeInTheDocument();
+    expect(screen.queryByText("暂时无法检查更新")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "立即更新" })).not.toBeInTheDocument();
   });
 

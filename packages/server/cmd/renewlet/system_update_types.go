@@ -31,7 +31,6 @@ var (
 	errSystemUpdateNoUpdate    = errors.New("system update no update")
 	errSystemUpdateInProgress  = errors.New("system update in progress")
 	errSystemRestartNotPending = errors.New("system restart not pending")
-	errSystemNoStableRelease   = errors.New("system update no stable release")
 
 	defaultSystemUpdateService = newSystemUpdateService(defaultSystemReleaseClient())
 )

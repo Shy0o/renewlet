@@ -9,6 +9,4 @@ var (
 	BuildTime = ""
 	// BuildType 区分 source/release/cloudflare，页面内自更新只允许 release Docker 布局。
 	BuildType = "source"
-	// UpdateChannel 由 release workflow 注入；stable 走正式 Release，rc 只服务候选版自更新验收。
-	UpdateChannel = "stable"
 )
