@@ -63,9 +63,12 @@ export const SubscriptionFormFields = memo(function SubscriptionFormFields({
           billingCycle: nextBillingCycle,
           customDays: nextBillingCycle === "custom" ? prev.customDays : "",
           customCycleUnit: nextBillingCycle === "custom" ? prev.customCycleUnit : "day",
-          // 一次性购买不是续费周期，表单层先关闭自动推算，保存边界会再次清空该字段。
+          oneTimeMode: nextBillingCycle === "one-time" ? "term" : prev.oneTimeMode,
+          oneTimeTermCount: nextBillingCycle === "one-time" ? prev.oneTimeTermCount || "1" : prev.oneTimeTermCount,
+          oneTimeTermUnit: nextBillingCycle === "one-time" ? prev.oneTimeTermUnit || "month" : prev.oneTimeTermUnit,
+          // 一次性购买不会自动滚动续费；固定服务期的到期日由弹窗 effect 按服务时长计算。
           autoCalculate: nextBillingCycle === "one-time" ? false : prev.autoCalculate,
-          nextBillingDate: nextBillingCycle === "one-time" ? undefined : prev.nextBillingDate,
+          nextBillingDate: nextBillingCycle === "one-time" ? prev.startDate : prev.nextBillingDate,
         };
       }
       if (key === "startDate") {
@@ -77,7 +80,7 @@ export const SubscriptionFormFields = memo(function SubscriptionFormFields({
           // 比较保持在 DateOnly 字符串语义内，避免本地 Date 时区换算导致跨天误判。
           nextBillingDate:
             prev.billingCycle === "one-time"
-              ? undefined
+              ? nextStartDate
               : nextStartDate &&
                   prev.nextBillingDate &&
                   compareDateOnly(prev.nextBillingDate, nextStartDate) < 0
@@ -280,6 +283,28 @@ export const SubscriptionFormFields = memo(function SubscriptionFormFields({
             </div>
             <FieldError id={id("customDays-error")} message={errors.customDays} />
           </div>
+        ) : formData.billingCycle === "one-time" ? (
+          <div className="grid gap-2">
+            <Label>{t("subscription.field.oneTimeMode")}</Label>
+            <div className="grid grid-cols-2 rounded-md border border-border bg-secondary p-1" role="group" aria-label={t("subscription.field.oneTimeMode")}>
+              {(["term", "buyout"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={cn(
+                    "min-h-8 rounded-sm px-2 text-sm font-medium transition-colors",
+                    formData.oneTimeMode === mode
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                  aria-pressed={formData.oneTimeMode === mode}
+                  onClick={() => update("oneTimeMode", mode)}
+                >
+                  {mode === "term" ? t("subscription.oneTimeMode.term") : t("subscription.oneTimeMode.buyout")}
+                </button>
+              ))}
+            </div>
+          </div>
         ) : (
           <div className="grid gap-2">
             <Label htmlFor={id("paymentMethod")}>{t("subscription.field.paymentMethod")}</Label>
@@ -295,7 +320,49 @@ export const SubscriptionFormFields = memo(function SubscriptionFormFields({
         )}
       </div>
 
-      {formData.billingCycle === "custom" && (
+      {formData.billingCycle === "one-time" && formData.oneTimeMode === "term" ? (
+        <div className="grid gap-2">
+          <Label htmlFor={id("oneTimeTermCount")}>{t("subscription.field.oneTimeTerm")}</Label>
+          <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_5rem] items-center gap-2" data-testid="one-time-term-inline-control">
+            <span className="whitespace-nowrap text-sm text-muted-foreground">{t("subscription.oneTimeTermFor")}</span>
+            <NumericInput
+              id={id("oneTimeTermCount")} name={id("oneTimeTermCount")}
+              allowNegative={false}
+              decimalScale={0}
+              inputMode="numeric" enterKeyHint="next"
+              placeholder={t("subscription.customCycleCountPlaceholder")}
+              value={formData.oneTimeTermCount}
+              onRawValueChange={(value: string) => update("oneTimeTermCount", value)}
+              aria-invalid={Boolean(errors.oneTimeTerm)}
+              aria-describedby={errors.oneTimeTerm ? id("oneTimeTerm-error") : undefined}
+              className="min-w-0 border-border bg-secondary"
+            />
+            <Select
+              value={formData.oneTimeTermUnit}
+              onValueChange={(value) => update("oneTimeTermUnit", value as SubscriptionFormState["oneTimeTermUnit"])}
+            >
+              <SelectTrigger
+                id={id("oneTimeTermUnit")}
+                className="h-10 min-w-0 overflow-hidden border-border bg-secondary px-2"
+                aria-label={t("subscription.field.oneTimeTermUnit")}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CUSTOM_CYCLE_UNITS.map((unit) => (
+                  <SelectItem key={unit} value={unit}>
+                    {t(customCycleUnitLabelKey(unit))}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="text-xs text-muted-foreground">{t("subscription.oneTimeTermHelp")}</p>
+          <FieldError id={id("oneTimeTerm-error")} message={errors.oneTimeTerm} />
+        </div>
+      ) : null}
+
+      {(formData.billingCycle === "custom" || formData.billingCycle === "one-time") && (
         <div className="grid gap-2">
           <Label htmlFor={id("paymentMethod")}>{t("subscription.field.paymentMethod")}</Label>
           <SubscriptionPaymentMethodSelect

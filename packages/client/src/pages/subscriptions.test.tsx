@@ -7,11 +7,12 @@ import { assertDateOnly } from "@/lib/time/date-only";
 import type { Subscription } from "@/types/subscription";
 import Subscriptions from "./subscriptions";
 
-type FixedBillingCycle = Exclude<Subscription["billingCycle"], "custom">;
-type SubscriptionBaseFixture = Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit">;
-type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit">> & (
-  | { billingCycle?: FixedBillingCycle; customDays?: undefined; customCycleUnit?: undefined }
-  | { billingCycle: "custom"; customDays?: number; customCycleUnit?: Subscription["customCycleUnit"] }
+type RecurringBillingCycle = Exclude<Subscription["billingCycle"], "custom" | "one-time">;
+type SubscriptionBaseFixture = Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit" | "oneTimeTermCount" | "oneTimeTermUnit">;
+type SubscriptionOverrides = Partial<SubscriptionBaseFixture> & (
+  | { billingCycle?: RecurringBillingCycle; customDays?: undefined; customCycleUnit?: undefined; oneTimeTermCount?: undefined; oneTimeTermUnit?: undefined }
+  | { billingCycle: "one-time"; customDays?: undefined; customCycleUnit?: undefined; oneTimeTermCount?: number; oneTimeTermUnit?: Subscription["oneTimeTermUnit"] }
+  | { billingCycle: "custom"; customDays?: number; customCycleUnit?: Subscription["customCycleUnit"]; oneTimeTermCount?: undefined; oneTimeTermUnit?: undefined }
 );
 
 const mocks = vi.hoisted(() => ({
@@ -200,6 +201,20 @@ function subscription(overrides: SubscriptionOverrides = {}): Subscription {
       billingCycle: "custom",
       customDays: overrides.customDays ?? 30,
       customCycleUnit: overrides.customCycleUnit ?? "day",
+      oneTimeTermCount: undefined,
+      oneTimeTermUnit: undefined,
+    };
+  }
+
+  if (overrides.billingCycle === "one-time") {
+    return {
+      ...base,
+      ...overrides,
+      billingCycle: "one-time",
+      customDays: undefined,
+      customCycleUnit: undefined,
+      oneTimeTermCount: overrides.oneTimeTermCount,
+      oneTimeTermUnit: overrides.oneTimeTermUnit,
     };
   }
 
@@ -209,6 +224,8 @@ function subscription(overrides: SubscriptionOverrides = {}): Subscription {
     billingCycle: overrides.billingCycle ?? "monthly",
     customDays: undefined,
     customCycleUnit: undefined,
+    oneTimeTermCount: undefined,
+    oneTimeTermUnit: undefined,
   };
 }
 

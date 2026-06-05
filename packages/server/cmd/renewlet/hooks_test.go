@@ -168,12 +168,57 @@ func TestNormalizeSubscriptionRecordDefaultsAndValidatesContract(t *testing.T) {
 	record.Set("billingCycle", "one-time")
 	record.Set("customDays", 45)
 	record.Set("customCycleUnit", "week")
+	record.Set("oneTimeTermCount", 0)
+	record.Set("oneTimeTermUnit", "")
 	record.Set("autoCalculateNextBillingDate", true)
 	if err := normalizeSubscriptionRecord(record); err != nil {
 		t.Fatalf("expected one-time billing cycle to be accepted: %v", err)
 	}
-	if record.GetInt("customDays") != 0 || record.GetString("customCycleUnit") != "" || record.GetBool("autoCalculateNextBillingDate") {
-		t.Fatalf("expected one-time to clear custom fields and auto calculation, got customDays=%d customCycleUnit=%q auto=%v", record.GetInt("customDays"), record.GetString("customCycleUnit"), record.GetBool("autoCalculateNextBillingDate"))
+	if record.GetInt("customDays") != 0 || record.GetString("customCycleUnit") != "" || record.GetInt("oneTimeTermCount") != 0 || record.GetString("oneTimeTermUnit") != "" || record.GetBool("autoCalculateNextBillingDate") {
+		t.Fatalf("expected one-time buyout to clear custom fields and auto calculation, got customDays=%d customCycleUnit=%q oneTimeTermCount=%d oneTimeTermUnit=%q auto=%v", record.GetInt("customDays"), record.GetString("customCycleUnit"), record.GetInt("oneTimeTermCount"), record.GetString("oneTimeTermUnit"), record.GetBool("autoCalculateNextBillingDate"))
+	}
+
+	record.Set("billingCycle", "one-time")
+	record.Set("oneTimeTermCount", 6)
+	record.Set("oneTimeTermUnit", "month")
+	record.Set("autoCalculateNextBillingDate", true)
+	if err := normalizeSubscriptionRecord(record); err != nil {
+		t.Fatalf("expected one-time fixed term to be accepted: %v", err)
+	}
+	if record.GetInt("oneTimeTermCount") != 6 || record.GetString("oneTimeTermUnit") != "month" || record.GetBool("autoCalculateNextBillingDate") {
+		t.Fatalf("expected one-time fixed term to preserve term and disable auto calculation, got count=%d unit=%q auto=%v", record.GetInt("oneTimeTermCount"), record.GetString("oneTimeTermUnit"), record.GetBool("autoCalculateNextBillingDate"))
+	}
+
+	record.Set("oneTimeTermUnit", "")
+	if err := normalizeSubscriptionRecord(record); err == nil {
+		t.Fatal("expected one-time term count without unit to fail")
+	}
+	record.Set("oneTimeTermCount", 0)
+	record.Set("oneTimeTermUnit", "month")
+	if err := normalizeSubscriptionRecord(record); err == nil {
+		t.Fatal("expected one-time term unit without count to fail")
+	}
+	record.Set("oneTimeTermCount", maxReminderDays+1)
+	record.Set("oneTimeTermUnit", "month")
+	if err := normalizeSubscriptionRecord(record); err == nil {
+		t.Fatal("expected one-time term count above max to fail")
+	}
+	record.Set("oneTimeTermCount", 6)
+	record.Set("oneTimeTermUnit", "month")
+	record.Set("billingCycle", "monthly")
+	if err := normalizeSubscriptionRecord(record); err != nil {
+		t.Fatalf("expected recurring subscription to clear stale one-time term fields: %v", err)
+	}
+	if record.GetInt("oneTimeTermCount") != 0 || record.GetString("oneTimeTermUnit") != "" {
+		t.Fatalf("expected recurring subscription to clear one-time term fields, got count=%d unit=%q", record.GetInt("oneTimeTermCount"), record.GetString("oneTimeTermUnit"))
+	}
+	record.Set("oneTimeTermCount", -1)
+	record.Set("oneTimeTermUnit", "month")
+	if err := normalizeSubscriptionRecord(record); err != nil {
+		t.Fatalf("expected recurring subscription to clear invalid stale one-time term fields: %v", err)
+	}
+	if record.GetInt("oneTimeTermCount") != 0 || record.GetString("oneTimeTermUnit") != "" {
+		t.Fatalf("expected recurring subscription to clear invalid one-time term fields, got count=%d unit=%q", record.GetInt("oneTimeTermCount"), record.GetString("oneTimeTermUnit"))
 	}
 
 	record.Set("billingCycle", "monthly")

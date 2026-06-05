@@ -14,6 +14,8 @@ function subscriptionBody(overrides: Partial<SubscriptionBody> = {}): Subscripti
     billingCycle: "monthly",
     customDays: null,
     customCycleUnit: null,
+    oneTimeTermCount: null,
+    oneTimeTermUnit: null,
     category: "productivity",
     status: "active",
     pinned: false,
@@ -66,11 +68,55 @@ describe("Cloudflare subscription mapper", () => {
     expect(apiSubscription).not.toHaveProperty("customCycleUnit");
   });
 
+  it("persists one-time fixed terms and exposes them through the API mapper", () => {
+    const row = toSubscriptionRow("sub_one_time", "usr_custom", subscriptionBody({
+      billingCycle: "one-time",
+      oneTimeTermCount: 6,
+      oneTimeTermUnit: "month",
+      customDays: 45,
+      customCycleUnit: "week",
+      autoCalculateNextBillingDate: true,
+    }), "2026-06-05T00:00:00.000Z", "2026-06-05T00:00:00.000Z");
+
+    expect(row.custom_days).toBeNull();
+    expect(row.custom_cycle_unit).toBeNull();
+    expect(row.one_time_term_count).toBe(6);
+    expect(row.one_time_term_unit).toBe("month");
+    expect(row.auto_calculate_next_billing_date).toBe(0);
+    expect(toApiSubscription(row)).toMatchObject({
+      billingCycle: "one-time",
+      oneTimeTermCount: 6,
+      oneTimeTermUnit: "month",
+      autoCalculateNextBillingDate: false,
+    });
+  });
+
+  it("clears one-time term fields for recurring subscriptions", () => {
+    const row = toSubscriptionRow("sub_monthly", "usr_custom", subscriptionBody({
+      billingCycle: "monthly",
+      oneTimeTermCount: 6,
+      oneTimeTermUnit: "month",
+    }), "2026-06-05T00:00:00.000Z", "2026-06-05T00:00:00.000Z");
+
+    const apiSubscription = toApiSubscription(row);
+
+    expect(row.one_time_term_count).toBeNull();
+    expect(row.one_time_term_unit).toBeNull();
+    expect(apiSubscription).not.toHaveProperty("oneTimeTermCount");
+    expect(apiSubscription).not.toHaveProperty("oneTimeTermUnit");
+  });
+
   it("adds custom_cycle_unit through the standalone migration only", () => {
     const initialMigration = readFileSync(resolve("migrations/0001_initial.sql"), "utf8");
     const customUnitMigration = readFileSync(resolve("migrations/0007_subscription_custom_cycle_unit.sql"), "utf8");
+    const oneTimeTermMigration = readFileSync(resolve("migrations/0008_subscription_one_time_term.sql"), "utf8");
 
     expect(initialMigration).not.toContain("custom_cycle_unit");
+    expect(initialMigration).not.toContain("one_time_term");
     expect(customUnitMigration.trim()).toBe("ALTER TABLE subscriptions ADD COLUMN custom_cycle_unit TEXT;");
+    expect(oneTimeTermMigration.trim()).toBe([
+      "ALTER TABLE subscriptions ADD COLUMN one_time_term_count INTEGER;",
+      "ALTER TABLE subscriptions ADD COLUMN one_time_term_unit TEXT;",
+    ].join("\n"));
   });
 });

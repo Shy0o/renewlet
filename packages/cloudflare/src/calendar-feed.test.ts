@@ -60,7 +60,10 @@ describe("calendar feed worker handlers", () => {
     expectCalendarIcsLineEndings(ics);
     expect(unfoldedIcs).toContain("BEGIN:VCALENDAR");
     expect(unfoldedIcs).toContain("SUMMARY:Active Plan");
+    expect(unfoldedIcs).toContain("SUMMARY:Fixed Term Plan");
     expect(unfoldedIcs).toContain("DTSTART;VALUE=DATE:20990602");
+    expect(unfoldedIcs).toContain("DTSTART;VALUE=DATE:20990605");
+    expect(unfoldedIcs).toContain("UID:renewlet-expiry-");
     expect(unfoldedIcs).toContain("Category: Developer Tools");
     expect(unfoldedIcs).toContain("Payment method: Credit Card");
     expect(unfoldedIcs).toContain("CATEGORIES:Developer Tools");
@@ -120,6 +123,28 @@ describe("calendar feed worker handlers", () => {
     const deleteResponse = await deleteSubscriptionCalendarFeed(authorizedRequest("https://renewlet.example/api/app/subscriptions/sub_paused/calendar-feed", { method: "DELETE" }), env, "sub_paused");
     expect(deleteResponse.status).toBe(200);
     await expect(calendarFeedIcs(new Request(first.calendarFeed.feedUrl), env)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("rejects one-time buyout subscription feeds but accepts fixed-term expiry feeds", async () => {
+    const env = await createCalendarFeedTestEnv();
+
+    await expect(createSubscriptionCalendarFeed(authorizedRequest("https://renewlet.example/api/app/subscriptions/sub_once/calendar-feed", {
+      body: "{}",
+      method: "POST",
+    }), env, "sub_once")).rejects.toMatchObject({ status: 404 });
+
+    const fixedTermResponse = await createSubscriptionCalendarFeed(authorizedRequest("https://renewlet.example/api/app/subscriptions/sub_fixed_term/calendar-feed", {
+      body: "{}",
+      method: "POST",
+    }), env, "sub_fixed_term");
+    expect(fixedTermResponse.status).toBe(200);
+    const fixedTerm = await fixedTermResponse.json() as { calendarFeed: { feedUrl: string } };
+    const ics = await (await calendarFeedIcs(new Request(fixedTerm.calendarFeed.feedUrl), env)).text();
+    const unfoldedIcs = unfoldIcsText(ics);
+
+    expect(unfoldedIcs).toContain("SUMMARY:Fixed Term Plan");
+    expect(unfoldedIcs).toContain("UID:renewlet-expiry-");
+    expect(unfoldedIcs).not.toContain("One Time Plan");
   });
 
   it("rejects subscription-scoped feed creation for another user's subscription", async () => {
@@ -386,6 +411,10 @@ async function createCalendarFeedTestEnv(options: CalendarFeedTestOptions = {}):
       subscriptionRow("sub_cancelled", "Cancelled Plan", "cancelled", "monthly", "2099-06-03"),
       subscriptionRow("sub_expired", "Expired Plan", "expired", "monthly", "2099-06-03"),
       subscriptionRow("sub_once", "One Time Plan", "active", "one-time", "2099-06-04"),
+      subscriptionRow("sub_fixed_term", "Fixed Term Plan", "active", "one-time", "2099-06-05", {
+        one_time_term_count: 6,
+        one_time_term_unit: "month",
+      }),
     ],
   };
   return {
@@ -412,6 +441,8 @@ function subscriptionRow(id: string, name: string, status: string, billingCycle:
     billing_cycle: billingCycle,
     custom_days: null,
     custom_cycle_unit: null,
+    one_time_term_count: null,
+    one_time_term_unit: null,
     category: "developer_tools",
     status,
     pinned: 0,

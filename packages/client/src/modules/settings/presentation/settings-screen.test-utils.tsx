@@ -4,6 +4,7 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import { vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DEFAULT_CUSTOM_CONFIG } from "@/types/config";
+import type { ExchangeRates } from "@/lib/api/schemas/exchange-rates";
 import { DEFAULT_SETTINGS, type AppSettings, type NotificationChannel } from "@/types/subscription";
 import type { ThemeMode } from "@/types/theme";
 import { SettingsScreen } from "./settings-screen";
@@ -151,8 +152,16 @@ export function createControllerState(overrides: {
     enabled?: boolean;
     feedUrl?: string | null;
   };
+  rates?: ExchangeRates;
 } = {}) {
   const fn = vi.fn();
+  const currencySymbols: Record<string, string> = {
+    CNY: "¥",
+    EUR: "€",
+    GBP: "£",
+    USD: "$",
+  };
+
   return {
     settings: {
       ...DEFAULT_SETTINGS,
@@ -173,12 +182,12 @@ export function createControllerState(overrides: {
     customConfig: DEFAULT_CUSTOM_CONFIG,
     subscriptionsQuery: { data: [] },
     categoryUsageCount: new Map(),
-    rates: {},
+    rates: overrides.rates ?? {},
     activeRateProvider: "floatrates",
     ratesLoading: false,
     lastUpdated: null,
     ratesError: null,
-    getCurrencySymbol: () => "¥",
+    getCurrencySymbol: (currency: string) => currencySymbols[currency] ?? currency,
     updateCategories: fn,
     updateStatuses: fn,
     updatePaymentMethods: fn,

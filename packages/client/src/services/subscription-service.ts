@@ -88,6 +88,12 @@ function normalizeSubscriptionRecord(row: unknown): unknown {
     // PocketBase 旧行没有 customCycleUnit；custom 读取缺省按 day，固定周期的空字符串则不进入 shared enum。
     normalized["customCycleUnit"] = normalizeCustomCycleUnit(row["customCycleUnit"]);
   }
+  if (row["billingCycle"] === "one-time") {
+    if (typeof row["oneTimeTermCount"] === "number" && row["oneTimeTermCount"] > 0 && typeof row["oneTimeTermUnit"] === "string") {
+      normalized["oneTimeTermCount"] = row["oneTimeTermCount"];
+      normalized["oneTimeTermUnit"] = normalizeCustomCycleUnit(row["oneTimeTermUnit"]);
+    }
+  }
   if (Array.isArray(row["tags"])) normalized["tags"] = row["tags"];
 
   for (const key of ["logo", "paymentMethod", "trialEndDate", "website", "notes"] as const) {
@@ -141,9 +147,28 @@ export function fromApiSubscription(row: ApiSubscription | RecordModel): Subscri
       billingCycle: "custom",
       customDays: parsedRow.customDays ?? 1,
       customCycleUnit: normalizeCustomCycleUnit(parsedRow.customCycleUnit),
+      oneTimeTermCount: undefined,
+      oneTimeTermUnit: undefined,
     };
   }
-  return { ...base, billingCycle: parsedRow.billingCycle, customDays: undefined, customCycleUnit: undefined };
+  if (parsedRow.billingCycle === "one-time") {
+    return {
+      ...base,
+      billingCycle: "one-time",
+      customDays: undefined,
+      customCycleUnit: undefined,
+      oneTimeTermCount: parsedRow.oneTimeTermCount,
+      oneTimeTermUnit: parsedRow.oneTimeTermUnit ? normalizeCustomCycleUnit(parsedRow.oneTimeTermUnit) : undefined,
+    };
+  }
+  return {
+    ...base,
+    billingCycle: parsedRow.billingCycle,
+    customDays: undefined,
+    customCycleUnit: undefined,
+    oneTimeTermCount: undefined,
+    oneTimeTermUnit: undefined,
+  };
 }
 
 /**
@@ -162,6 +187,8 @@ export function toSubscriptionWritePayload(sub: SubscriptionDraft | Subscription
     // null 表示服务端应清空可选字段；undefined 会在 PocketBase/Worker 两端产生不同 patch 语义。
     customDays: sub.customDays ?? null,
     customCycleUnit: sub.customCycleUnit ?? null,
+    oneTimeTermCount: sub.oneTimeTermCount ?? null,
+    oneTimeTermUnit: sub.oneTimeTermUnit ?? null,
     category: sub.category,
     status: sub.status,
     paymentMethod: sub.paymentMethod ?? null,

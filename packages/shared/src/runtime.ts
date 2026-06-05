@@ -12,7 +12,7 @@ export type ThemeVariant = (typeof THEME_VARIANTS)[number];
 export const SUBSCRIPTION_STATUSES = ["trial", "active", "expired", "paused", "cancelled"] as const;
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 
-/** `one-time` 不参与续费提醒和月度折算；`custom` 由 customDays 数量和 customCycleUnit 单位共同定义。 */
+/** `one-time` 默认是买断；携带 oneTimeTermCount/unit 时才按固定权益期摊销并提醒到期。 */
 export const BILLING_CYCLES = ["weekly", "monthly", "quarterly", "semi-annual", "annual", "custom", "one-time"] as const;
 export type BillingCycle = (typeof BILLING_CYCLES)[number];
 

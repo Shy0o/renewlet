@@ -19,7 +19,7 @@ export interface SubscriptionFormFieldsProps {
 
 /** 表单错误按 UI 区块聚合，而不是逐 DTO 字段暴露，避免跨字段日期和提醒规则在不同输入上重复显示。 */
 export type SubscriptionFormErrors = Partial<Record<
-  "name" | "price" | "dates" | "customDays" | "reminderDays" | "website" | "tags",
+  "name" | "price" | "dates" | "customDays" | "oneTimeTerm" | "reminderDays" | "website" | "tags",
   string
 >>;
 
@@ -34,6 +34,9 @@ export const errorFieldByFormKey: Partial<Record<keyof SubscriptionFormState, ke
   price: "price",
   billingCycle: "customDays",
   customDays: "customDays",
+  oneTimeMode: "oneTimeTerm",
+  oneTimeTermCount: "oneTimeTerm",
+  oneTimeTermUnit: "oneTimeTerm",
   startDate: "dates",
   nextBillingDate: "dates",
   reminderType: "reminderDays",

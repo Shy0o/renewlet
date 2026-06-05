@@ -40,6 +40,7 @@ func TestCalendarFeedLifecycleAndICSRoute(t *testing.T) {
 	createCalendarFeedTestSubscription(t, app, user.Id, calendarFeedTestSubscription{Name: "Cancelled Plan", BillingCycle: "monthly", Status: "cancelled", NextBillingDate: "2099-06-03"})
 	createCalendarFeedTestSubscription(t, app, user.Id, calendarFeedTestSubscription{Name: "Expired Plan", BillingCycle: "monthly", Status: "expired", NextBillingDate: "2099-06-03"})
 	createCalendarFeedTestSubscription(t, app, user.Id, calendarFeedTestSubscription{Name: "One Time Plan", BillingCycle: "one-time", Status: "active", NextBillingDate: "2099-06-04"})
+	createCalendarFeedTestSubscription(t, app, user.Id, calendarFeedTestSubscription{Name: "Fixed Term Plan", BillingCycle: "one-time", OneTimeTermCount: 6, OneTimeTermUnit: "month", Status: "active", NextBillingDate: "2099-06-05"})
 	createCalendarFeedTestSubscription(t, app, user.Id, calendarFeedTestSubscription{Name: "Past Plan", BillingCycle: "monthly", Status: "active", NextBillingDate: "2000-01-01"})
 
 	statusRes := serveTestRequest(t, app, http.MethodGet, "/api/app/calendar-feed", "", token)
@@ -86,9 +87,12 @@ func TestCalendarFeedLifecycleAndICSRoute(t *testing.T) {
 		"SOURCE;VALUE=URI:",
 		"BEGIN:VEVENT",
 		"UID:renewlet-renewal-",
+		"UID:renewlet-expiry-",
 		"DTSTART;VALUE=DATE:20990602",
 		"DTEND;VALUE=DATE:20990603",
 		"SUMMARY:Active Plan",
+		"SUMMARY:Fixed Term Plan",
+		"DTSTART;VALUE=DATE:20990605",
 		"DESCRIPTION:Amount: 12.5 USD\\nBilling cycle: Monthly\\nCategory: Developer Tools\\nPayment method: Credit Card\\nNotes: Team\\, shared\\; admin",
 		"CATEGORIES:Developer Tools",
 		"URL:https://example.com/active",
@@ -176,6 +180,14 @@ func TestSubscriptionCalendarFeedLifecycleAndICSRoute(t *testing.T) {
 		Status:          "active",
 		NextBillingDate: "2099-06-04",
 	})
+	fixedTerm := createCalendarFeedTestSubscription(t, app, user.Id, calendarFeedTestSubscription{
+		Name:             "Fixed Term Plan",
+		BillingCycle:     "one-time",
+		OneTimeTermCount: 6,
+		OneTimeTermUnit:  "month",
+		Status:           "active",
+		NextBillingDate:  "2099-06-05",
+	})
 
 	statusRes := serveTestRequest(t, app, http.MethodGet, "/api/app/subscriptions/"+paused.Id+"/calendar-feed", "", token)
 	if statusRes.Code != http.StatusOK || !strings.Contains(statusRes.Body.String(), `"enabled":false`) {
@@ -226,16 +238,25 @@ func TestSubscriptionCalendarFeedLifecycleAndICSRoute(t *testing.T) {
 	}
 
 	oneTimeRes := serveTestRequest(t, app, http.MethodPost, "/api/app/subscriptions/"+oneTime.Id+"/calendar-feed", `{}`, token)
-	if oneTimeRes.Code != http.StatusOK {
-		t.Fatalf("expected one-time subscription feed create 200, got %d: %s", oneTimeRes.Code, oneTimeRes.Body.String())
+	if oneTimeRes.Code != http.StatusNotFound {
+		t.Fatalf("expected one-time buyout subscription feed create 404, got %d: %s", oneTimeRes.Code, oneTimeRes.Body.String())
 	}
-	var oneTimeBody calendarFeedCreateResponse
-	if err := json.Unmarshal(oneTimeRes.Body.Bytes(), &oneTimeBody); err != nil {
+	oneTimeStatusRes := serveTestRequest(t, app, http.MethodGet, "/api/app/subscriptions/"+oneTime.Id+"/calendar-feed", "", token)
+	if oneTimeStatusRes.Code != http.StatusNotFound {
+		t.Fatalf("expected one-time buyout subscription feed status 404, got %d: %s", oneTimeStatusRes.Code, oneTimeStatusRes.Body.String())
+	}
+
+	fixedTermRes := serveTestRequest(t, app, http.MethodPost, "/api/app/subscriptions/"+fixedTerm.Id+"/calendar-feed", `{}`, token)
+	if fixedTermRes.Code != http.StatusOK {
+		t.Fatalf("expected fixed-term one-time subscription feed create 200, got %d: %s", fixedTermRes.Code, fixedTermRes.Body.String())
+	}
+	var fixedTermBody calendarFeedCreateResponse
+	if err := json.Unmarshal(fixedTermRes.Body.Bytes(), &fixedTermBody); err != nil {
 		t.Fatal(err)
 	}
-	oneTimeICS := serveTestRequest(t, app, http.MethodGet, calendarFeedRequestTarget(t, oneTimeBody.CalendarFeed.FeedURL), "", "").Body.String()
-	if !strings.Contains(oneTimeICS, "SUMMARY:One Time Plan") {
-		t.Fatalf("expected explicit one-time subscription feed to include the selected item, got:\n%s", oneTimeICS)
+	fixedTermICS := unfoldCalendarTestICS(serveTestRequest(t, app, http.MethodGet, calendarFeedRequestTarget(t, fixedTermBody.CalendarFeed.FeedURL), "", "").Body.String())
+	if !strings.Contains(fixedTermICS, "SUMMARY:Fixed Term Plan") || !strings.Contains(fixedTermICS, "UID:renewlet-expiry-") {
+		t.Fatalf("expected explicit fixed-term subscription feed to include expiry item, got:\n%s", fixedTermICS)
 	}
 
 	deleteRes := serveTestRequest(t, app, http.MethodDelete, "/api/app/subscriptions/"+paused.Id+"/calendar-feed", "", token)
@@ -469,6 +490,8 @@ type calendarFeedTestSubscription struct {
 	Website         string
 	Notes           string
 	ReminderDays    int
+	OneTimeTermCount int
+	OneTimeTermUnit  string
 }
 
 func createCalendarFeedTestSettings(t *testing.T, app core.App, user *core.Record, settings appSettings) *core.Record {
@@ -537,6 +560,8 @@ func createCalendarFeedTestSubscription(t *testing.T, app core.App, userID strin
 	record.Set("billingCycle", fallbackString(input.BillingCycle, "monthly"))
 	record.Set("customDays", input.CustomDays)
 	record.Set("customCycleUnit", input.CustomCycleUnit)
+	record.Set("oneTimeTermCount", input.OneTimeTermCount)
+	record.Set("oneTimeTermUnit", input.OneTimeTermUnit)
 	record.Set("category", fallbackString(input.Category, "General"))
 	record.Set("status", fallbackString(input.Status, "active"))
 	record.Set("paymentMethod", input.PaymentMethod)

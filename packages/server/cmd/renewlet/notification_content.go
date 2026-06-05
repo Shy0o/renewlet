@@ -45,6 +45,8 @@ func notificationSubscriptionFromRecord(row *core.Record) notificationSubscripti
 		Currency:               row.GetString("currency"),
 		Status:                 row.GetString("status"),
 		BillingCycle:           row.GetString("billingCycle"),
+		OneTimeTermCount:       row.GetInt("oneTimeTermCount"),
+		OneTimeTermUnit:        row.GetString("oneTimeTermUnit"),
 		NextBillingDate:        row.GetString("nextBillingDate"),
 		TrialEndDate:           row.GetString("trialEndDate"),
 		ReminderDays:           row.GetInt("reminderDays"),
@@ -120,14 +122,20 @@ func collectNotificationItemsForSchedule(schedule localScheduleOccurrence, setti
 func collectNotificationItems(localDate string, settings appSettings, subscriptions []notificationSubscription, includeExpired bool) []notificationContentItem {
 	items := []notificationContentItem{}
 	for _, sub := range subscriptions {
-		if sub.BillingCycle == "one-time" {
-			// one-time 是买断记录，通知系统不能把购买日当成续费日、试用日或过期日反复提醒。
-			continue
-		}
 		reminderDays := effectiveReminderDays(sub, settings)
 		if isValidDateOnly(sub.NextBillingDate) {
 			daysUntilNext := daysBetweenDateOnly(localDate, sub.NextBillingDate)
-			if daysUntilNext < 0 {
+			if sub.BillingCycle == "one-time" && sub.OneTimeTermCount <= 0 {
+				// one-time 买断记录没有权益到期日；购买日不能被通知系统解释成续费或过期边界。
+				continue
+			}
+			if sub.BillingCycle == "one-time" {
+				if daysUntilNext == reminderDays {
+					items = append(items, newNotificationContentItem("expiry", sub, sub.NextBillingDate, daysUntilNext, reminderDays, nil))
+				} else if daysUntilNext < 0 && settings.ShowExpired && includeExpired {
+					items = append(items, newNotificationContentItem("expired", sub, sub.NextBillingDate, daysUntilNext, reminderDays, nil))
+				}
+			} else if daysUntilNext < 0 {
 				if settings.ShowExpired && includeExpired {
 					items = append(items, newNotificationContentItem("expired", sub, sub.NextBillingDate, daysUntilNext, reminderDays, nil))
 				}
@@ -154,6 +162,7 @@ func collectRepeatNotificationItems(schedule localScheduleOccurrence, settings a
 	items := []notificationContentItem{}
 	for _, sub := range subscriptions {
 		if sub.BillingCycle == "one-time" {
+			// one-time 固定服务期只走首轮到期提醒；重复提醒仍保留给会自动/手动续费的周期订阅和 trial。
 			continue
 		}
 		if !sub.RepeatReminderEnabled {
@@ -225,11 +234,14 @@ func repeatReminderOccurrenceMatches(scheduledInstant time.Time, settings appSet
 func buildNotificationContent(now time.Time, settings appSettings, items []notificationContentItem) notificationMessage {
 	locale := normalizeAppLocale(settings.Locale)
 	renewals := []string{}
+	expiries := []string{}
 	trials := []string{}
 	expired := []string{}
 	for _, item := range items {
 		line := formatNotificationItemLine(item, locale)
 		switch item.Type {
+		case "expiry":
+			expiries = append(expiries, line)
 		case "trial":
 			trials = append(trials, line)
 		case "expired":
@@ -242,6 +254,9 @@ func buildNotificationContent(now time.Time, settings appSettings, items []notif
 	blocks := []string{}
 	if len(renewals) > 0 {
 		blocks = append(blocks, serverText(locale, "notification.content.renewalBlock")+"\n"+strings.Join(renewals, "\n"))
+	}
+	if len(expiries) > 0 {
+		blocks = append(blocks, serverText(locale, "notification.content.expiryBlock")+"\n"+strings.Join(expiries, "\n"))
 	}
 	if len(trials) > 0 {
 		blocks = append(blocks, serverText(locale, "notification.content.trialBlock")+"\n"+strings.Join(trials, "\n"))
@@ -267,6 +282,8 @@ func formatNotificationItemLine(item notificationContentItem, locale appLocale) 
 	extra := serverFormat(locale, "notification.content.reminderDays", map[string]interface{}{"days": item.ReminderDays})
 	if item.Type == "trial" {
 		extra = serverFormat(locale, "notification.content.trialReminderDays", map[string]interface{}{"days": item.ReminderDays})
+	} else if item.Type == "expiry" {
+		extra = serverFormat(locale, "notification.content.expiryReminderDays", map[string]interface{}{"days": item.ReminderDays})
 	} else if item.Type == "expired" {
 		extra = serverText(locale, "notification.content.expiredStatus")
 	}

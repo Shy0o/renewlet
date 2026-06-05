@@ -41,10 +41,11 @@ export async function createSubscription(request: Request, env: Env): Promise<Re
   const row = toSubscriptionRow(newId("sub"), auth.user.id, body, timestamp, timestamp);
   await env.DB.prepare(`
     INSERT INTO subscriptions (
-      id, user_id, name, logo, price, currency, billing_cycle, custom_days, custom_cycle_unit, category, status, pinned, payment_method,
+      id, user_id, name, logo, price, currency, billing_cycle, custom_days, custom_cycle_unit, one_time_term_count, one_time_term_unit,
+      category, status, pinned, payment_method,
       start_date, next_billing_date, auto_calculate_next_billing_date, trial_end_date, website, notes, tags_json,
       reminder_days, repeat_reminder_enabled, repeat_reminder_interval, repeat_reminder_window, extra_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(...subscriptionRowValues(row)).run();
   return json({ subscription: toApiSubscription(row) }, { status: 201 });
 }
@@ -57,12 +58,13 @@ export async function updateSubscription(request: Request, env: Env, id: string)
   if (!existing) throw new HttpError(404, serverText(locale, "subscription.notFound"));
   const patch = await readJson(request, subscriptionUpdateBodySchema, locale);
   const timestamp = nowIso();
-  // Worker 没有 PocketBase hook 可二次归一；更新必须先回 API body，再合并 patch 走同一套 create schema。
-  const mergedBody = parseSubscriptionBodyForStorage({ ...toBody(existing), ...stripUndefined(patch) }, locale);
+  // Worker 没有 PocketBase hook 可二次归一；切换计费类型时先清理互斥字段，再合并 patch 走同一套 create schema。
+  const mergedBody = parseSubscriptionBodyForStorage(mergeSubscriptionPatchForStorage(toBody(existing), stripUndefined(patch)), locale);
   const merged = toSubscriptionRow(existing.id, auth.user.id, mergedBody, existing.created_at, timestamp);
   await env.DB.prepare(`
     UPDATE subscriptions SET
-      name = ?, logo = ?, price = ?, currency = ?, billing_cycle = ?, custom_days = ?, custom_cycle_unit = ?, category = ?, status = ?,
+      name = ?, logo = ?, price = ?, currency = ?, billing_cycle = ?, custom_days = ?, custom_cycle_unit = ?,
+      one_time_term_count = ?, one_time_term_unit = ?, category = ?, status = ?,
       pinned = ?, payment_method = ?, start_date = ?, next_billing_date = ?, auto_calculate_next_billing_date = ?,
       trial_end_date = ?, website = ?, notes = ?, tags_json = ?, reminder_days = ?, repeat_reminder_enabled = ?,
       repeat_reminder_interval = ?, repeat_reminder_window = ?, extra_json = ?, updated_at = ?
@@ -75,6 +77,8 @@ export async function updateSubscription(request: Request, env: Env, id: string)
     merged.billing_cycle,
     merged.custom_days,
     merged.custom_cycle_unit,
+    merged.one_time_term_count,
+    merged.one_time_term_unit,
     merged.category,
     merged.status,
     merged.pinned,
@@ -116,13 +120,27 @@ export function normalizeSubscriptionBodyForStorage(body: unknown): Subscription
       ...parsed,
       customDays: parsed.customDays ?? 1,
       customCycleUnit: parsed.customCycleUnit ?? "day",
+      oneTimeTermCount: null,
+      oneTimeTermUnit: null,
+    };
+  }
+  if (parsed.billingCycle === "one-time") {
+    const hasTerm = parsed.oneTimeTermCount !== null && parsed.oneTimeTermCount !== undefined;
+    return {
+      ...parsed,
+      customDays: null,
+      customCycleUnit: null,
+      oneTimeTermCount: hasTerm ? parsed.oneTimeTermCount : null,
+      oneTimeTermUnit: hasTerm ? parsed.oneTimeTermUnit ?? "month" : null,
+      autoCalculateNextBillingDate: false,
     };
   }
   return {
     ...parsed,
     customDays: null,
     customCycleUnit: null,
-    autoCalculateNextBillingDate: parsed.billingCycle === "one-time" ? false : parsed.autoCalculateNextBillingDate,
+    oneTimeTermCount: null,
+    oneTimeTermUnit: null,
   };
 }
 
@@ -147,6 +165,8 @@ function toBody(row: SubscriptionRow): SubscriptionBody {
     billingCycle: row.billing_cycle as SubscriptionBody["billingCycle"],
     customDays: row.custom_days,
     customCycleUnit: row.custom_cycle_unit,
+    oneTimeTermCount: row.one_time_term_count,
+    oneTimeTermUnit: row.one_time_term_unit,
     category: row.category,
     status: row.status as SubscriptionBody["status"],
     pinned: row.pinned === 1,
@@ -185,13 +205,16 @@ export function toSubscriptionRow(
     // 非 custom 周期必须把自定义字段清空，否则后续编辑会把旧自定义周期“复活”。
     custom_days: body.billingCycle === "custom" ? body.customDays ?? 1 : null,
     custom_cycle_unit: body.billingCycle === "custom" ? body.customCycleUnit ?? "day" : null,
+    // one-time 服务期是“预付权益期”契约；非 one-time 清空，避免旧买断字段被周期订阅误用于摊销。
+    one_time_term_count: body.billingCycle === "one-time" ? body.oneTimeTermCount ?? null : null,
+    one_time_term_unit: body.billingCycle === "one-time" ? body.oneTimeTermUnit ?? null : null,
     category: body.category,
     status: body.status,
     pinned: boolToInt(body.pinned),
     payment_method: body.paymentMethod ?? null,
     start_date: body.startDate,
     next_billing_date: body.nextBillingDate,
-    // Worker 没有 PocketBase hook；one-time 的跨运行面约束必须在 D1 写入边界兜底。
+    // Worker 没有 PocketBase hook；one-time 不自动滚动日期，固定服务期只发到期提醒。
     auto_calculate_next_billing_date: boolToInt(body.billingCycle === "one-time" ? false : body.autoCalculateNextBillingDate),
     trial_end_date: body.trialEndDate ?? null,
     website: body.website ?? null,
@@ -211,6 +234,7 @@ export function toSubscriptionRow(
 export function subscriptionRowValues(row: SubscriptionRow): unknown[] {
   return [
     row.id, row.user_id, row.name, row.logo, row.price, row.currency, row.billing_cycle, row.custom_days, row.custom_cycle_unit,
+    row.one_time_term_count, row.one_time_term_unit,
     row.category, row.status, row.pinned, row.payment_method, row.start_date, row.next_billing_date,
     row.auto_calculate_next_billing_date, row.trial_end_date, row.website, row.notes, row.tags_json,
     row.reminder_days, row.repeat_reminder_enabled, row.repeat_reminder_interval, row.repeat_reminder_window,
@@ -218,6 +242,25 @@ export function subscriptionRowValues(row: SubscriptionRow): unknown[] {
   ];
 }
 
-function stripUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
-  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>;
+function stripUndefined<T extends Record<string, unknown>>(value: T): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
+}
+
+function mergeSubscriptionPatchForStorage(base: SubscriptionBody, patch: Record<string, unknown>): Record<string, unknown> {
+  const normalizedPatch: Record<string, unknown> = { ...patch };
+  const billingCycle = patch["billingCycle"];
+  if (billingCycle === "custom") {
+    normalizedPatch["oneTimeTermCount"] = null;
+    normalizedPatch["oneTimeTermUnit"] = null;
+  } else if (billingCycle === "one-time") {
+    normalizedPatch["customDays"] = null;
+    normalizedPatch["customCycleUnit"] = null;
+    normalizedPatch["autoCalculateNextBillingDate"] = false;
+  } else if (billingCycle) {
+    normalizedPatch["customDays"] = null;
+    normalizedPatch["customCycleUnit"] = null;
+    normalizedPatch["oneTimeTermCount"] = null;
+    normalizedPatch["oneTimeTermUnit"] = null;
+  }
+  return { ...base, ...normalizedPatch };
 }

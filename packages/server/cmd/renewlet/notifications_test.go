@@ -46,6 +46,26 @@ func TestBuildDueNotificationSkipsOneTimePurchases(t *testing.T) {
 	}
 }
 
+func TestBuildDueNotificationCreatesOneTimeFixedTermExpiry(t *testing.T) {
+	settings := defaultAppSettings()
+	settings.ShowExpired = false
+	settings.Timezone = "Asia/Shanghai"
+
+	message := buildDueNotificationForLocalDate("2026-05-14", time.Date(2026, 5, 14, 1, 2, 3, 0, time.UTC), settings, []notificationSubscription{
+		{ID: "fixed-term", Name: "Fixed Term", Price: 120, Currency: "USD", Status: "active", BillingCycle: "one-time", OneTimeTermCount: 6, OneTimeTermUnit: "month", NextBillingDate: "2026-05-17", ReminderDays: 3},
+	}, true)
+
+	if !message.HasPayload || len(message.Items) != 1 {
+		t.Fatalf("expected one fixed-term expiry notification, got %#v", message.Items)
+	}
+	if message.Items[0].Type != "expiry" || message.Items[0].SubscriptionID != "fixed-term" {
+		t.Fatalf("expected expiry item, got %#v", message.Items[0])
+	}
+	if !strings.Contains(message.Content, "即将到期") || strings.Contains(message.Content, "即将续费：") {
+		t.Fatalf("expected expiry copy only, got %q", message.Content)
+	}
+}
+
 func TestBuildDueNotificationUsesEnglishLocale(t *testing.T) {
 	settings := defaultAppSettings()
 	settings.Locale = string(localeEnUS)

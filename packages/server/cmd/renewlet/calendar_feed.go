@@ -51,24 +51,27 @@ type calendarFeedCreateResponse struct {
 }
 
 type calendarFeedSubscription struct {
-	ID              string
-	Name            string
-	Price           float64
-	Currency        string
-	BillingCycle    string
-	CustomDays      int
-	CustomCycleUnit string
-	Category        string
-	Status          string
-	PaymentMethod   string
-	NextBillingDate string
-	Website         string
-	Notes           string
-	ReminderDays    int
+	ID               string
+	Name             string
+	Price            float64
+	Currency         string
+	BillingCycle     string
+	CustomDays       int
+	CustomCycleUnit  string
+	OneTimeTermCount int
+	OneTimeTermUnit  string
+	Category         string
+	Status           string
+	PaymentMethod    string
+	NextBillingDate  string
+	Website          string
+	Notes            string
+	ReminderDays     int
 }
 
 type calendarFeedEvent struct {
 	UID          string
+	Kind         string
 	Date         string
 	Summary      string
 	Description  string
@@ -126,7 +129,8 @@ func handleCalendarFeedDelete(app core.App, e *core.RequestEvent) error {
 func handleSubscriptionCalendarFeedStatus(app core.App, e *core.RequestEvent) error {
 	locale := requestLocale(e.Request)
 	subscriptionID := strings.TrimSpace(e.Request.PathValue("id"))
-	if _, err := findCalendarFeedSubscriptionByID(app, e.Auth.Id, subscriptionID); err != nil {
+	subscription, err := findCalendarFeedSubscriptionByID(app, e.Auth.Id, subscriptionID)
+	if err != nil || calendarFeedSubscriptionIsBuyout(subscription) {
 		return e.NotFoundError(serverText(locale, "subscription.notFound"), err)
 	}
 	record, err := findSubscriptionCalendarFeedForUser(app, e.Auth.Id, subscriptionID)
@@ -142,7 +146,8 @@ func handleSubscriptionCalendarFeedCreate(app core.App, e *core.RequestEvent) er
 	if _, err := decodeStrictJSON[calendarFeedCreateRequest](e.Request, locale); err != nil {
 		return e.BadRequestError(validationErrorMessage(locale, "common.invalidRequestBody", err), err)
 	}
-	if _, err := findCalendarFeedSubscriptionByID(app, e.Auth.Id, subscriptionID); err != nil {
+	subscription, err := findCalendarFeedSubscriptionByID(app, e.Auth.Id, subscriptionID)
+	if err != nil || calendarFeedSubscriptionIsBuyout(subscription) {
 		return e.NotFoundError(serverText(locale, "subscription.notFound"), err)
 	}
 	record, err := ensureSubscriptionCalendarFeed(app, e.Auth.Id, subscriptionID)
@@ -422,20 +427,22 @@ func findCalendarFeedSubscriptionByID(app core.App, userID string, subscriptionI
 
 func calendarFeedSubscriptionFromRecord(row *core.Record) calendarFeedSubscription {
 	return calendarFeedSubscription{
-		ID:              row.Id,
-		Name:            row.GetString("name"),
-		Price:           row.GetFloat("price"),
-		Currency:        row.GetString("currency"),
-		BillingCycle:    row.GetString("billingCycle"),
-		CustomDays:      row.GetInt("customDays"),
-		CustomCycleUnit: row.GetString("customCycleUnit"),
-		Category:        row.GetString("category"),
-		Status:          row.GetString("status"),
-		PaymentMethod:   row.GetString("paymentMethod"),
-		NextBillingDate: row.GetString("nextBillingDate"),
-		Website:         row.GetString("website"),
-		Notes:           row.GetString("notes"),
-		ReminderDays:    row.GetInt("reminderDays"),
+		ID:               row.Id,
+		Name:             row.GetString("name"),
+		Price:            row.GetFloat("price"),
+		Currency:         row.GetString("currency"),
+		BillingCycle:     row.GetString("billingCycle"),
+		CustomDays:       row.GetInt("customDays"),
+		CustomCycleUnit:  row.GetString("customCycleUnit"),
+		OneTimeTermCount: row.GetInt("oneTimeTermCount"),
+		OneTimeTermUnit:  row.GetString("oneTimeTermUnit"),
+		Category:         row.GetString("category"),
+		Status:           row.GetString("status"),
+		PaymentMethod:    row.GetString("paymentMethod"),
+		NextBillingDate:  row.GetString("nextBillingDate"),
+		Website:          row.GetString("website"),
+		Notes:            row.GetString("notes"),
+		ReminderDays:     row.GetInt("reminderDays"),
 	}
 }
 
@@ -561,7 +568,7 @@ func buildCalendarFeedICS(options calendarFeedBuildOptions) string {
 		}
 		alarm := vevent.AddAlarm()
 		alarm.SetAction(ics.ActionDisplay)
-		alarm.SetDescription(serverFormat(locale, "calendarFeed.alarmDescription", map[string]interface{}{"name": event.Summary}))
+		alarm.SetDescription(calendarFeedAlarmDescription(event, locale))
 		alarm.SetTrigger(calendarFeedAlarmTrigger(event.ReminderDays))
 	}
 	return normalizeCalendarFeedLineEndings(cal.Serialize())
@@ -578,7 +585,7 @@ func globalCalendarFeedEvents(items []calendarFeedSubscription, settings appSett
 	localDate := todayDateOnly(now, settings.Timezone)
 	events := []calendarFeedEvent{}
 	for _, item := range items {
-		if item.BillingCycle == "one-time" || (item.Status != "active" && item.Status != "trial") {
+		if (item.Status != "active" && item.Status != "trial") || calendarFeedSubscriptionIsBuyout(item) {
 			continue
 		}
 		if !isValidDateOnly(item.NextBillingDate) || item.NextBillingDate < localDate {
@@ -596,16 +603,25 @@ func globalCalendarFeedEvents(items []calendarFeedSubscription, settings appSett
 }
 
 func subscriptionCalendarFeedEvents(item calendarFeedSubscription, settings appSettings, labels calendarFeedLabelResolver) []calendarFeedEvent {
+	if calendarFeedSubscriptionIsBuyout(item) {
+		return []calendarFeedEvent{}
+	}
 	if !isValidDateOnly(item.NextBillingDate) {
 		return []calendarFeedEvent{}
 	}
 	return []calendarFeedEvent{calendarFeedEventFromSubscription(item, settings, labels)}
 }
 
+func calendarFeedSubscriptionIsBuyout(item calendarFeedSubscription) bool {
+	return item.BillingCycle == "one-time" && item.OneTimeTermCount <= 0
+}
+
 func calendarFeedEventFromSubscription(item calendarFeedSubscription, settings appSettings, labels calendarFeedLabelResolver) calendarFeedEvent {
 	categoryLabel := labels.categoryLabel(item.Category)
+	kind := calendarFeedEventKind(item)
 	return calendarFeedEvent{
-		UID:          "renewlet-renewal-" + item.ID + "@renewlet",
+		UID:          "renewlet-" + kind + "-" + item.ID + "@renewlet",
+		Kind:         kind,
 		Date:         item.NextBillingDate,
 		Summary:      item.Name,
 		Description:  calendarFeedDescription(item, settings, labels),
@@ -613,6 +629,21 @@ func calendarFeedEventFromSubscription(item calendarFeedSubscription, settings a
 		URL:          item.Website,
 		ReminderDays: effectiveCalendarFeedReminderDays(item.ReminderDays, settings),
 	}
+}
+
+func calendarFeedEventKind(item calendarFeedSubscription) string {
+	if item.BillingCycle == "one-time" {
+		return "expiry"
+	}
+	return "renewal"
+}
+
+func calendarFeedAlarmDescription(event calendarFeedEvent, locale appLocale) string {
+	key := "calendarFeed.alarmDescription"
+	if event.Kind == "expiry" {
+		key = "calendarFeed.alarmExpiryDescription"
+	}
+	return serverFormat(locale, key, map[string]interface{}{"name": event.Summary})
 }
 
 func calendarFeedDescription(item calendarFeedSubscription, settings appSettings, labels calendarFeedLabelResolver) string {

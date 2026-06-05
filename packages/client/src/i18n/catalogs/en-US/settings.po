@@ -469,6 +469,11 @@ msgid "settings.ratesUpdatedDescription"
 msgstr "Latest exchange-rate data has been fetched."
 
 #. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:141
+msgid "settings.ratesPreview"
+msgstr "Common currencies in {currency}"
+
+#. js-lingui-explicit-id
 #: src/i18n/descriptors/settings.ts:149
 msgid "settings.cronTip"
 msgstr "Cron should still call the endpoint every minute or at least every 5 minutes. The app decides per user time zone whether to send."
@@ -794,11 +799,6 @@ msgid "settings.ratesUpdated"
 msgstr "Exchange rates updated"
 
 #. js-lingui-explicit-id
-#: src/i18n/descriptors/settings.ts:142
-msgid "settings.ratesInfo"
-msgstr "Exchange rates update automatically every 24 hours, or manually from the button above. If the selected source fails, the other remote source is tried before totals fall back to built-in rates."
-
-#. js-lingui-explicit-id
 #: src/i18n/descriptors/settings.ts:128
 msgid "settings.exchangeRateProvider"
 msgstr "Rate source"
@@ -812,11 +812,6 @@ msgstr "Rate source saved"
 #: src/i18n/descriptors/settings.ts:125
 msgid "settings.ratesError"
 msgstr "Could not fetch exchange rates. Fallback rates are being used. {error}"
-
-#. js-lingui-explicit-id
-#: src/i18n/descriptors/settings.ts:141
-msgid "settings.ratesPreview"
-msgstr "Rate preview (1 {currency} = )"
 
 #. js-lingui-explicit-id
 #: src/i18n/descriptors/settings.ts:242
@@ -1207,6 +1202,11 @@ msgstr "Budget must be a valid number between 0 and 1,000,000,000."
 #: src/i18n/descriptors/settings.ts:67
 msgid "settings.budget"
 msgstr "Budget"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:142
+msgid "settings.ratesInfo"
+msgstr "The preview shows 1 unit of each subscription currency converted into your reporting currency, so foreign-currency prices are easier to estimate. Rates update automatically every 24 hours, or manually from the button above; if the selected source fails, the other remote source is tried."
 
 #. js-lingui-explicit-id
 #: src/i18n/descriptors/settings.ts:127

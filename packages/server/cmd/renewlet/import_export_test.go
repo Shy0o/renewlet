@@ -211,8 +211,32 @@ func TestImportApplyAcceptsOneTimeBillingCycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].GetString("billingCycle") != "one-time" || rows[0].GetInt("customDays") != 0 || rows[0].GetString("customCycleUnit") != "" || rows[0].GetBool("autoCalculateNextBillingDate") {
-		t.Fatalf("expected one-time record normalized, got rows=%d cycle=%q customDays=%d customCycleUnit=%q auto=%v", len(rows), rows[0].GetString("billingCycle"), rows[0].GetInt("customDays"), rows[0].GetString("customCycleUnit"), rows[0].GetBool("autoCalculateNextBillingDate"))
+	if len(rows) != 1 || rows[0].GetString("billingCycle") != "one-time" || rows[0].GetInt("customDays") != 0 || rows[0].GetString("customCycleUnit") != "" || rows[0].GetInt("oneTimeTermCount") != 0 || rows[0].GetString("oneTimeTermUnit") != "" || rows[0].GetBool("autoCalculateNextBillingDate") {
+		t.Fatalf("expected one-time record normalized, got rows=%d cycle=%q customDays=%d customCycleUnit=%q oneTimeTermCount=%d oneTimeTermUnit=%q auto=%v", len(rows), rows[0].GetString("billingCycle"), rows[0].GetInt("customDays"), rows[0].GetString("customCycleUnit"), rows[0].GetInt("oneTimeTermCount"), rows[0].GetString("oneTimeTermUnit"), rows[0].GetBool("autoCalculateNextBillingDate"))
+	}
+}
+
+func TestImportApplyAcceptsOneTimeFixedTerm(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	registerRecordHooks(app)
+	user, token := createRouteTestUser(t, app, "user")
+
+	customCycleUnit := "year"
+	oneTimeTermCount := 6
+	oneTimeTermUnit := "month"
+	res := serveTestRequest(t, app, http.MethodPost, "/api/app/import/apply", importRequestBodyWithOneTimeTerm("skip", nil, &customCycleUnit, &oneTimeTermCount, &oneTimeTermUnit, true, 120), token)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected fixed-term one-time import apply 200, got %d: %s", res.Code, res.Body.String())
+	}
+	rows, err := app.FindAllRecords("subscriptions", dbx.HashExp{"user": user.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].GetString("billingCycle") != "one-time" || rows[0].GetInt("oneTimeTermCount") != 6 || rows[0].GetString("oneTimeTermUnit") != "month" || rows[0].GetInt("customDays") != 0 || rows[0].GetString("customCycleUnit") != "" || rows[0].GetBool("autoCalculateNextBillingDate") {
+		t.Fatalf("expected fixed-term one-time record to preserve term and clear custom fields, got rows=%d cycle=%q customDays=%d customCycleUnit=%q oneTimeTermCount=%d oneTimeTermUnit=%q auto=%v", len(rows), rows[0].GetString("billingCycle"), rows[0].GetInt("customDays"), rows[0].GetString("customCycleUnit"), rows[0].GetInt("oneTimeTermCount"), rows[0].GetString("oneTimeTermUnit"), rows[0].GetBool("autoCalculateNextBillingDate"))
 	}
 }
 
@@ -328,6 +352,21 @@ func importRequestBodyWithBillingCycleUnit(conflictMode string, billingCycle str
 		subscription["customDays"] = customDays
 		subscription["customCycleUnit"] = customCycleUnit
 		subscription["autoCalculateNextBillingDate"] = autoCalculate
+	}
+	data, _ := json.Marshal(decoded)
+	return string(data)
+}
+
+func importRequestBodyWithOneTimeTerm(conflictMode string, customDays *int, customCycleUnit *string, oneTimeTermCount *int, oneTimeTermUnit *string, autoCalculate bool, prices ...int) string {
+	body := importRequestBodyWithBillingCycleUnit(conflictMode, "one-time", customDays, customCycleUnit, autoCalculate, prices...)
+	var decoded map[string]interface{}
+	_ = json.Unmarshal([]byte(body), &decoded)
+	payload := decoded["payload"].(map[string]interface{})
+	subscriptions := payload["subscriptions"].([]interface{})
+	for _, item := range subscriptions {
+		subscription := item.(map[string]interface{})
+		subscription["oneTimeTermCount"] = oneTimeTermCount
+		subscription["oneTimeTermUnit"] = oneTimeTermUnit
 	}
 	data, _ := json.Marshal(decoded)
 	return string(data)

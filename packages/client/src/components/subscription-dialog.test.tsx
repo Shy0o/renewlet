@@ -213,7 +213,7 @@ describe("SubscriptionDialog", () => {
     }));
   });
 
-  it("clears and disables the renewal date when switching to one-time purchase", async () => {
+  it("calculates and disables the expiry date when switching to one-time fixed term", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
 
@@ -240,18 +240,20 @@ describe("SubscriptionDialog", () => {
     await user.click(billingCycleSelect);
     await user.click(await screen.findByRole("option", { name: "一次性购买" }));
 
-    const renewalDateButton = screen.getByRole("button", { name: /到期日期.*选择日期/ });
+    const renewalDateButton = screen.getByRole("button", { name: /到期日期.*2026年6月14日/ });
     expect(renewalDateButton).toBeDisabled();
     expect(screen.queryByText("2027年6月25日")).not.toBeInTheDocument();
-    expect(screen.getByText("一次性购买不会自动推算后续续费日。")).toBeInTheDocument();
+    expect(screen.getByText("到期日根据购买日期和服务时长自动计算。")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "保存修改" }));
 
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
       id: "sub-1",
       billingCycle: "one-time",
-      nextBillingDate: "2026-05-14",
+      nextBillingDate: "2026-06-14",
       autoCalculateNextBillingDate: false,
+      oneTimeTermCount: 1,
+      oneTimeTermUnit: "month",
     }));
   });
 

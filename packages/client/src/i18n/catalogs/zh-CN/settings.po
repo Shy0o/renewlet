@@ -469,6 +469,11 @@ msgid "settings.ratesUpdatedDescription"
 msgstr "已获取最新汇率数据"
 
 #. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:141
+msgid "settings.ratesPreview"
+msgstr "常用货币折算为 {currency}"
+
+#. js-lingui-explicit-id
 #: src/i18n/descriptors/settings.ts:149
 msgid "settings.cronTip"
 msgstr "平台 Cron 仍建议每分钟或至少每 5 分钟访问一次接口；应用会按每个用户自己的时区判断是否发送。"
@@ -794,11 +799,6 @@ msgid "settings.ratesUpdated"
 msgstr "汇率已更新"
 
 #. js-lingui-explicit-id
-#: src/i18n/descriptors/settings.ts:142
-msgid "settings.ratesInfo"
-msgstr "汇率数据每 24 小时自动更新，也可点击右上角按钮手动刷新。所选来源失败时会自动尝试另一个远端来源；统计页面和首页的总金额会自动换算为统计货币显示。"
-
-#. js-lingui-explicit-id
 #: src/i18n/descriptors/settings.ts:128
 msgid "settings.exchangeRateProvider"
 msgstr "汇率来源"
@@ -812,11 +812,6 @@ msgstr "汇率来源已保存"
 #: src/i18n/descriptors/settings.ts:125
 msgid "settings.ratesError"
 msgstr "汇率获取失败，当前使用备用汇率。{error}"
-
-#. js-lingui-explicit-id
-#: src/i18n/descriptors/settings.ts:141
-msgid "settings.ratesPreview"
-msgstr "汇率预览 (1 {currency} = )"
 
 #. js-lingui-explicit-id
 #: src/i18n/descriptors/settings.ts:242
@@ -1207,6 +1202,11 @@ msgstr "预算必须是 0 到 1,000,000,000 之间的有效数字"
 #: src/i18n/descriptors/settings.ts:67
 msgid "settings.budget"
 msgstr "预算设置"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:142
+msgid "settings.ratesInfo"
+msgstr "预览按 1 个订阅原币折算为统计货币展示，便于估算外币订阅价格。汇率数据每 24 小时自动更新，也可点击右上角按钮手动刷新；所选来源失败时会自动尝试另一个远端来源。"
 
 #. js-lingui-explicit-id
 #: src/i18n/descriptors/settings.ts:127

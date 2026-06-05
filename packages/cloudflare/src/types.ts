@@ -64,6 +64,8 @@ export interface SubscriptionRow {
   billing_cycle: string;
   custom_days: number | null;
   custom_cycle_unit: CustomCycleUnit | null;
+  one_time_term_count: number | null;
+  one_time_term_unit: CustomCycleUnit | null;
   category: string;
   status: string;
   pinned: number;

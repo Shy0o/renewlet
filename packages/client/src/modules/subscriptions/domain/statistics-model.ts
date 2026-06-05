@@ -69,7 +69,14 @@ export function buildStatisticsModel({
   const calculateMonthlyAmount = (subscription: Subscription): number => {
     // 先换算币种再折算周期，保证所有图表都以用户当前统计货币为唯一口径。
     const amountInDefault = convertToDefault(subscription.price, subscription.currency);
-    return toMonthlyAmount(amountInDefault, subscription.billingCycle, subscription.customDays, subscription.customCycleUnit);
+    return toMonthlyAmount(
+      amountInDefault,
+      subscription.billingCycle,
+      subscription.customDays,
+      subscription.customCycleUnit,
+      subscription.oneTimeTermCount,
+      subscription.oneTimeTermUnit,
+    );
   };
 
   const totalMonthly = activeSubscriptions.reduce((sum, subscription) => sum + calculateMonthlyAmount(subscription), 0);
@@ -82,7 +89,7 @@ export function buildStatisticsModel({
     return currentMonthly > maxMonthly ? subscription : max;
   }, null as Subscription | null);
   const thisMonthDue = activeSubscriptions
-    .filter((subscription) => isSameMonthDateOnly(subscription.nextBillingDate, today))
+    .filter((subscription) => subscription.billingCycle !== "one-time" && isSameMonthDateOnly(subscription.nextBillingDate, today))
     .reduce((sum, subscription) => sum + convertToDefault(subscription.price, subscription.currency), 0);
   const budgetUsedPercent = monthlyBudget > 0 ? (totalMonthly / monthlyBudget) * 100 : 0;
   const budgetRemaining = monthlyBudget - totalMonthly;

@@ -69,6 +69,7 @@ export async function readSubscriptionCalendarFeed(request: Request, env: Env, s
   await ensureCalendarFeedSchema(env, locale);
   const subscription = await getSubscription(env, auth.user.id, subscriptionId);
   if (!subscription) throw new HttpError(404, serverText(locale, "subscription.notFound"), "NOT_FOUND");
+  if (isOneTimeBuyout(toApiSubscription(subscription))) throw new HttpError(404, serverText(locale, "subscription.notFound"), "NOT_FOUND");
   const row = await getCalendarFeed(env, auth.user.id, "subscription", subscriptionId);
   return json(calendarFeedStatusResponseSchema.parse({ calendarFeed: calendarFeedStatus(row, request) }));
 }
@@ -81,6 +82,7 @@ export async function createSubscriptionCalendarFeed(request: Request, env: Env,
   await ensureCalendarFeedSchema(env, locale);
   const subscription = await getSubscription(env, auth.user.id, subscriptionId);
   if (!subscription) throw new HttpError(404, serverText(locale, "subscription.notFound"), "NOT_FOUND");
+  if (isOneTimeBuyout(toApiSubscription(subscription))) throw new HttpError(404, serverText(locale, "subscription.notFound"), "NOT_FOUND");
   const existing = await getCalendarFeed(env, auth.user.id, "subscription", subscriptionId);
   const row = existing ?? await insertCalendarFeed(env, {
     scope: "subscription",
@@ -360,7 +362,7 @@ function calendarEvents(
   const today = dateOnlyInZone(new Date(), settings.timezone);
   return subscriptions
     .filter((subscription) => (
-      subscription.billingCycle !== "one-time"
+      !isOneTimeBuyout(subscription)
       && (subscription.status === "active" || subscription.status === "trial")
       && isValidDateOnly(subscription.nextBillingDate)
       && subscription.nextBillingDate >= today
@@ -373,7 +375,12 @@ function subscriptionCalendarEvents(
   settings: ApiAppSettings,
   labels: CalendarFeedLabelResolver,
 ): RenewalCalendarEvent[] {
+  if (isOneTimeBuyout(subscription)) return [];
   return isValidDateOnly(subscription.nextBillingDate) ? [calendarEvent(subscription, settings, labels)] : [];
+}
+
+function isOneTimeBuyout(subscription: ApiSubscription): boolean {
+  return subscription.billingCycle === "one-time" && !subscription.oneTimeTermCount;
 }
 
 function calendarEvent(

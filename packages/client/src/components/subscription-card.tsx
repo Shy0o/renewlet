@@ -53,7 +53,7 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { localizedLabel } from '@/i18n/locales';
 import { AddToCalendarDialog } from '@/components/add-to-calendar-dialog';
 import { SubscriptionLogo } from '@/components/subscription-logo';
-import { formatBillingCycleLabel } from '@/lib/subscription-billing';
+import { formatBillingCycleLabel, isOneTimeBuyout, isOneTimeFixedTerm } from '@/lib/subscription-billing';
 
 export type SubscriptionCardLookup = ReadonlyMap<string, ConfigItem>;
 
@@ -120,12 +120,15 @@ export function SubscriptionCard({
   const daysUntilRenewal = daysBetweenDateOnly(today, subscription.nextBillingDate);
   const daysUntilTrialEnd = subscription.trialEndDate ? daysBetweenDateOnly(today, subscription.trialEndDate) : null;
   const isOneTime = subscription.billingCycle === "one-time";
+  const isBuyout = isOneTimeBuyout(subscription);
+  const isFixedTermOneTime = isOneTimeFixedTerm(subscription);
+  const hasCalendarEvent = !isBuyout;
   const billingCycleLabel = formatBillingCycleLabel(subscription, locale);
   // 卡片是用户最先看到的状态入口，必须用有效状态，避免旧 active/trial 过期数据同时显示“活跃”和“即将续费”。
   const effectiveStatus = getEffectiveSubscriptionStatus(subscription, today);
   const isExpired = effectiveStatus === "expired";
   // 这里是展示提示窗口，不等同于 Cron 通知窗口；不要把两者的阈值混用。
-  const isRenewingSoon = !isOneTime && !isExpired && daysUntilRenewal <= 7 && daysUntilRenewal >= 0;
+  const isRenewingSoon = !isExpired && !isBuyout && daysUntilRenewal <= 7 && daysUntilRenewal >= 0;
   const isTrialEndingSoon = !isExpired && subscription.status === 'trial' && daysUntilTrialEnd !== null &&
     daysUntilTrialEnd <= 3 && daysUntilTrialEnd >= 0;
 
@@ -203,10 +206,12 @@ export function SubscriptionCard({
                   <Pencil className="h-4 w-4 shrink-0 text-muted-foreground" />
                   {t("common.edit")}
                 </DropdownMenuItem>
-                <DropdownMenuItem className="gap-2.5 px-2.5 py-2 text-sm" onClick={() => setShowAddToCalendarDialog(true)}>
-                  <CalendarPlus className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  {t("subscription.addToCalendar")}
-                </DropdownMenuItem>
+                {hasCalendarEvent ? (
+                  <DropdownMenuItem className="gap-2.5 px-2.5 py-2 text-sm" onClick={() => setShowAddToCalendarDialog(true)}>
+                    <CalendarPlus className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    {t("subscription.addToCalendar")}
+                  </DropdownMenuItem>
+                ) : null}
                 {onTogglePinned ? (
                   <DropdownMenuItem className="gap-2.5 px-2.5 py-2 text-sm" onClick={() => onTogglePinned(subscription.id)}>
                     {subscription.pinned ? (
@@ -264,8 +269,18 @@ export function SubscriptionCard({
             )}>
               <Calendar className="h-3.5 w-3.5" />
               <span className="text-xs">
-                {isOneTime ? (
-                  t("subscription.card.oneTimeDate", { date: formatDateOnly(subscription.nextBillingDate) })
+                {isBuyout ? (
+                  t("subscription.card.oneTimeDate", { date: formatDateOnly(subscription.startDate) })
+                ) : isFixedTermOneTime ? (
+                  isExpired
+                    ? daysUntilRenewal < 0
+                      ? t("subscription.card.expiredDays", { days: Math.abs(daysUntilRenewal) })
+                      : t("subscription.card.expired")
+                    : daysUntilRenewal === 0
+                      ? t("subscription.card.expiresToday")
+                      : daysUntilRenewal <= 7
+                        ? t("subscription.card.expiresInDays", { days: daysUntilRenewal })
+                        : t("subscription.card.expiresPrefix", { date: formatDateOnly(subscription.nextBillingDate) })
                 ) : isExpired ? (
                   daysUntilRenewal < 0
                     ? t("subscription.card.expiredDays", { days: Math.abs(daysUntilRenewal) })
@@ -292,7 +307,7 @@ export function SubscriptionCard({
               );
             })()}
 
-            {viewMode === 'list' && !isOneTime && (
+            {viewMode === 'list' && !isBuyout && (
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <Bell className="h-3.5 w-3.5" />
                 <span className="text-xs">

@@ -34,6 +34,8 @@ const validSubscriptionResponseBody = {
   currency: validSubscriptionCreateBody.currency,
   billingCycle: validSubscriptionCreateBody.billingCycle,
   customCycleUnit: undefined,
+  oneTimeTermCount: undefined,
+  oneTimeTermUnit: undefined,
   category: validSubscriptionCreateBody.category,
   status: validSubscriptionCreateBody.status,
   pinned: validSubscriptionCreateBody.pinned,
@@ -156,8 +158,66 @@ describe("subscription API schemas", () => {
       ...validSubscriptionCreateBody,
       billingCycle: "one-time",
       customDays: null,
+      oneTimeTermCount: null,
+      oneTimeTermUnit: null,
       autoCalculateNextBillingDate: false,
     }).success).toBe(true);
+  });
+
+  it("accepts one-time fixed terms only when count and unit are provided together", () => {
+    expect(subscriptionCreateBodySchema.parse({
+      ...validSubscriptionCreateBody,
+      billingCycle: "one-time",
+      customDays: null,
+      customCycleUnit: null,
+      oneTimeTermCount: 6,
+      oneTimeTermUnit: "month",
+      autoCalculateNextBillingDate: false,
+    })).toMatchObject({
+      billingCycle: "one-time",
+      oneTimeTermCount: 6,
+      oneTimeTermUnit: "month",
+    });
+
+    expect(apiSubscriptionSchema.safeParse({
+      ...validSubscriptionResponseBody,
+      billingCycle: "one-time",
+      oneTimeTermCount: 2,
+      oneTimeTermUnit: "year",
+      autoCalculateNextBillingDate: false,
+    }).success).toBe(true);
+
+    expect(subscriptionCreateBodySchema.safeParse({
+      ...validSubscriptionCreateBody,
+      billingCycle: "one-time",
+      customDays: null,
+      customCycleUnit: null,
+      oneTimeTermCount: 6,
+      autoCalculateNextBillingDate: false,
+    }).success).toBe(false);
+
+    expect(subscriptionCreateBodySchema.safeParse({
+      ...validSubscriptionCreateBody,
+      billingCycle: "one-time",
+      customDays: null,
+      customCycleUnit: null,
+      oneTimeTermUnit: "month",
+      autoCalculateNextBillingDate: false,
+    }).success).toBe(false);
+  });
+
+  it("rejects one-time service terms on recurring subscriptions", () => {
+    expect(subscriptionCreateBodySchema.safeParse({
+      ...validSubscriptionCreateBody,
+      oneTimeTermCount: 6,
+      oneTimeTermUnit: "month",
+    }).success).toBe(false);
+
+    expect(apiSubscriptionSchema.safeParse({
+      ...validSubscriptionResponseBody,
+      oneTimeTermCount: 6,
+      oneTimeTermUnit: "month",
+    }).success).toBe(false);
   });
 
   it("accepts custom cycle units on custom subscriptions", () => {

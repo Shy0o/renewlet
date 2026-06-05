@@ -124,6 +124,8 @@ func normalizeSubscriptionRecord(record *core.Record) error {
 	billingCycle := record.GetString("billingCycle")
 	customDays := record.GetInt("customDays")
 	customCycleUnit := strings.TrimSpace(record.GetString("customCycleUnit"))
+	oneTimeTermCount := record.GetInt("oneTimeTermCount")
+	oneTimeTermUnit := strings.TrimSpace(record.GetString("oneTimeTermUnit"))
 	if billingCycle == "custom" {
 		if customDays <= 0 {
 			return errors.New("CUSTOM_DAYS_REQUIRED")
@@ -144,8 +146,25 @@ func normalizeSubscriptionRecord(record *core.Record) error {
 		record.Set("customCycleUnit", "")
 	}
 	if billingCycle == "one-time" {
-		// one-time 是买断/终身授权，不应参与自动续费日期推算；API 和 Admin UI 写入都在持久层兜底关闭。
+		if oneTimeTermCount < 0 {
+			return errors.New("ONE_TIME_TERM_COUNT_NEGATIVE")
+		}
+		if oneTimeTermCount > maxReminderDays {
+			return errors.New("ONE_TIME_TERM_COUNT_TOO_HIGH")
+		}
+		if oneTimeTermCount > 0 {
+			if !isValidCustomCycleUnit(oneTimeTermUnit) {
+				return errors.New("ONE_TIME_TERM_UNIT_REQUIRED")
+			}
+		} else if oneTimeTermUnit != "" {
+			return errors.New("ONE_TIME_TERM_COUNT_REQUIRED")
+		}
+		// one-time 有服务期时只表达预付权益到期，不自动推进下一期；买断记录则继续保持长期有效。
 		record.Set("autoCalculateNextBillingDate", false)
+	} else if oneTimeTermCount != 0 || oneTimeTermUnit != "" {
+		// one-time 服务期是统计摊销和到期提醒专用字段，切回周期订阅必须清空，避免历史服务期继续影响月均支出。
+		record.Set("oneTimeTermCount", 0)
+		record.Set("oneTimeTermUnit", "")
 	}
 
 	startDate := strings.TrimSpace(record.GetString("startDate"))

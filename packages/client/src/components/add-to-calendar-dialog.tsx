@@ -116,6 +116,7 @@ function ResolvedAddToCalendarDialog({ open, onOpenChange, subscription }: Resol
   const categoryLabel = category ? label(category.labels) : subscription.category;
   const paymentMethodLabel = paymentMethod ? label(paymentMethod.labels) : subscription.paymentMethod;
   const billingCycleLabel = formatBillingCycleLabel(subscription, locale);
+  const isExpiryEvent = subscription.billingCycle === "one-time";
   const globalReminderDays = settings?.notificationReminderDays ?? DEFAULT_NOTIFICATION_REMINDER_DAYS;
   const reminderDays = subscription.reminderDays === INHERIT_REMINDER_DAYS
     ? globalReminderDays
@@ -266,8 +267,10 @@ function ResolvedAddToCalendarDialog({ open, onOpenChange, subscription }: Resol
     }
   }, [ics, subscription.id, t]);
 
-  const title = t("subscription.addToCalendarTitle");
-  const description = t("subscription.addToCalendarDescription", { name: subscription.name });
+  const title = isExpiryEvent ? t("subscription.addToCalendarExpiryTitle") : t("subscription.addToCalendarTitle");
+  const description = isExpiryEvent
+    ? t("subscription.addToCalendarExpiryDescription", { name: subscription.name })
+    : t("subscription.addToCalendarDescription", { name: subscription.name });
   const content = (
     <AddToCalendarContent
       androidCalendarHref={isAndroidChrome ? androidSystemCalendarHref : undefined}
@@ -277,12 +280,12 @@ function ResolvedAddToCalendarDialog({ open, onOpenChange, subscription }: Resol
       eventDate={formatDateOnly(subscription.nextBillingDate, "full")}
       eventDateLabel={t("subscription.addToCalendarEventDate")}
       eventTypeLabel={t("subscription.addToCalendarEventType")}
-      eventTypeValue={t("subscription.addToCalendarSubscriptionFeed")}
+      eventTypeValue={isExpiryEvent ? t("subscription.addToCalendarExpiryFeed") : t("subscription.addToCalendarSubscriptionFeed")}
       feedUrl={visibleFeedUrl}
       feedUrlLabel={t("subscription.addToCalendarFeedUrl")}
       isSubscribing={isOpeningSystemCalendar || createSubscriptionFeed.isPending || deleteSubscriptionFeed.isPending || subscriptionFeedStatus.isLoading}
       links={links}
-      notice={t("subscription.addToCalendarSingleEventNotice")}
+      notice={isExpiryEvent ? t("subscription.addToCalendarExpiryEventNotice") : t("subscription.addToCalendarSingleEventNotice")}
       onCopyFeedUrl={handleCopyFeedUrl}
       onDownload={handleDownload}
       onRegenerate={() => setConfirmRegenerateOpen(true)}

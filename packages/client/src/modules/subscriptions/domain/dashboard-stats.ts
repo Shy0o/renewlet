@@ -31,11 +31,18 @@ export function buildDashboardStats({
   const activeSubscriptions = subscriptions.filter((subscription) => isEffectivelyActiveSubscription(subscription, today));
   const totalMonthly = activeSubscriptions.reduce((sum, subscription) => {
     const amountInDefault = convert(subscription.price, subscription.currency, defaultCurrency);
-    return sum + toMonthlyAmount(amountInDefault, subscription.billingCycle, subscription.customDays, subscription.customCycleUnit);
+    return sum + toMonthlyAmount(
+      amountInDefault,
+      subscription.billingCycle,
+      subscription.customDays,
+      subscription.customCycleUnit,
+      subscription.oneTimeTermCount,
+      subscription.oneTimeTermUnit,
+    );
   }, 0);
   const upcomingCount = subscriptions.filter((subscription) => {
     if (!isEffectivelyActiveSubscription(subscription, today)) return false;
-    if (subscription.billingCycle === "one-time") return false;
+    if (subscription.billingCycle === "one-time" && !subscription.oneTimeTermCount) return false;
     // 注意： 这里是用户时区下的 0..7 天窗口，和 Cron 的发送时间窗口不是同一个概念。
     const days = daysBetweenDateOnly(today, subscription.nextBillingDate);
     return days <= 7 && days >= 0;

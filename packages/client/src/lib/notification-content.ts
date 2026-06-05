@@ -14,6 +14,8 @@ import type {
   AppSettings,
   RepeatReminderInterval,
   RepeatReminderWindow,
+  BillingCycle,
+  CustomCycleUnit,
   SubscriptionStatus,
 } from "@/types/subscription";
 import { effectiveReminderDays } from "@renewlet/shared/runtime";
@@ -38,6 +40,9 @@ export interface SubscriptionForNotification {
   price: number;
   currency: string;
   status: SubscriptionStatus;
+  billingCycle?: BillingCycle;
+  oneTimeTermCount?: number | undefined;
+  oneTimeTermUnit?: CustomCycleUnit | undefined;
   nextBillingDate: string; // YYYY-MM-DD
   trialEndDate?: string | null; // YYYY-MM-DD | null
   reminderDays: number;
@@ -46,7 +51,7 @@ export interface SubscriptionForNotification {
   repeatReminderWindow?: RepeatReminderWindow;
 }
 
-export type NotificationItemType = "renewal" | "trial" | "expired";
+export type NotificationItemType = "renewal" | "trial" | "expired" | "expiry";
 
 /** 单个会进入通知内容的结构化条目，用于发送历史快照和即将提醒预览。 */
 export interface NotificationContentItem {
@@ -139,6 +144,8 @@ function formatItemLine(item: NotificationContentItem, locale: Locale): string {
   let extra: string;
   if (item.type === "trial") {
     extra = translateNotification(locale, "notification.content.trialBeforeDays", { days: item.reminderDays });
+  } else if (item.type === "expiry") {
+    extra = translateNotification(locale, "notification.content.expiryBeforeDays", { days: item.reminderDays });
   } else if (item.type === "expired") {
     extra = translateNotification(locale, "notification.content.expiredStatus");
   } else {
@@ -165,13 +172,15 @@ function buildNotificationContentFromItems(
   items: NotificationContentItem[],
   locale: Locale,
 ): NotificationContent {
-  // 分组顺序固定为续费、试用、过期，让同一批 items 在邮件、Webhook 和历史快照中都稳定可读。
+  // 分组顺序固定为续费、到期、试用、过期，让同一批 items 在邮件、Webhook 和历史快照中都稳定可读。
   const renewals = items.filter((item) => item.type === "renewal").map((item) => formatItemLine(item, locale));
+  const expiries = items.filter((item) => item.type === "expiry").map((item) => formatItemLine(item, locale));
   const trials = items.filter((item) => item.type === "trial").map((item) => formatItemLine(item, locale));
   const expired = items.filter((item) => item.type === "expired").map((item) => formatItemLine(item, locale));
 
   const blocks: string[] = [];
   if (renewals.length > 0) blocks.push([translateNotification(locale, "notification.content.renewalBlock"), ...renewals].join("\n"));
+  if (expiries.length > 0) blocks.push([translateNotification(locale, "notification.content.expiryBlock"), ...expiries].join("\n"));
   if (trials.length > 0) blocks.push([translateNotification(locale, "notification.content.trialBlock"), ...trials].join("\n"));
   if (expired.length > 0) blocks.push([translateNotification(locale, "notification.content.expiredBlock"), ...expired].join("\n"));
 
@@ -219,8 +228,12 @@ export function collectNotificationItemsForLocalDate(
     // -1 只在订阅存储和表单里表示继承；通知预览/历史 payload 必须保存用户可解释的有效天数。
     const reminderDays = effectiveReminderDays(sub.reminderDays, settings.notificationReminderDays);
     const daysUntilNext = daysBetweenDateOnly(localDate, sub.nextBillingDate);
+    const isOneTime = sub.billingCycle === "one-time";
+    const isOneTimeBuyout = isOneTime && !sub.oneTimeTermCount;
 
-    if (daysUntilNext < 0) {
+    if (isOneTimeBuyout) {
+      // one-time 买断没有权益到期边界；购买日不能被本地预览解释成续费或过期。
+    } else if (daysUntilNext < 0) {
       if (settings.showExpired && includeExpired) {
         // 过期项只在“当前检查/手动运行”里提示；未来预览会关闭 includeExpired，避免每天重复展示同一笔旧账单。
         items.push({
@@ -237,7 +250,7 @@ export function collectNotificationItemsForLocalDate(
       }
     } else if (daysUntilNext === reminderDays) {
       items.push({
-        type: "renewal",
+        type: isOneTime ? "expiry" : "renewal",
         subscriptionId: sub.id,
         name: sub.name,
         price: sub.price,

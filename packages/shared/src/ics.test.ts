@@ -35,12 +35,48 @@ describe("buildRenewalCalendarIcs", () => {
 
     expect(event).toEqual({
       uid: "renewlet-renewal-sub_1@renewlet",
+      kind: "renewal",
       date: "2026-06-02",
       summary: "Fastmail",
       description: "Amount: $5.00\nBilling cycle: Monthly\nCategory: Productivity\nPayment method: Visa\nNotes: Team plan",
       categories: "Productivity",
       url: "https://fastmail.example",
       reminderDays: 3,
+    });
+  });
+
+  it("maps one-time fixed terms as expiry calendar events", () => {
+    const event = buildRenewalCalendarEvent({
+      subscription: {
+        id: "sub_fixed_term",
+        name: "Discounted membership",
+        price: 120,
+        currency: "USD",
+        billingCycle: "one-time",
+        oneTimeTermCount: 6,
+        category: "Productivity",
+        nextBillingDate: "2026-11-14",
+      },
+      labels: {
+        amount: "$120.00",
+        billingCycle: "One-time",
+        category: "Productivity",
+      },
+      reminderDays: 3,
+      text: {
+        amount: ({ amount }) => `Amount: ${amount}`,
+        billingCycle: (cycle) => `Billing cycle: ${cycle}`,
+        category: (category) => `Category: ${category}`,
+        paymentMethod: (paymentMethod) => `Payment method: ${paymentMethod}`,
+        notes: (notes) => `Notes: ${notes}`,
+      },
+    });
+
+    expect(event).toMatchObject({
+      uid: "renewlet-expiry-sub_fixed_term@renewlet",
+      kind: "expiry",
+      date: "2026-11-14",
+      summary: "Discounted membership",
     });
   });
 
@@ -52,6 +88,7 @@ describe("buildRenewalCalendarIcs", () => {
       events: [
         {
           uid: "renewlet-renewal-sub_1@renewlet",
+          kind: "renewal",
           date: "2026-06-02",
           summary: "Netflix, Family",
           description: "Amount: 15 USD\nNotes: Uses; plan",
@@ -61,6 +98,7 @@ describe("buildRenewalCalendarIcs", () => {
         },
         {
           uid: "renewlet-renewal-sub_2@renewlet",
+          kind: "renewal",
           date: "2026-06-01",
           summary: "Today reminder",
           description: "Amount: 9 USD",
@@ -92,6 +130,7 @@ describe("buildRenewalCalendarIcs", () => {
       events: [
         {
           uid: "renewlet-renewal-sub_1@renewlet",
+          kind: "renewal",
           date: "2026-06-02",
           summary: "Netflix",
           description: "Amount: 15 USD",

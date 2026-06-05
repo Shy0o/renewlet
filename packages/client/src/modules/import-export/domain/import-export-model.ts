@@ -140,6 +140,8 @@ export function subscriptionToImportSubscription(subscription: Subscription, sou
     billingCycle: subscription.billingCycle,
     customDays: subscription.billingCycle === "custom" ? subscription.customDays : null,
     customCycleUnit: subscription.billingCycle === "custom" ? subscription.customCycleUnit : null,
+    oneTimeTermCount: subscription.billingCycle === "one-time" ? subscription.oneTimeTermCount ?? null : null,
+    oneTimeTermUnit: subscription.billingCycle === "one-time" ? subscription.oneTimeTermUnit ?? null : null,
     category: subscription.category,
     status: subscription.status,
     pinned: subscription.pinned,
@@ -173,6 +175,9 @@ export function subscriptionToExportRow(subscription: Subscription): RenewletExp
     currency: subscription.currency,
     billingCycle: subscription.billingCycle,
     ...(subscription.billingCycle === "custom" ? { customDays: subscription.customDays, customCycleUnit: subscription.customCycleUnit } : {}),
+    ...(subscription.billingCycle === "one-time" && subscription.oneTimeTermCount && subscription.oneTimeTermUnit
+      ? { oneTimeTermCount: subscription.oneTimeTermCount, oneTimeTermUnit: subscription.oneTimeTermUnit }
+      : {}),
     category: subscription.category,
     status: subscription.status,
     pinned: subscription.pinned,

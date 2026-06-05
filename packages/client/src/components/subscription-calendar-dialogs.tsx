@@ -1,5 +1,5 @@
 /**
- * 续费日历弹窗组合。
+ * 续费/到期日历弹窗组合。
  *
  * 架构位置：SubscriptionCalendar 负责日期网格和事件聚合，本文件只展示选中日期列表；
  * 订阅详情复用通用 SubscriptionDetailDialog。

@@ -89,7 +89,14 @@ export function SpendingChart({ subscriptions, categories, defaultCurrency, time
       (acc, sub) => {
         // 先把单次扣费金额换算到统计货币，再折算为“月度金额”（与统计页/仪表盘一致）
         const amountInDefault = convert(sub.price, sub.currency, defaultCurrency);
-        const monthly = toMonthlyAmount(amountInDefault, sub.billingCycle, sub.customDays, sub.customCycleUnit);
+        const monthly = toMonthlyAmount(
+          amountInDefault,
+          sub.billingCycle,
+          sub.customDays,
+          sub.customCycleUnit,
+          sub.oneTimeTermCount,
+          sub.oneTimeTermUnit,
+        );
         acc[sub.category] = (acc[sub.category] || 0) + monthly;
         return acc;
       },

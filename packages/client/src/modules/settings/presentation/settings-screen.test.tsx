@@ -124,6 +124,44 @@ describe("SettingsScreen SMTP email settings", () => {
     expect(select).toBeEnabled();
   });
 
+  it("shows common currency quotes in the reporting currency direction", () => {
+    mocks.useSettingsFormController.mockReturnValue(createControllerState({
+      settings: {
+        defaultCurrency: "CNY",
+      },
+      rates: {
+        USD: 1,
+        CNY: 6.78,
+      },
+    }));
+
+    renderSettingsScreen();
+
+    expect(screen.getByRole("heading", { name: "常用货币折算为 CNY" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "汇率预览 (1 CNY = )" })).not.toBeInTheDocument();
+    expect(screen.getByText("1 USD")).toBeInTheDocument();
+    expect(screen.getAllByText("≈ ¥6.78 CNY").length).toBeGreaterThan(0);
+  });
+
+  it("uses CNY as the first preview reference when another reporting currency is selected", () => {
+    mocks.useSettingsFormController.mockReturnValue(createControllerState({
+      settings: {
+        defaultCurrency: "USD",
+      },
+      rates: {
+        USD: 1,
+        CNY: 6.78,
+      },
+    }));
+
+    renderSettingsScreen();
+
+    expect(screen.getByRole("heading", { name: "常用货币折算为 USD" })).toBeInTheDocument();
+    const previewCards = screen.getByText("1 CNY").closest("div")?.parentElement?.children;
+    expect(previewCards?.[0]).toHaveTextContent("1 CNY");
+    expect(screen.getByText("≈ $0.1475 USD")).toBeInTheDocument();
+  });
+
   it("renders the monthly budget as a formatted text input instead of a spinbutton", () => {
     renderSettingsScreen();
 

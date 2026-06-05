@@ -189,17 +189,31 @@ export interface CustomCycleSubscription extends SubscriptionBase {
   billingCycle: "custom";
   customDays: number;
   customCycleUnit: CustomCycleUnit;
+  oneTimeTermCount?: undefined;
+  oneTimeTermUnit?: undefined;
 }
 
-export interface FixedCycleSubscription extends SubscriptionBase {
+export interface RecurringCycleSubscription extends SubscriptionBase {
   /** 固定周期不携带自定义数量/单位，避免历史 custom 脏值影响金额折算。 */
-  billingCycle: Exclude<BillingCycle, "custom">;
+  billingCycle: Exclude<BillingCycle, "custom" | "one-time">;
   customDays: undefined;
   customCycleUnit: undefined;
+  oneTimeTermCount?: undefined;
+  oneTimeTermUnit?: undefined;
 }
 
-export type Subscription = CustomCycleSubscription | FixedCycleSubscription;
-export type SubscriptionDraft = Omit<CustomCycleSubscription, "id"> | Omit<FixedCycleSubscription, "id">;
+export interface OneTimeSubscription extends SubscriptionBase {
+  /** one-time 无服务期表示买断；有服务期时按整段权益期做月均摊销和到期提醒。 */
+  billingCycle: "one-time";
+  customDays: undefined;
+  customCycleUnit: undefined;
+  oneTimeTermCount?: number | undefined;
+  oneTimeTermUnit?: CustomCycleUnit | undefined;
+}
+
+export type FixedCycleSubscription = RecurringCycleSubscription | OneTimeSubscription;
+export type Subscription = CustomCycleSubscription | RecurringCycleSubscription | OneTimeSubscription;
+export type SubscriptionDraft = Omit<CustomCycleSubscription, "id"> | Omit<RecurringCycleSubscription, "id"> | Omit<OneTimeSubscription, "id">;
 
 export interface SubscriptionStats {
   /** 按月折算的总支出（基于订阅周期换算）。 */

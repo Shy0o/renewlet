@@ -55,6 +55,8 @@ type importSubscription struct {
 	BillingCycle                 string                 `json:"billingCycle"`
 	CustomDays                   *int                   `json:"customDays,omitempty"`
 	CustomCycleUnit              *string                `json:"customCycleUnit,omitempty"`
+	OneTimeTermCount             *int                   `json:"oneTimeTermCount,omitempty"`
+	OneTimeTermUnit              *string                `json:"oneTimeTermUnit,omitempty"`
 	Category                     string                 `json:"category"`
 	Status                       string                 `json:"status"`
 	Pinned                       bool                   `json:"pinned"`
@@ -362,6 +364,16 @@ func setImportSubscriptionRecord(record *core.Record, userID string, subscriptio
 		record.Set("customCycleUnit", *subscription.CustomCycleUnit)
 	} else {
 		record.Set("customCycleUnit", "")
+	}
+	if subscription.OneTimeTermCount != nil {
+		record.Set("oneTimeTermCount", *subscription.OneTimeTermCount)
+	} else {
+		record.Set("oneTimeTermCount", 0)
+	}
+	if subscription.OneTimeTermUnit != nil {
+		record.Set("oneTimeTermUnit", *subscription.OneTimeTermUnit)
+	} else {
+		record.Set("oneTimeTermUnit", "")
 	}
 	record.Set("category", subscription.Category)
 	record.Set("status", subscription.Status)

@@ -1,9 +1,9 @@
 /**
- * 即将续费列表（侧边栏卡片）。
+ * 即将续费/到期列表（侧边栏卡片）。
  *
  * 规则：
  * - 只展示 active/trial
- * - 取未来 14 天内的续费
+ * - 取未来 14 天内的续费或一次性固定服务期到期
  * - 最多展示 5 条
  *
  * 注意： 这是仪表盘提示窗口，不等同于通知 Cron 的 reminderDays 规则。
@@ -29,7 +29,7 @@ export function UpcomingRenewals({ subscriptions, timeZone }: UpcomingRenewalsPr
   const today = todayDateOnlyInTimeZone(new Date(), timeZone);
   const upcoming = subscriptions
     // 即将续费只看有效活跃订阅，旧 active/trial 过期记录应进入“已过期”，不能继续占用未来续费提醒位。
-    .filter(s => isEffectivelyActiveSubscription(s, today) && s.billingCycle !== "one-time")
+    .filter(s => isEffectivelyActiveSubscription(s, today) && (s.billingCycle !== "one-time" || Boolean(s.oneTimeTermCount)))
     .map(s => ({
       ...s,
       daysUntil: daysBetweenDateOnly(today, s.nextBillingDate),
@@ -71,7 +71,9 @@ export function UpcomingRenewals({ subscriptions, timeZone }: UpcomingRenewalsPr
             <div>
               <p className="font-medium text-foreground">{sub.name}</p>
               <p className="text-xs text-muted-foreground">
-                {formatDateOnlyMonthDay(sub.nextBillingDate, locale)}
+                {sub.billingCycle === "one-time"
+                  ? t("upcoming.expiresOn", { date: formatDateOnlyMonthDay(sub.nextBillingDate, locale) })
+                  : t("upcoming.renewsOn", { date: formatDateOnlyMonthDay(sub.nextBillingDate, locale) })}
               </p>
             </div>
           </div>

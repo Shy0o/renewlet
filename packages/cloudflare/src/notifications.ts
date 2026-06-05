@@ -312,6 +312,7 @@ function buildDueMessage(now: Date, settings: ApiAppSettings, subscriptions: Api
 function groupedNotificationContent(items: NotificationEmailItem[], locale: AppLocale): string {
   const groups = [
     ["renewal", "notification.content.renewalBlock"],
+    ["expiry", "notification.content.expiryBlock"],
     ["trial", "notification.content.trialBlock"],
     ["expired", "notification.content.expiredBlock"],
   ] as const;
@@ -330,6 +331,8 @@ function notificationItemLine(item: NotificationEmailItem, locale: AppLocale): s
   let extra = serverFormat(locale, "notification.content.reminderDays", { days: item.reminderDays });
   if (item.type === "trial") {
     extra = serverFormat(locale, "notification.content.trialReminderDays", { days: item.reminderDays });
+  } else if (item.type === "expiry") {
+    extra = serverFormat(locale, "notification.content.expiryReminderDays", { days: item.reminderDays });
   } else if (item.type === "expired") {
     extra = serverText(locale, "notification.content.expiredStatus");
   }
@@ -359,12 +362,19 @@ function formatAmount(amount: number): string {
 function collectItems(localDate: string, settings: ApiAppSettings, subscriptions: ApiSubscription[], options: { includeExpired: boolean }): NotificationEmailItem[] {
   const items: NotificationEmailItem[] = [];
   for (const sub of subscriptions) {
-    // one-time 是买断记录；Worker 通知不能把购买日当成续费/过期日生成提醒。
-    if (sub.billingCycle === "one-time") continue;
     const reminderDays = effectiveReminderDays(sub.reminderDays, settings.notificationReminderDays);
     const daysUntilNext = daysBetween(localDate, sub.nextBillingDate);
-    if (daysUntilNext < 0 && settings.showExpired && options.includeExpired) items.push(item("expired", sub, sub.nextBillingDate, daysUntilNext, reminderDays));
-    if (daysUntilNext === reminderDays) items.push(item("renewal", sub, sub.nextBillingDate, daysUntilNext, reminderDays));
+    if (sub.billingCycle === "one-time" && !sub.oneTimeTermCount) {
+      // one-time 买断记录没有权益到期日；Worker 不能把购买日当成续费或过期边界。
+      continue;
+    }
+    if (sub.billingCycle === "one-time") {
+      if (daysUntilNext === reminderDays) items.push(item("expiry", sub, sub.nextBillingDate, daysUntilNext, reminderDays));
+      if (daysUntilNext < 0 && settings.showExpired && options.includeExpired) items.push(item("expired", sub, sub.nextBillingDate, daysUntilNext, reminderDays));
+    } else {
+      if (daysUntilNext < 0 && settings.showExpired && options.includeExpired) items.push(item("expired", sub, sub.nextBillingDate, daysUntilNext, reminderDays));
+      if (daysUntilNext === reminderDays) items.push(item("renewal", sub, sub.nextBillingDate, daysUntilNext, reminderDays));
+    }
     if (sub.status === "trial" && sub.trialEndDate) {
       const daysUntilTrial = daysBetween(localDate, sub.trialEndDate);
       if (daysUntilTrial === reminderDays) items.push(item("trial", sub, sub.trialEndDate, daysUntilTrial, reminderDays));
@@ -373,7 +383,7 @@ function collectItems(localDate: string, settings: ApiAppSettings, subscriptions
   return items;
 }
 
-function item(type: "renewal" | "trial" | "expired", sub: ApiSubscription, targetDate: string, daysUntil: number, reminderDays: number): NotificationEmailItem {
+function item(type: "renewal" | "trial" | "expired" | "expiry", sub: ApiSubscription, targetDate: string, daysUntil: number, reminderDays: number): NotificationEmailItem {
   return {
     type,
     subscriptionId: sub.id,

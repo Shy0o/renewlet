@@ -107,6 +107,8 @@ export function toMonthlyAmount(
   cycle: BillingCycle,
   customDays?: number,
   customCycleUnit: CustomCycleUnit = "day",
+  oneTimeTermCount?: number,
+  oneTimeTermUnit: CustomCycleUnit = "day",
 ): number {
   switch (cycle) {
     case "weekly":
@@ -122,7 +124,8 @@ export function toMonthlyAmount(
     case "custom":
       return customDays ? customCycleToMonthlyAmount(amount, customDays, customCycleUnit) : amount;
     case "one-time":
-      return 0;
+      // one-time 无服务期是买断，不进入月均；有服务期时 price 表示整段预付权益总价。
+      return oneTimeTermCount ? customCycleToMonthlyAmount(amount, oneTimeTermCount, oneTimeTermUnit) : 0;
     default:
       return amount;
   }
@@ -140,6 +143,22 @@ function customCycleToMonthlyAmount(amount: number, count: number, unit: CustomC
     default:
       return (amount / count) * 30;
   }
+}
+
+export function isOneTimeFixedTerm(subscription: Pick<Subscription, "billingCycle" | "oneTimeTermCount" | "oneTimeTermUnit">): boolean {
+  return subscription.billingCycle === "one-time" && Boolean(subscription.oneTimeTermCount && subscription.oneTimeTermUnit);
+}
+
+export function isOneTimeBuyout(subscription: Pick<Subscription, "billingCycle" | "oneTimeTermCount" | "oneTimeTermUnit">): boolean {
+  return subscription.billingCycle === "one-time" && !isOneTimeFixedTerm(subscription);
+}
+
+export function calculateOneTimeTermEndDate(
+  startDate: DateOnly,
+  count: number,
+  unit: CustomCycleUnit,
+): DateOnly {
+  return addCustomBillingCycles(startDate, count, unit);
 }
 
 export function customCycleUnitLabelKey(unit: CustomCycleUnit): `subscription.customCycleUnit.${CustomCycleUnit}` {

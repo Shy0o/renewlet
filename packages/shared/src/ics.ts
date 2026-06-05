@@ -3,6 +3,7 @@ import ical, { ICalAlarmType, ICalCalendarMethod } from "ical-generator";
 /** ICS 中的单个续费事件；date 始终是 YYYY-MM-DD，不是 datetime。 */
 export interface RenewalCalendarEvent {
   uid: string;
+  kind: "renewal" | "expiry";
   date: string;
   summary: string;
   description: string;
@@ -18,6 +19,7 @@ export interface RenewalCalendarSubscription {
   price: number;
   currency: string;
   billingCycle: string;
+  oneTimeTermCount?: number | undefined;
   category: string;
   paymentMethod?: string | undefined;
   nextBillingDate: string;
@@ -63,6 +65,7 @@ const PROD_ID = {
 
 export function buildRenewalCalendarEvent(options: RenewalCalendarEventMapperOptions): RenewalCalendarEvent {
   const { subscription, labels, reminderDays, text } = options;
+  const kind = subscription.billingCycle === "one-time" ? "expiry" : "renewal";
   const lines = [
     text.amount({ amount: labels.amount, currency: subscription.currency }),
     text.billingCycle(labels.billingCycle),
@@ -76,7 +79,8 @@ export function buildRenewalCalendarEvent(options: RenewalCalendarEventMapperOpt
   }
 
   const event: RenewalCalendarEvent = {
-    uid: `renewlet-renewal-${subscription.id}@renewlet`,
+    uid: `renewlet-${kind}-${subscription.id}@renewlet`,
+    kind,
     date: subscription.nextBillingDate,
     summary: subscription.name,
     description: lines.join("\n"),

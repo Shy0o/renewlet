@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { SubscriptionFormFields, type SubscriptionFormErrors } from "@/components/subscription-form-fields";
 import type { UploadStatus as LogoUploadStatus } from "@/components/logo-picker";
-import { calculateNextBillingDate } from "@/lib/subscription-billing";
+import { calculateNextBillingDate, calculateOneTimeTermEndDate } from "@/lib/subscription-billing";
 import {
   isOptionalHttpUrl,
   getTagsValidationError,
@@ -184,6 +184,9 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
       billingCycle: subscription.billingCycle,
       customDays: subscription.customDays?.toString() || "",
       customCycleUnit: subscription.customCycleUnit ?? "day",
+      oneTimeMode: subscription.billingCycle === "one-time" && subscription.oneTimeTermCount && subscription.oneTimeTermUnit ? "term" : "buyout",
+      oneTimeTermCount: subscription.billingCycle === "one-time" && subscription.oneTimeTermCount ? subscription.oneTimeTermCount.toString() : "1",
+      oneTimeTermUnit: subscription.billingCycle === "one-time" ? subscription.oneTimeTermUnit ?? "month" : "month",
       category: subscription.category,
       status: subscription.status,
       paymentMethod: subscription.paymentMethod || "",
@@ -204,14 +207,20 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
     setFormErrors({});
   }, [editSubscription, props.mode, props.open]);
 
-  // 自动推算 nextBillingDate（仅当 autoCalculate=true 且已选择 startDate）。
+  // 自动推算 nextBillingDate（仅当 autoCalculate=true 或 one-time 固定服务期，且已选择 startDate）。
   // 注意： 这里依赖 DateOnly 字符串算法，不应引入 JS Date 时区换算，否则跨时区用户会看到扣费日漂移。
   useEffect(() => {
     if (formData.billingCycle === "one-time") {
-      if (formData.autoCalculate) {
-        // one-time 是买断记录，不存在“下一次续费”；这里只修正表单中间态，后端/Worker 保存时还会兜底清空。
-        setFormData((prev) => ({ ...prev, autoCalculate: false }));
-      }
+      const oneTimeTermCount = formData.oneTimeMode === "term" ? parsePositiveIntegerInput(formData.oneTimeTermCount) : null;
+      // one-time 固定服务期的 nextBillingDate 是权益到期日；买断记录保留购买日，避免被后续统计/提醒误当续费。
+      const nextDate = formData.startDate && oneTimeTermCount
+        ? calculateOneTimeTermEndDate(formData.startDate, oneTimeTermCount, formData.oneTimeTermUnit)
+        : formData.startDate;
+      setFormData((prev) => ({
+        ...prev,
+        autoCalculate: false,
+        nextBillingDate: nextDate,
+      }));
       return;
     }
     if (formData.autoCalculate && formData.startDate) {
@@ -226,6 +235,9 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
     formData.billingCycle,
     formData.customDays,
     formData.customCycleUnit,
+    formData.oneTimeMode,
+    formData.oneTimeTermCount,
+    formData.oneTimeTermUnit,
     formData.autoCalculate,
   ]);
 
@@ -264,6 +276,9 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
     }
     if (nextFormData.billingCycle === "custom" && parsePositiveIntegerInput(nextFormData.customDays) === null) {
       errors.customDays = t("subscription.validation.customCycleInvalid");
+    }
+    if (nextFormData.billingCycle === "one-time" && nextFormData.oneTimeMode === "term" && parsePositiveIntegerInput(nextFormData.oneTimeTermCount) === null) {
+      errors.oneTimeTerm = t("subscription.validation.oneTimeTermInvalid");
     }
     const reminderValue = nextFormData.reminderType === "inherit"
       ? INHERIT_REMINDER_DAYS
@@ -334,7 +349,41 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
 
     const base = props.subscription;
     if (!base) return;
-    props.onSubmit({ ...base, ...draft, pinned: base.pinned });
+    // 编辑时可能跨周期类型切换；按目标 billingCycle 重建互斥字段，避免旧 one-time/custom 字段被 spread 残留。
+    if (draft.billingCycle === "custom") {
+      props.onSubmit({
+        ...base,
+        ...draft,
+        billingCycle: "custom",
+        customDays: draft.customDays,
+        customCycleUnit: draft.customCycleUnit,
+        oneTimeTermCount: undefined,
+        oneTimeTermUnit: undefined,
+        pinned: base.pinned,
+      });
+    } else if (draft.billingCycle === "one-time") {
+      props.onSubmit({
+        ...base,
+        ...draft,
+        billingCycle: "one-time",
+        customDays: undefined,
+        customCycleUnit: undefined,
+        oneTimeTermCount: draft.oneTimeTermCount,
+        oneTimeTermUnit: draft.oneTimeTermUnit,
+        pinned: base.pinned,
+      });
+    } else {
+      props.onSubmit({
+        ...base,
+        ...draft,
+        billingCycle: draft.billingCycle,
+        customDays: undefined,
+        customCycleUnit: undefined,
+        oneTimeTermCount: undefined,
+        oneTimeTermUnit: undefined,
+        pinned: base.pinned,
+      });
+    }
     setFormErrors({});
     props.onOpenChange(false);
   };

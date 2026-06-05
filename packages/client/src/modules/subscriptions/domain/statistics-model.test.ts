@@ -6,10 +6,23 @@ import { assertDateOnly } from "@/lib/time/date-only";
 import { buildDashboardStats } from "./dashboard-stats";
 import { buildStatisticsModel } from "./statistics-model";
 
-type FixedBillingCycle = Exclude<Subscription["billingCycle"], "custom">;
-type SubscriptionBaseFixture = Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit">;
-type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit">> & (
-  | { billingCycle?: FixedBillingCycle; customDays?: undefined; customCycleUnit?: undefined }
+type RecurringBillingCycle = Exclude<Subscription["billingCycle"], "custom" | "one-time">;
+type SubscriptionBaseFixture = Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit" | "oneTimeTermCount" | "oneTimeTermUnit">;
+type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit" | "oneTimeTermCount" | "oneTimeTermUnit">> & (
+  | {
+      billingCycle?: RecurringBillingCycle;
+      customDays?: undefined;
+      customCycleUnit?: undefined;
+      oneTimeTermCount?: undefined;
+      oneTimeTermUnit?: undefined;
+    }
+  | {
+      billingCycle: "one-time";
+      customDays?: undefined;
+      customCycleUnit?: undefined;
+      oneTimeTermCount?: number | undefined;
+      oneTimeTermUnit?: Subscription["oneTimeTermUnit"];
+    }
   | { billingCycle: "custom"; customDays?: number; customCycleUnit?: Subscription["customCycleUnit"] }
 );
 
@@ -51,6 +64,20 @@ function subscription(overrides: SubscriptionOverrides): Subscription {
       billingCycle: "custom",
       customDays: overrides.customDays ?? 30,
       customCycleUnit: overrides.customCycleUnit ?? "day",
+      oneTimeTermCount: undefined,
+      oneTimeTermUnit: undefined,
+    };
+  }
+
+  if (overrides.billingCycle === "one-time") {
+    return {
+      ...base,
+      ...overrides,
+      billingCycle: "one-time",
+      customDays: undefined,
+      customCycleUnit: undefined,
+      oneTimeTermCount: overrides.oneTimeTermCount,
+      oneTimeTermUnit: overrides.oneTimeTermUnit,
     };
   }
 
@@ -60,6 +87,8 @@ function subscription(overrides: SubscriptionOverrides): Subscription {
     billingCycle: overrides.billingCycle ?? "monthly",
     customDays: undefined,
     customCycleUnit: undefined,
+    oneTimeTermCount: undefined,
+    oneTimeTermUnit: undefined,
   };
 }
 
@@ -118,6 +147,44 @@ describe("subscription statistics models", () => {
     expect(dashboard.activeSubscriptions).toHaveLength(1);
     expect(dashboard.totalMonthly).toBe(0);
     expect(dashboard.upcomingCount).toBe(0);
+  });
+
+  it("amortizes one-time fixed terms while excluding them from current-month due cashflow", () => {
+    const fixedTerm = subscription({
+      id: "fixed-term",
+      price: 120,
+      billingCycle: "one-time",
+      startDate: assertDateOnly("2025-07-05"),
+      nextBillingDate: assertDateOnly("2026-01-05"),
+      autoCalculateNextBillingDate: false,
+      oneTimeTermCount: 6,
+      oneTimeTermUnit: "month",
+    });
+
+    const model = buildStatisticsModel({
+      subscriptions: [fixedTerm],
+      config: DEFAULT_CUSTOM_CONFIG,
+      monthlyBudget: 40,
+      defaultCurrency: "USD",
+      convert,
+      now: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    const dashboard = buildDashboardStats({
+      subscriptions: [fixedTerm],
+      defaultCurrency: "USD",
+      convert,
+      now: new Date("2026-01-01T00:00:00.000Z"),
+    });
+
+    expect(model.totalMonthly).toBe(20);
+    expect(model.totalAnnual).toBe(240);
+    expect(model.thisMonthDue).toBe(0);
+    expect(model.budgetUsedPercent).toBe(50);
+    expect(model.categoryData).toEqual([
+      expect.objectContaining({ value: 20 }),
+    ]);
+    expect(dashboard.totalMonthly).toBe(20);
+    expect(dashboard.upcomingCount).toBe(1);
   });
 
   it("treats effective expired subscriptions as inactive savings", () => {

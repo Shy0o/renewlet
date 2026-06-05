@@ -6,22 +6,25 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { assertDateOnly } from "@/lib/time/date-only";
 import type { ApiSubscription } from "@/lib/api/schemas/subscriptions";
 import type {
-  FixedCycleSubscription,
+  RecurringCycleSubscription,
   RepeatReminderInterval,
   RepeatReminderWindow,
   Subscription,
 } from "@/types/subscription";
 import { useCreateSubscription, useInfiniteSubscriptions, useSubscriptions, useSubscriptionsPage, useUpdateSubscription } from "./use-subscriptions";
 
-type FixedSubscriptionDraft = Omit<FixedCycleSubscription, "id">;
+type RecurringSubscriptionDraft = Omit<RecurringCycleSubscription, "id">;
 
 type SubscriptionWritePayload = {
   name: string;
   logo: string | null;
   price: number;
   currency: string;
-  billingCycle: FixedCycleSubscription["billingCycle"] | "custom";
+  billingCycle: Subscription["billingCycle"];
   customDays: number | null;
+  customCycleUnit: Subscription["customCycleUnit"] | null;
+  oneTimeTermCount: number | null;
+  oneTimeTermUnit: Subscription["oneTimeTermUnit"] | null;
   category: string;
   status: Subscription["status"];
   pinned: boolean;
@@ -86,6 +89,9 @@ function apiSubscriptionFromPayload(id: string, payload: SubscriptionWritePayloa
     currency: payload.currency,
     billingCycle: payload.billingCycle,
     ...(payload.billingCycle === "custom" && payload.customDays !== null ? { customDays: payload.customDays } : {}),
+    ...(payload.billingCycle === "custom" && payload.customCycleUnit !== null ? { customCycleUnit: payload.customCycleUnit } : {}),
+    ...(payload.billingCycle === "one-time" && payload.oneTimeTermCount !== null ? { oneTimeTermCount: payload.oneTimeTermCount } : {}),
+    ...(payload.billingCycle === "one-time" && payload.oneTimeTermUnit !== null ? { oneTimeTermUnit: payload.oneTimeTermUnit } : {}),
     category: payload.category,
     status: payload.status,
     pinned: payload.pinned,
@@ -104,7 +110,7 @@ function apiSubscriptionFromPayload(id: string, payload: SubscriptionWritePayloa
   };
 }
 
-function apiSubscriptionFromDraft(id: string, draft: FixedSubscriptionDraft): ApiSubscription {
+function apiSubscriptionFromDraft(id: string, draft: RecurringSubscriptionDraft): ApiSubscription {
   return apiSubscriptionFromPayload(id, {
     name: draft.name,
     logo: draft.logo ?? null,
@@ -112,6 +118,9 @@ function apiSubscriptionFromDraft(id: string, draft: FixedSubscriptionDraft): Ap
     currency: draft.currency,
     billingCycle: draft.billingCycle,
     customDays: draft.customDays ?? null,
+    customCycleUnit: draft.customCycleUnit ?? null,
+    oneTimeTermCount: draft.oneTimeTermCount ?? null,
+    oneTimeTermUnit: draft.oneTimeTermUnit ?? null,
     category: draft.category,
     status: draft.status,
     pinned: draft.pinned,
@@ -130,7 +139,7 @@ function apiSubscriptionFromDraft(id: string, draft: FixedSubscriptionDraft): Ap
   });
 }
 
-function subscriptionDraft(overrides: Partial<FixedSubscriptionDraft> = {}): FixedSubscriptionDraft {
+function subscriptionDraft(overrides: Partial<RecurringSubscriptionDraft> = {}): RecurringSubscriptionDraft {
   return {
     name: "Aws",
     logo: "https://aws.amazon.com/favicon.ico",

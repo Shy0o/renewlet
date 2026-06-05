@@ -72,13 +72,27 @@ export const reminderDaysSchema = z
   .max(MAX_REMINDER_DAYS)
   .refine(isValidReminderDays, "Invalid reminder days");
 
+const oneTimeTermCountSchema = z.number().int().positive().max(MAX_REMINDER_DAYS);
+const oneTimeTermUnitSchema = z.enum(CUSTOM_CYCLE_UNITS);
+
+function oneTimeTermFieldsAreConsistent(value: {
+  billingCycle: BillingCycle;
+  oneTimeTermCount?: number | null | undefined;
+  oneTimeTermUnit?: CustomCycleUnit | null | undefined;
+}): boolean {
+  const hasCount = value.oneTimeTermCount !== undefined && value.oneTimeTermCount !== null;
+  const hasUnit = value.oneTimeTermUnit !== undefined && value.oneTimeTermUnit !== null;
+  if (value.billingCycle !== "one-time") return !hasCount && !hasUnit;
+  return hasCount === hasUnit;
+}
+
 /**
  * 订阅写入请求的跨运行面事实来源。
  *
  * Go route、Cloudflare Worker 和前端表单都应接受这组字段；新增或收窄字段时必须同步
  * PocketBase schema/hooks、D1 row 转换和前端 domain 类型，不能只改某一个运行面。
  */
-export const subscriptionCreateBodySchema = z.object({
+const subscriptionWriteBodyShape = {
   name: z.string().trim().min(1).max(120),
   logo: optionalLogoReferenceSchema,
   price: z.number().finite().nonnegative().max(1_000_000_000),
@@ -86,6 +100,8 @@ export const subscriptionCreateBodySchema = z.object({
   billingCycle: z.enum(BILLING_CYCLES),
   customDays: z.number().int().positive().nullable().optional(),
   customCycleUnit: z.enum(CUSTOM_CYCLE_UNITS).nullable().optional(),
+  oneTimeTermCount: oneTimeTermCountSchema.nullable().optional(),
+  oneTimeTermUnit: oneTimeTermUnitSchema.nullable().optional(),
   category: z.string().trim().min(1).max(80),
   status: z.enum(SUBSCRIPTION_STATUSES),
   pinned: z.boolean().default(false),
@@ -103,10 +119,27 @@ export const subscriptionCreateBodySchema = z.object({
   repeatReminderWindow: z.enum(REPEAT_REMINDER_WINDOWS),
   // extra 是跨运行面的非展示元数据通道；seed/import 依赖它做幂等，不参与订阅 UI。
   extra: extraSchema,
-}).strict();
+} satisfies z.ZodRawShape;
 
-export const subscriptionUpdateBodySchema = subscriptionCreateBodySchema
+export const subscriptionCreateBodySchema = z.object(subscriptionWriteBodyShape).strict().refine(oneTimeTermFieldsAreConsistent, {
+  path: ["oneTimeTermCount"],
+  message: "Invalid one-time term",
+});
+
+export const subscriptionUpdateBodySchema = z.object(subscriptionWriteBodyShape)
+  .strict()
   .partial()
+  .refine((value) => {
+    if (value.billingCycle === undefined) return true;
+    return oneTimeTermFieldsAreConsistent({
+      billingCycle: value.billingCycle,
+      oneTimeTermCount: value.oneTimeTermCount,
+      oneTimeTermUnit: value.oneTimeTermUnit,
+    });
+  }, {
+    path: ["oneTimeTermCount"],
+    message: "Invalid one-time term",
+  })
   .refine((obj) => Object.keys(obj).length > 0, { message: "Empty payload" });
 
 /**
@@ -124,6 +157,8 @@ export const apiSubscriptionSchema = z.object({
   billingCycle: z.enum(BILLING_CYCLES),
   customDays: z.number().int().optional(),
   customCycleUnit: z.enum(CUSTOM_CYCLE_UNITS).optional(),
+  oneTimeTermCount: oneTimeTermCountSchema.optional(),
+  oneTimeTermUnit: oneTimeTermUnitSchema.optional(),
   category: z.string().min(1),
   status: z.enum(SUBSCRIPTION_STATUSES),
   pinned: z.boolean(),
@@ -142,7 +177,10 @@ export const apiSubscriptionSchema = z.object({
   extra: extraSchema,
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
-}).strict();
+}).strict().refine(oneTimeTermFieldsAreConsistent, {
+  path: ["oneTimeTermCount"],
+  message: "Invalid one-time term",
+});
 
 export const subscriptionsListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -166,6 +204,7 @@ export const subscriptionDeleteResponseSchema = z.object({
 export type ApiSubscription = z.infer<typeof apiSubscriptionSchema> & {
   billingCycle: BillingCycle;
   customCycleUnit?: CustomCycleUnit | undefined;
+  oneTimeTermUnit?: CustomCycleUnit | undefined;
   status: SubscriptionStatus;
   repeatReminderInterval: RepeatReminderInterval;
   repeatReminderWindow: RepeatReminderWindow;

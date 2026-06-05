@@ -24,7 +24,7 @@ import { useSettings } from "@/hooks/use-settings";
 import { useI18n } from "@/i18n/I18nProvider";
 import { cn } from "@/lib/utils";
 import type { DateOnly } from "@/lib/time/date-only";
-import { formatBillingCycleLabel } from "@/lib/subscription-billing";
+import { formatBillingCycleLabel, isOneTimeBuyout, isOneTimeFixedTerm } from "@/lib/subscription-billing";
 import { getEffectiveSubscriptionStatus } from "@/modules/subscriptions/domain/subscription-status";
 
 const DEFAULT_LOGO_FALLBACK_COLOR = "hsl(var(--primary))";
@@ -87,9 +87,13 @@ function SubscriptionDetailContent({
   const categoryColor = category?.color ?? DEFAULT_LOGO_FALLBACK_COLOR;
   const effectiveStatus = getEffectiveSubscriptionStatus(subscription, today);
   const inheritedReminderDays = settings?.notificationReminderDays ?? DEFAULT_NOTIFICATION_REMINDER_DAYS;
+  const isBuyout = isOneTimeBuyout(subscription);
+  const isFixedTermOneTime = isOneTimeFixedTerm(subscription);
   const nextBillingLabel =
-    subscription.billingCycle === "one-time"
+    isBuyout
       ? t("subscription.detail.purchaseDate")
+      : isFixedTermOneTime
+        ? t("subscription.detail.expiryDate")
       : t("subscription.detail.nextBilling");
   const reminderLabel = subscription.reminderDays === INHERIT_REMINDER_DAYS
     ? t("subscription.card.reminderInherit", { days: inheritedReminderDays })
@@ -143,7 +147,7 @@ function SubscriptionDetailContent({
           </DetailRow>
         ) : null}
         <DetailRow label={nextBillingLabel}>
-          {formatDateOnly(subscription.nextBillingDate, "full")}
+          {formatDateOnly(isBuyout ? subscription.startDate : subscription.nextBillingDate, "full")}
         </DetailRow>
         <DetailRow label={t("subscription.detail.startDate")}>
           {formatDateOnly(subscription.startDate, "full")}
@@ -190,14 +194,16 @@ function SubscriptionDetailContent({
         ) : null}
       </div>
 
-      <div className={cn("grid gap-2 pt-1", onEditSubscription ? "sm:grid-cols-[1fr_1.35fr_1fr]" : "sm:grid-cols-2")}>
+      <div className={cn("grid gap-2 pt-1", onEditSubscription && !isBuyout ? "sm:grid-cols-[1fr_1.35fr_1fr]" : "sm:grid-cols-2")}>
         <Button variant="outline" className="border-border" onClick={onClose}>
           {t("common.close")}
         </Button>
-        <Button variant="outline" className="border-border" onClick={onAddToCalendar}>
-          <CalendarPlus className="h-4 w-4" />
-          {t("subscription.addToCalendar")}
-        </Button>
+        {!isBuyout ? (
+          <Button variant="outline" className="border-border" onClick={onAddToCalendar}>
+            <CalendarPlus className="h-4 w-4" />
+            {t("subscription.addToCalendar")}
+          </Button>
+        ) : null}
         {onEditSubscription ? (
           <Button className="bg-primary text-primary-foreground hover:bg-primary-glow" onClick={handleEdit}>
             <Edit2 className="h-4 w-4" />

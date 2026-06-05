@@ -252,6 +252,7 @@ func ensureSubscriptionsCollection(app core.App, users *core.Collection) error {
 		ownerRules(c)
 		minZero := 0.0
 		maxPrice := float64(maxSubscriptionPrice)
+		maxReminder := float64(maxReminderDays)
 		replaceLegacyLogoURLField := false
 		if existingLogo := c.Fields.GetByName("logo"); existingLogo != nil && existingLogo.Type() == core.FieldTypeURL {
 			replaceLegacyLogoURLField = true
@@ -265,6 +266,8 @@ func ensureSubscriptionsCollection(app core.App, users *core.Collection) error {
 			&core.SelectField{Name: "billingCycle", Required: true, Values: []string{"weekly", "monthly", "quarterly", "semi-annual", "annual", "custom", "one-time"}},
 			&core.NumberField{Name: "customDays", OnlyInt: true, Min: &minZero},
 			&core.SelectField{Name: "customCycleUnit", Values: []string{"day", "week", "month", "year"}},
+			&core.NumberField{Name: "oneTimeTermCount", OnlyInt: true, Min: &minZero, Max: &maxReminder},
+			&core.SelectField{Name: "oneTimeTermUnit", Values: []string{"day", "week", "month", "year"}},
 			&core.TextField{Name: "category", Required: true, Max: 80},
 			&core.SelectField{Name: "status", Required: true, Values: []string{"trial", "active", "expired", "paused", "cancelled"}},
 			&core.BoolField{Name: "pinned"},

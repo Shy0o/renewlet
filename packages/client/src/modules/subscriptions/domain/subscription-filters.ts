@@ -105,7 +105,14 @@ function calculateMonthlyCost(
   convert: (amount: number, from: string, to: string) => number,
 ): number {
   const amountInDefault = convert(subscription.price, subscription.currency, defaultCurrency);
-  return toMonthlyAmount(amountInDefault, subscription.billingCycle, subscription.customDays, subscription.customCycleUnit);
+  return toMonthlyAmount(
+    amountInDefault,
+    subscription.billingCycle,
+    subscription.customDays,
+    subscription.customCycleUnit,
+    subscription.oneTimeTermCount,
+    subscription.oneTimeTermUnit,
+  );
 }
 
 function comparePinnedFirst(left: Subscription, right: Subscription): number {

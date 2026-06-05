@@ -16,6 +16,10 @@ import type { ExchangeRateProvider, ExchangeRates } from '@/lib/api/schemas/exch
 import { cn } from '@/lib/utils';
 import type { CustomConfig } from '@/types/config';
 import type { AppSettings } from '@/types/subscription';
+import {
+  getDirectExchangeRateQuote,
+  getExchangeRatePreviewCurrencies,
+} from '../domain/exchange-rate-preview-policy';
 
 export interface ExchangeRatesSectionProps {
   id?: string;
@@ -50,7 +54,8 @@ export function ExchangeRatesSection({
   handleExchangeRateProviderChange,
   getCurrencySymbol,
 }: ExchangeRatesSectionProps) {
-  const { t, formatDateTime } = useI18n();
+  const { t, formatDateTime, formatNumber } = useI18n();
+  const previewCurrencies = getExchangeRatePreviewCurrencies(customConfig.currencies, settings.defaultCurrency);
   const providerLabel = activeRateProvider === "builtin"
     ? t("settings.exchangeRateProvider.builtin")
     : activeRateProvider === "floatrates"
@@ -181,26 +186,24 @@ export function ExchangeRatesSection({
                       {t("settings.ratesPreview", { currency: settings.defaultCurrency })}
                     </h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                      {customConfig.currencies
-                        .filter(c => c.enabled !== false && c.value !== settings.defaultCurrency)
-                        .slice(0, 8)
+                      {previewCurrencies
                         .map(currency => {
-                          // 计算相对于统计货币的汇率
-                          const baseRate = rates[settings.defaultCurrency] || 1;
-                          const targetRate = rates[currency.value] || 1;
-                          const relativeRate = targetRate / baseRate;
-                          const isHighPrecision = ['JPY', 'KRW', 'IDR', 'HUF'].includes(currency.value);
+                          const directQuote = getDirectExchangeRateQuote(rates, currency.value, settings.defaultCurrency);
+                          const fractionDigits = Math.abs(directQuote) >= 1 ? 2 : 4;
                           
                           return (
                             <div 
                               key={currency.value}
-                              className="flex items-center justify-between p-2.5 rounded-lg bg-secondary/50"
+                              className="flex flex-col gap-1.5 p-2.5 rounded-lg bg-secondary/50"
                             >
-                              <span className="text-sm text-muted-foreground">
-                                {getCurrencySymbol(currency.value)} {currency.value}
+                              <span className="text-xs font-medium text-muted-foreground">
+                                1 {currency.value}
                               </span>
-                              <span className="text-sm font-medium text-foreground">
-                                {relativeRate.toFixed(isHighPrecision ? 2 : 4)}
+                              <span className="text-base font-semibold tabular-nums text-foreground">
+                                ≈ {getCurrencySymbol(settings.defaultCurrency)}{formatNumber(directQuote, {
+                                  minimumFractionDigits: fractionDigits,
+                                  maximumFractionDigits: fractionDigits,
+                                })} {settings.defaultCurrency}
                               </span>
                             </div>
                           );

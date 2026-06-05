@@ -179,6 +179,7 @@ describe("subscription-form", () => {
       name: "Lifetime license",
       price: "199",
       billingCycle: "one-time",
+      oneTimeMode: "buyout",
       autoCalculate: true,
       customDays: "30",
       startDate: assertDateOnly("2026-05-14"),
@@ -191,8 +192,47 @@ describe("subscription-form", () => {
       nextBillingDate: "2026-05-14",
       customDays: undefined,
       customCycleUnit: undefined,
+      oneTimeTermCount: undefined,
+      oneTimeTermUnit: undefined,
       autoCalculateNextBillingDate: false,
     });
+  });
+
+  it("saves one-time fixed terms with an auto-calculated expiry date", () => {
+    const form = createSubscriptionFormState({
+      name: "Discounted membership",
+      price: "120",
+      billingCycle: "one-time",
+      oneTimeMode: "term",
+      oneTimeTermCount: "6",
+      oneTimeTermUnit: "month",
+      autoCalculate: true,
+      startDate: assertDateOnly("2026-05-14"),
+      nextBillingDate: undefined,
+    });
+
+    expect(getSubscriptionDraftValidationError(form)).toBeNull();
+    expect(toSubscriptionDraft(form)).toMatchObject({
+      billingCycle: "one-time",
+      nextBillingDate: "2026-11-14",
+      oneTimeTermCount: 6,
+      oneTimeTermUnit: "month",
+      autoCalculateNextBillingDate: false,
+    });
+  });
+
+  it("requires a positive service duration for one-time fixed terms", () => {
+    const form = createSubscriptionFormState({
+      name: "Broken membership",
+      price: "120",
+      billingCycle: "one-time",
+      oneTimeMode: "term",
+      oneTimeTermCount: "0",
+      startDate: assertDateOnly("2026-05-14"),
+    });
+
+    expect(getSubscriptionDraftValidationError(form)).toBe("服务时长必须是 1 到 3650 之间的整数");
+    expect(toSubscriptionDraft(form)).toBeNull();
   });
 
   it("keeps repeat reminder presets in the draft", () => {

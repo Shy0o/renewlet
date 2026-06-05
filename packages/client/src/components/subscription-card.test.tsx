@@ -12,9 +12,22 @@ import { SubscriptionCard } from "./subscription-card";
 const originalWindowOpen = window.open;
 const mediaUtilitiesCss = readFileSync(join(process.cwd(), "src/styles/media-utilities.css"), "utf8");
 
-type FixedBillingCycle = Exclude<Subscription["billingCycle"], "custom">;
-type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit">> & (
-  | { billingCycle?: FixedBillingCycle; customDays?: undefined; customCycleUnit?: undefined }
+type RecurringBillingCycle = Exclude<Subscription["billingCycle"], "custom" | "one-time">;
+type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit" | "oneTimeTermCount" | "oneTimeTermUnit">> & (
+  | {
+      billingCycle?: RecurringBillingCycle;
+      customDays?: undefined;
+      customCycleUnit?: undefined;
+      oneTimeTermCount?: undefined;
+      oneTimeTermUnit?: undefined;
+    }
+  | {
+      billingCycle: "one-time";
+      customDays?: undefined;
+      customCycleUnit?: undefined;
+      oneTimeTermCount?: number | undefined;
+      oneTimeTermUnit?: Subscription["oneTimeTermUnit"];
+    }
   | { billingCycle: "custom"; customDays?: number; customCycleUnit?: Subscription["customCycleUnit"] }
 );
 type SubscriptionCardHandlers = {
@@ -99,6 +112,8 @@ const baseSubscription: Subscription = {
   billingCycle: "monthly",
   customDays: undefined,
   customCycleUnit: undefined,
+  oneTimeTermCount: undefined,
+  oneTimeTermUnit: undefined,
   category: "developer-tools",
   status: "active",
   paymentMethod: undefined,
@@ -124,6 +139,20 @@ function createSubscription(overrides: SubscriptionOverrides = {}): Subscription
       billingCycle: "custom",
       customDays: overrides.customDays ?? 30,
       customCycleUnit: overrides.customCycleUnit ?? "day",
+      oneTimeTermCount: undefined,
+      oneTimeTermUnit: undefined,
+    };
+  }
+
+  if (overrides.billingCycle === "one-time") {
+    return {
+      ...baseSubscription,
+      ...overrides,
+      billingCycle: "one-time",
+      customDays: undefined,
+      customCycleUnit: undefined,
+      oneTimeTermCount: overrides.oneTimeTermCount,
+      oneTimeTermUnit: overrides.oneTimeTermUnit,
     };
   }
 
@@ -133,6 +162,8 @@ function createSubscription(overrides: SubscriptionOverrides = {}): Subscription
     billingCycle: overrides.billingCycle ?? "monthly",
     customDays: undefined,
     customCycleUnit: undefined,
+    oneTimeTermCount: undefined,
+    oneTimeTermUnit: undefined,
   };
 }
 
@@ -561,13 +592,26 @@ describe("SubscriptionCard", () => {
     }
   });
 
-  it("keeps the add-to-calendar entry available for one-time subscriptions", () => {
+  it("hides the add-to-calendar entry for one-time buyouts", () => {
     renderSubscriptionCard({ billingCycle: "one-time" });
+
+    openMoreActionsMenu();
+
+    expect(screen.queryByRole("menuitem", { name: "添加到日历" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the add-to-calendar entry available for one-time fixed terms", () => {
+    renderSubscriptionCard({
+      billingCycle: "one-time",
+      oneTimeTermCount: 6,
+      oneTimeTermUnit: "month",
+    });
 
     openMoreActionsMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: "添加到日历" }));
 
-    expect(screen.getByRole("dialog", { name: "添加到日历" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "添加到期日历" })).toBeInTheDocument();
+    expect(screen.getByText("为「dmit」创建单独日历订阅，只同步这次服务到期。")).toBeInTheDocument();
     expect(screen.getByText("事件日期")).toBeInTheDocument();
     expect(screen.getByText("2026年6月15日")).toBeInTheDocument();
   });

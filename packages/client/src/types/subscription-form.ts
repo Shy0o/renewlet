@@ -24,6 +24,7 @@ import type { DateOnly } from "@/lib/time/date-only";
  * - inherit：保存为 -1，通知计算时读取设置页全局提醒提前时间
  */
 export type SubscriptionFormReminderType = "inherit" | "preset" | "custom";
+export type OneTimePurchaseMode = "term" | "buyout";
 
 /**
  * 订阅表单的本地状态（UI 输入专用）。
@@ -41,6 +42,9 @@ export type SubscriptionFormState = {
   billingCycle: BillingCycle;
   customDays: string;
   customCycleUnit: CustomCycleUnit;
+  oneTimeMode: OneTimePurchaseMode;
+  oneTimeTermCount: string;
+  oneTimeTermUnit: CustomCycleUnit;
   category: Category;
   status: SubscriptionStatus;
   paymentMethod: PaymentMethod | "";
@@ -71,6 +75,9 @@ export function createSubscriptionFormState(
     billingCycle: "monthly",
     customDays: "",
     customCycleUnit: "day",
+    oneTimeMode: "term",
+    oneTimeTermCount: "1",
+    oneTimeTermUnit: "month",
     category: "productivity",
     status: "active",
     paymentMethod: "",

@@ -30,7 +30,7 @@ const importExtraSchema = z.object({
   import: importKeySchema,
 }).catchall(z.unknown());
 
-export const importSubscriptionSchema = subscriptionCreateBodySchema.extend({
+export const importSubscriptionSchema = subscriptionCreateBodySchema.safeExtend({
   extra: importExtraSchema,
 }).strict();
 export type ImportSubscription = z.infer<typeof importSubscriptionSchema>;

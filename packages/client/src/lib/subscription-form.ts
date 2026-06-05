@@ -21,6 +21,7 @@ import {
 import { getApiLocale } from "@/i18n/api-locale";
 import { translate } from "@/i18n/messages";
 import { compareDateOnly } from "@/lib/time/date-only";
+import { calculateOneTimeTermEndDate } from "@/lib/subscription-billing";
 
 const MAX_PRICE = 1_000_000_000;
 const MAX_DAYS = MAX_REMINDER_DAYS;
@@ -160,6 +161,9 @@ export function getSubscriptionDraftValidationError(formData: SubscriptionFormSt
   if (formData.billingCycle === "custom" && parsePositiveIntegerInput(formData.customDays) === null) {
     return translate(locale, "subscription.validation.customCycleInvalid");
   }
+  if (formData.billingCycle === "one-time" && formData.oneTimeMode === "term" && parsePositiveIntegerInput(formData.oneTimeTermCount) === null) {
+    return translate(locale, "subscription.validation.oneTimeTermInvalid");
+  }
   if (!isOptionalHttpUrl(formData.website)) return translate(locale, "subscription.validation.websiteInvalid");
   const tagsError = getTagsValidationError(formData.tags);
   if (tagsError) return tagsError;
@@ -179,14 +183,22 @@ export function toSubscriptionDraft(formData: SubscriptionFormState): Subscripti
   const price = parseNonNegativeFiniteNumberInput(formData.price);
   const reminderDays = toReminderDays(formData);
   const customDays = formData.billingCycle === "custom" ? parsePositiveIntegerInput(formData.customDays) : undefined;
+  const oneTimeTermCount = formData.billingCycle === "one-time" && formData.oneTimeMode === "term"
+    ? parsePositiveIntegerInput(formData.oneTimeTermCount)
+    : undefined;
   const { startDate } = formData;
-  const nextBillingDate = formData.billingCycle === "one-time" ? startDate : formData.nextBillingDate;
+  const nextBillingDate = formData.billingCycle === "one-time"
+    ? formData.oneTimeMode === "term" && startDate && oneTimeTermCount
+      ? calculateOneTimeTermEndDate(startDate, oneTimeTermCount, formData.oneTimeTermUnit)
+      : startDate
+    : formData.nextBillingDate;
   if (
     price === null ||
     reminderDays === null ||
     !startDate ||
     !nextBillingDate ||
-    (formData.billingCycle === "custom" && customDays === null)
+    (formData.billingCycle === "custom" && customDays === null) ||
+    (formData.billingCycle === "one-time" && formData.oneTimeMode === "term" && oneTimeTermCount === null)
   ) {
     return null;
   }
@@ -218,6 +230,19 @@ export function toSubscriptionDraft(formData: SubscriptionFormState): Subscripti
       billingCycle: "custom",
       customDays: customDays ?? 1,
       customCycleUnit: formData.customCycleUnit,
+      oneTimeTermCount: undefined,
+      oneTimeTermUnit: undefined,
+    };
+  }
+  if (formData.billingCycle === "one-time") {
+    return {
+      ...base,
+      billingCycle: "one-time",
+      customDays: undefined,
+      customCycleUnit: undefined,
+      oneTimeTermCount: formData.oneTimeMode === "term" ? oneTimeTermCount ?? 1 : undefined,
+      oneTimeTermUnit: formData.oneTimeMode === "term" ? formData.oneTimeTermUnit : undefined,
+      autoCalculateNextBillingDate: false,
     };
   }
   return {
@@ -225,5 +250,7 @@ export function toSubscriptionDraft(formData: SubscriptionFormState): Subscripti
     billingCycle: formData.billingCycle,
     customDays: undefined,
     customCycleUnit: undefined,
+    oneTimeTermCount: undefined,
+    oneTimeTermUnit: undefined,
   };
 }

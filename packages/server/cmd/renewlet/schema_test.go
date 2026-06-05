@@ -38,6 +38,8 @@ func TestEnsureSchemaCreatesContractFieldsAndIndexes(t *testing.T) {
 		"billingCycle":                 core.FieldTypeSelect,
 		"customDays":                   core.FieldTypeNumber,
 		"customCycleUnit":              core.FieldTypeSelect,
+		"oneTimeTermCount":             core.FieldTypeNumber,
+		"oneTimeTermUnit":              core.FieldTypeSelect,
 		"category":                     core.FieldTypeText,
 		"status":                       core.FieldTypeSelect,
 		"pinned":                       core.FieldTypeBool,
@@ -83,6 +85,8 @@ func TestEnsureSchemaCreatesContractFieldsAndIndexes(t *testing.T) {
 	assertNumberField(t, app, "subscriptions", "reminderDays", false, inheritReminderDays, maxReminderDays)
 	assertSelectFieldValues(t, app, "subscriptions", "billingCycle", "weekly", "monthly", "quarterly", "semi-annual", "annual", "custom", "one-time")
 	assertSelectFieldValues(t, app, "subscriptions", "customCycleUnit", "day", "week", "month", "year")
+	assertNumberField(t, app, "subscriptions", "oneTimeTermCount", false, 0, maxReminderDays)
+	assertSelectFieldValues(t, app, "subscriptions", "oneTimeTermUnit", "day", "week", "month", "year")
 	assertSelectFieldValues(t, app, "subscriptions", "status", "trial", "active", "expired", "paused", "cancelled")
 	assertJSONFieldMaxSize(t, app, "subscriptions", "tags", maxSubscriptionTagsFieldSize)
 	assertFileFieldMimeTypes(t, app, "assets", "file", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon")

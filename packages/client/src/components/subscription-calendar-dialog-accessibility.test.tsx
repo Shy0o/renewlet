@@ -6,10 +6,23 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import type { Subscription } from "@/types/subscription";
 import { SubscriptionCalendar } from "./subscription-calendar";
 
-type FixedBillingCycle = Exclude<Subscription["billingCycle"], "custom">;
-type SubscriptionBaseFixture = Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit">;
-type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit">> & (
-  | { billingCycle?: FixedBillingCycle; customDays?: undefined; customCycleUnit?: undefined }
+type RecurringBillingCycle = Exclude<Subscription["billingCycle"], "custom" | "one-time">;
+type SubscriptionBaseFixture = Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit" | "oneTimeTermCount" | "oneTimeTermUnit">;
+type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit" | "oneTimeTermCount" | "oneTimeTermUnit">> & (
+  | {
+      billingCycle?: RecurringBillingCycle;
+      customDays?: undefined;
+      customCycleUnit?: undefined;
+      oneTimeTermCount?: undefined;
+      oneTimeTermUnit?: undefined;
+    }
+  | {
+      billingCycle: "one-time";
+      customDays?: undefined;
+      customCycleUnit?: undefined;
+      oneTimeTermCount?: number | undefined;
+      oneTimeTermUnit?: Subscription["oneTimeTermUnit"];
+    }
   | { billingCycle: "custom"; customDays?: number; customCycleUnit?: Subscription["customCycleUnit"] }
 );
 
@@ -83,6 +96,20 @@ function subscription(overrides: SubscriptionOverrides = {}): Subscription {
       billingCycle: "custom",
       customDays: overrides.customDays ?? 30,
       customCycleUnit: overrides.customCycleUnit ?? "day",
+      oneTimeTermCount: undefined,
+      oneTimeTermUnit: undefined,
+    };
+  }
+
+  if (overrides.billingCycle === "one-time") {
+    return {
+      ...base,
+      ...overrides,
+      billingCycle: "one-time",
+      customDays: undefined,
+      customCycleUnit: undefined,
+      oneTimeTermCount: overrides.oneTimeTermCount,
+      oneTimeTermUnit: overrides.oneTimeTermUnit,
     };
   }
 
@@ -92,6 +119,8 @@ function subscription(overrides: SubscriptionOverrides = {}): Subscription {
     billingCycle: overrides.billingCycle ?? "monthly",
     customDays: undefined,
     customCycleUnit: undefined,
+    oneTimeTermCount: undefined,
+    oneTimeTermUnit: undefined,
   };
 }
 
@@ -244,7 +273,7 @@ describe("SubscriptionCalendar dialogs", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "+1 更多" }));
 
-    expect(screen.getByRole("dialog", { name: "5月14日 续费" })).toHaveAccessibleDescription(
+    expect(screen.getByRole("dialog", { name: "5月14日 续费/到期" })).toHaveAccessibleDescription(
       "选择 5月14日 要查看的订阅。",
     );
   });
@@ -283,13 +312,39 @@ describe("SubscriptionCalendar dialogs", () => {
       subscription({ id: "sub-4", name: "Cancelled Tool", status: "cancelled", nextBillingDate: assertDateOnly("2026-05-16") }),
     ]);
 
-    expect(screen.getByText("本月续费明细")).toBeInTheDocument();
+    expect(screen.getByText("本月续费/到期明细")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Aws/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Netflix/ })).toBeInTheDocument();
     expect(screen.getByText("每月")).toBeInTheDocument();
     expect(screen.getByText("每年")).toBeInTheDocument();
     expect(screen.queryByText("Paused Cloud")).not.toBeInTheDocument();
     expect(screen.queryByText("Cancelled Tool")).not.toBeInTheDocument();
+  });
+
+  it("includes one-time fixed term expiries in the calendar while hiding buyouts", async () => {
+    mockMobileCalendar();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-14T12:00:00Z"));
+
+    renderCalendar([
+      subscription({
+        id: "fixed-term",
+        name: "Discounted membership",
+        billingCycle: "one-time",
+        oneTimeTermCount: 6,
+        oneTimeTermUnit: "month",
+        nextBillingDate: assertDateOnly("2026-05-14"),
+      }),
+      subscription({
+        id: "buyout",
+        name: "Lifetime license",
+        billingCycle: "one-time",
+        nextBillingDate: assertDateOnly("2026-05-14"),
+      }),
+    ]);
+
+    expect(screen.getByRole("button", { name: /Discounted membership/ })).toBeInTheDocument();
+    expect(screen.queryByText("Lifetime license")).not.toBeInTheDocument();
   });
 
   it("opens the mobile day drawer from a renewal date marker", async () => {
@@ -303,9 +358,9 @@ describe("SubscriptionCalendar dialogs", () => {
       subscription({ id: "sub-3", name: "OpenAI" }),
     ]);
 
-    fireEvent.click(screen.getByRole("button", { name: "5月14日 3 个续费" }));
+    fireEvent.click(screen.getByRole("button", { name: "5月14日 3 个事件" }));
 
-    expect(screen.getByRole("dialog", { name: "5月14日 续费" })).toHaveAccessibleDescription(
+    expect(screen.getByRole("dialog", { name: "5月14日 续费/到期" })).toHaveAccessibleDescription(
       "选择 5月14日 要查看的订阅。",
     );
   });

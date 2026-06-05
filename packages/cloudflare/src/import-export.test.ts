@@ -175,7 +175,33 @@ describe("Cloudflare import", () => {
     expect(insert?.values[6]).toBe("one-time");
     expect(insert?.values[7]).toBeNull();
     expect(insert?.values[8]).toBeNull();
-    expect(insert?.values[15]).toBe(0);
+    expect(insert?.values[9]).toBeNull();
+    expect(insert?.values[10]).toBeNull();
+    expect(insert?.values[17]).toBe(0);
+  });
+
+  it("preserves one-time fixed term fields before binding D1 statements", async () => {
+    const { env, db, statements } = envFixture();
+    const response = await applyImport(requestFor("/api/app/import/apply", importPayload([
+      importSubscription({
+        billingCycle: "one-time",
+        customDays: 30,
+        customCycleUnit: "day",
+        oneTimeTermCount: 6,
+        oneTimeTermUnit: "month",
+        autoCalculateNextBillingDate: true,
+      }),
+    ])), env);
+
+    expect(response.status).toBe(200);
+    expect(db.batch).toHaveBeenCalledTimes(1);
+    const insert = statements.find((statement) => statement.sql.includes("INSERT INTO subscriptions"));
+    expect(insert?.values[6]).toBe("one-time");
+    expect(insert?.values[7]).toBeNull();
+    expect(insert?.values[8]).toBeNull();
+    expect(insert?.values[9]).toBe(6);
+    expect(insert?.values[10]).toBe("month");
+    expect(insert?.values[17]).toBe(0);
   });
 
   it("skips existing import keys unless replace is selected", async () => {
@@ -190,6 +216,8 @@ describe("Cloudflare import", () => {
         billing_cycle: "monthly",
         custom_days: null,
         custom_cycle_unit: null,
+        one_time_term_count: null,
+        one_time_term_unit: null,
         category: "productivity",
         status: "active",
         pinned: 0,

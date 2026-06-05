@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { assertDateOnly } from "@/lib/time/date-only";
 import { DEFAULT_CUSTOM_CONFIG } from "@/types/config";
-import type { FixedCycleSubscription, Subscription } from "@/types/subscription";
+import type { RecurringCycleSubscription, Subscription } from "@/types/subscription";
 import Dashboard from "./dashboard";
 
 const mocks = vi.hoisted(() => ({
@@ -125,7 +125,7 @@ vi.mock("@/modules/subscriptions/application/use-subscription-crud", () => ({
   }),
 }));
 
-function subscription(overrides: Partial<FixedCycleSubscription> = {}): FixedCycleSubscription {
+function subscription(overrides: Partial<RecurringCycleSubscription> = {}): RecurringCycleSubscription {
   return {
     id: "codex-pro",
     name: "Codex Pro",
@@ -135,6 +135,8 @@ function subscription(overrides: Partial<FixedCycleSubscription> = {}): FixedCyc
     billingCycle: "monthly",
     customDays: undefined,
     customCycleUnit: undefined,
+    oneTimeTermCount: undefined,
+    oneTimeTermUnit: undefined,
     category: "productivity",
     status: "active",
     pinned: false,

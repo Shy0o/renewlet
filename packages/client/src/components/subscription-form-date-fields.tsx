@@ -34,6 +34,13 @@ export function SubscriptionFormDateFields({ id, formData, update, errors }: Sub
   // 当非法到期日被清空后，打开到期日历应落在开始日所在月份，让下一个合法选择直接可见。
   const nextBillingDateCalendarMonth = selectedNextBillingDate ?? selectedStartDate;
   const isNextBillingDateDisabled = formData.autoCalculate || formData.billingCycle === "one-time";
+  const isOneTimeBuyout = formData.billingCycle === "one-time" && formData.oneTimeMode === "buyout";
+  const startDateLabel = formData.billingCycle === "one-time"
+    ? t("subscription.field.purchaseDate")
+    : t("subscription.field.startDate");
+  const nextBillingDateLabel = formData.billingCycle === "one-time"
+    ? t("subscription.field.expiryDate")
+    : t("subscription.field.nextBillingDate");
 
   return (
     <div className="grid gap-4 rounded-lg border border-border bg-secondary/30 p-4">
@@ -55,7 +62,7 @@ export function SubscriptionFormDateFields({ id, formData, update, errors }: Sub
       <div className="grid items-start gap-4 sm:grid-cols-2">
         <div className="grid gap-2">
           <Label id={startDateLabelId} htmlFor={startDateId}>
-            {t("subscription.field.startDate")}
+            {startDateLabel}
           </Label>
           <Popover open={startDatePickerOpen} onOpenChange={setStartDatePickerOpen}>
             <PopoverTrigger asChild>
@@ -97,9 +104,10 @@ export function SubscriptionFormDateFields({ id, formData, update, errors }: Sub
           </Popover>
         </div>
 
+        {!isOneTimeBuyout ? (
         <div className="grid gap-2">
           <Label id={nextBillingDateLabelId} htmlFor={nextBillingDateId}>
-            {t("subscription.field.nextBillingDate")}
+            {nextBillingDateLabel}
           </Label>
           <Popover
             open={isNextBillingDateDisabled ? false : nextBillingDatePickerOpen}
@@ -152,10 +160,15 @@ export function SubscriptionFormDateFields({ id, formData, update, errors }: Sub
           {formData.autoCalculate && (
             <p className="text-xs text-muted-foreground">{t("subscription.autoCalculateHelp")}</p>
           )}
-          {formData.billingCycle === "one-time" && (
-            <p className="text-xs text-muted-foreground">{t("subscription.oneTimeDateHelp")}</p>
+          {formData.billingCycle === "one-time" && formData.oneTimeMode === "term" && (
+            <p className="text-xs text-muted-foreground">{t("subscription.oneTimeTermDateHelp")}</p>
           )}
         </div>
+        ) : (
+          <div className="grid content-end gap-2 rounded-md border border-dashed border-border bg-background/50 p-3 text-sm text-muted-foreground">
+            {t("subscription.oneTimeBuyoutDateHelp")}
+          </div>
+        )}
       </div>
       <FieldError id={id("dates-error")} message={errors.dates} />
     </div>

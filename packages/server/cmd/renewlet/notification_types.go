@@ -100,6 +100,8 @@ type notificationSubscription struct {
 	Currency               string  `json:"currency"`
 	Status                 string  `json:"status"`
 	BillingCycle           string  `json:"billingCycle"`
+	OneTimeTermCount       int     `json:"oneTimeTermCount,omitempty"`
+	OneTimeTermUnit        string  `json:"oneTimeTermUnit,omitempty"`
 	NextBillingDate        string  `json:"nextBillingDate"`
 	TrialEndDate           string  `json:"trialEndDate,omitempty"`
 	ReminderDays           int     `json:"reminderDays"`
