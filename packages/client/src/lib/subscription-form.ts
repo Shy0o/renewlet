@@ -15,6 +15,7 @@ import {
 import type { SubscriptionFormState } from "@/types/subscription-form";
 import {
   DEFAULT_NOTIFICATION_REMINDER_DAYS,
+  DISABLED_REMINDER_DAYS,
   INHERIT_REMINDER_DAYS,
   MAX_REMINDER_DAYS,
 } from "@/types/subscription";
@@ -46,6 +47,7 @@ export function parseNonNegativeIntegerInput(input: string, max = MAX_DAYS): num
 }
 
 export function parseReminderDaysInput(input: string): number | null {
+  if (input.trim() === String(DISABLED_REMINDER_DAYS)) return DISABLED_REMINDER_DAYS;
   if (input.trim() === String(INHERIT_REMINDER_DAYS)) return INHERIT_REMINDER_DAYS;
   return parseNonNegativeIntegerInput(input, MAX_DAYS);
 }
@@ -109,12 +111,16 @@ export function getTagsValidationError(formDataTags: readonly string[]): string 
  * 从表单状态计算 reminderDays（整数）。
  *
  * 规则：
+ * - disabled：保存为 -2，由通知和日历 alarm 层识别为单订阅静默
  * - inherit：保存为 -1，由通知计算读取设置页全局提前天数
  * - preset：严格解析 reminderDays
  * - custom：严格解析 customReminderDays，空值回退为 3
  * - 类似 `3days` / `3.5` 的宽松输入会被拒绝，避免浏览器和后端解析口径不同。
  */
 export function toReminderDays(formData: Pick<SubscriptionFormState, "reminderType" | "reminderDays" | "customReminderDays">): number {
+  if (formData.reminderType === "disabled") {
+    return DISABLED_REMINDER_DAYS;
+  }
   if (formData.reminderType === "inherit") {
     return INHERIT_REMINDER_DAYS;
   }
@@ -150,11 +156,13 @@ export function getSubscriptionDraftValidationError(formData: SubscriptionFormSt
   }
   if (parseNonNegativeFiniteNumberInput(formData.price) === null) return translate(locale, "subscription.validation.amountInvalid");
   const reminderInput = formData.reminderType === "custom" ? formData.customReminderDays : formData.reminderDays;
-  const reminderValue = formData.reminderType === "inherit"
-    ? INHERIT_REMINDER_DAYS
-    : formData.reminderType === "custom"
-      ? parseNonNegativeIntegerInput(reminderInput)
-      : parseReminderDaysInput(reminderInput);
+  const reminderValue = formData.reminderType === "disabled"
+    ? DISABLED_REMINDER_DAYS
+    : formData.reminderType === "inherit"
+      ? INHERIT_REMINDER_DAYS
+      : formData.reminderType === "custom"
+        ? parseNonNegativeIntegerInput(reminderInput)
+        : parseReminderDaysInput(reminderInput);
   if (reminderValue === null) {
     return translate(locale, "subscription.validation.reminderInvalid");
   }
@@ -203,6 +211,7 @@ export function toSubscriptionDraft(formData: SubscriptionFormState): Subscripti
     return null;
   }
 
+  const repeatReminderEnabled = reminderDays === DISABLED_REMINDER_DAYS ? false : formData.repeatReminderEnabled;
   const base = {
     name: formData.name,
     logo: formData.logo,
@@ -217,7 +226,7 @@ export function toSubscriptionDraft(formData: SubscriptionFormState): Subscripti
     autoCalculateNextBillingDate: formData.billingCycle === "one-time" ? false : formData.autoCalculate,
     trialEndDate: undefined,
     reminderDays,
-    repeatReminderEnabled: formData.repeatReminderEnabled,
+    repeatReminderEnabled,
     repeatReminderInterval: formData.repeatReminderInterval,
     repeatReminderWindow: formData.repeatReminderWindow,
     website: formData.website || undefined,

@@ -280,7 +280,7 @@ func ensureSubscriptionsCollection(app core.App, users *core.Collection) error {
 			&core.TextField{Name: "notes", Max: 5000},
 			&core.JSONField{Name: "tags", MaxSize: maxSubscriptionTagsFieldSize},
 			&core.JSONField{Name: "extra", MaxSize: 65536},
-			&core.NumberField{Name: "reminderDays", OnlyInt: true, Min: types.Pointer(float64(inheritReminderDays)), Max: types.Pointer(float64(maxReminderDays))},
+			&core.NumberField{Name: "reminderDays", OnlyInt: true, Min: types.Pointer(float64(disabledReminderDays)), Max: types.Pointer(float64(maxReminderDays))},
 			&core.BoolField{Name: "repeatReminderEnabled"},
 			&core.SelectField{Name: "repeatReminderInterval", Values: []string{"1h", "3h", "6h", "12h", "24h"}},
 			&core.SelectField{Name: "repeatReminderWindow", Values: []string{"24h", "48h", "72h", "full"}},

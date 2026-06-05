@@ -18,7 +18,7 @@ import type {
   CustomCycleUnit,
   SubscriptionStatus,
 } from "@/types/subscription";
-import { effectiveReminderDays } from "@renewlet/shared/runtime";
+import { effectiveReminderDays, isDisabledReminderDays } from "@renewlet/shared/runtime";
 import { daysBetweenDateOnly, isValidDateOnly, todayDateOnlyInTimeZone, type DateOnly } from "@/lib/time/date-only";
 import { isValidTimeZone } from "@/lib/time/time-zone";
 import { normalizeLocale, type Locale } from "@/i18n/locales";
@@ -224,9 +224,14 @@ export function collectNotificationItemsForLocalDate(
   const items: NotificationContentItem[] = [];
 
   for (const sub of subscriptions) {
+    if (isDisabledReminderDays(sub.reminderDays)) {
+      // -2 是单订阅静默哨兵；前端即将提醒预览必须和后端 Cron/历史 payload 保持同一跳过口径。
+      continue;
+    }
     if (!isValidDateOnly(sub.nextBillingDate)) continue;
     // -1 只在订阅存储和表单里表示继承；通知预览/历史 payload 必须保存用户可解释的有效天数。
     const reminderDays = effectiveReminderDays(sub.reminderDays, settings.notificationReminderDays);
+    if (reminderDays === undefined) continue;
     const daysUntilNext = daysBetweenDateOnly(localDate, sub.nextBillingDate);
     const isOneTime = sub.billingCycle === "one-time";
     const isOneTimeBuyout = isOneTime && !sub.oneTimeTermCount;

@@ -2,6 +2,7 @@ import { importPayloadSchema, type ImportPayload } from "@/lib/api/schemas/impor
 import {
   BILLING_CYCLES,
   CUSTOM_CYCLE_UNITS,
+  DISABLED_REMINDER_DAYS,
   INHERIT_REMINDER_DAYS,
   MAX_REMINDER_DAYS,
   REPEAT_REMINDER_INTERVALS,
@@ -290,7 +291,7 @@ function normalizeReminderDays(value: unknown, warnings: string[]): number {
     warnings.push(importMessage(IMPORT_MESSAGE_CODES.renewletLegacyReminderDaysDefaulted, INHERIT_REMINDER_DAYS));
     return INHERIT_REMINDER_DAYS;
   }
-  const clamped = Math.max(INHERIT_REMINDER_DAYS, Math.min(MAX_REMINDER_DAYS, numberValue));
+  const clamped = Math.max(DISABLED_REMINDER_DAYS, Math.min(MAX_REMINDER_DAYS, numberValue));
   if (clamped !== numberValue) {
     warnings.push(importMessage(IMPORT_MESSAGE_CODES.renewletLegacyReminderDaysDefaulted, clamped));
   }

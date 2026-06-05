@@ -45,7 +45,7 @@ export interface RenewalCalendarEventText {
 export interface RenewalCalendarEventMapperOptions {
   subscription: RenewalCalendarSubscription;
   labels: RenewalCalendarEventLabels;
-  reminderDays: number;
+  reminderDays?: number | undefined;
   text: RenewalCalendarEventText;
 }
 
@@ -85,8 +85,10 @@ export function buildRenewalCalendarEvent(options: RenewalCalendarEventMapperOpt
     summary: subscription.name,
     description: lines.join("\n"),
     categories: labels.category,
-    reminderDays,
   };
+  if (typeof reminderDays === "number") {
+    event.reminderDays = reminderDays;
+  }
   if (subscription.website) {
     event.url = subscription.website;
   }
@@ -134,7 +136,7 @@ export function buildRenewalCalendarIcs(options: RenewalCalendarOptions): string
     if (event.url) {
       calendarEvent.url(event.url);
     }
-    if (typeof event.reminderDays === "number") {
+    if (typeof event.reminderDays === "number" && event.reminderDays >= 0) {
       calendarEvent.createAlarm({
         description: event.summary,
         trigger: Math.max(0, event.reminderDays) * 86_400,

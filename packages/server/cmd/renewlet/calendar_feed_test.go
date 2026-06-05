@@ -36,6 +36,7 @@ func TestCalendarFeedLifecycleAndICSRoute(t *testing.T) {
 		Notes:           "Team, shared; admin",
 		ReminderDays:    inheritReminderDays,
 	})
+	createCalendarFeedTestSubscription(t, app, user.Id, calendarFeedTestSubscription{Name: "Quiet Plan", BillingCycle: "monthly", Status: "active", NextBillingDate: "2099-06-06", ReminderDays: disabledReminderDays})
 	createCalendarFeedTestSubscription(t, app, user.Id, calendarFeedTestSubscription{Name: "Paused Plan", BillingCycle: "monthly", Status: "paused", NextBillingDate: "2099-06-03"})
 	createCalendarFeedTestSubscription(t, app, user.Id, calendarFeedTestSubscription{Name: "Cancelled Plan", BillingCycle: "monthly", Status: "cancelled", NextBillingDate: "2099-06-03"})
 	createCalendarFeedTestSubscription(t, app, user.Id, calendarFeedTestSubscription{Name: "Expired Plan", BillingCycle: "monthly", Status: "expired", NextBillingDate: "2099-06-03"})
@@ -92,6 +93,7 @@ func TestCalendarFeedLifecycleAndICSRoute(t *testing.T) {
 		"DTEND;VALUE=DATE:20990603",
 		"SUMMARY:Active Plan",
 		"SUMMARY:Fixed Term Plan",
+		"SUMMARY:Quiet Plan",
 		"DTSTART;VALUE=DATE:20990605",
 		"DESCRIPTION:Amount: 12.5 USD\\nBilling cycle: Monthly\\nCategory: Developer Tools\\nPayment method: Credit Card\\nNotes: Team\\, shared\\; admin",
 		"CATEGORIES:Developer Tools",
@@ -102,6 +104,10 @@ func TestCalendarFeedLifecycleAndICSRoute(t *testing.T) {
 		if !strings.Contains(unfoldedICS, expected) {
 			t.Fatalf("expected ICS to contain %q, got:\n%s", expected, unfoldedICS)
 		}
+	}
+	quietSection := calendarEventSection(t, unfoldedICS, "SUMMARY:Quiet Plan")
+	if strings.Contains(quietSection, "BEGIN:VALARM") {
+		t.Fatalf("expected disabled reminder event to keep VEVENT but omit alarm, got:\n%s", quietSection)
 	}
 	for _, excluded := range []string{"Paused Plan", "Cancelled Plan", "Expired Plan", "One Time Plan", "Past Plan", "RRULE"} {
 		if strings.Contains(unfoldedICS, excluded) {
@@ -477,19 +483,19 @@ func TestCalendarFeedLabelResolverIgnoresEmptyCustomLabels(t *testing.T) {
 }
 
 type calendarFeedTestSubscription struct {
-	Name            string
-	Price           float64
-	Currency        string
-	BillingCycle    string
-	CustomDays      int
-	CustomCycleUnit string
-	Category        string
-	Status          string
-	PaymentMethod   string
-	NextBillingDate string
-	Website         string
-	Notes           string
-	ReminderDays    int
+	Name             string
+	Price            float64
+	Currency         string
+	BillingCycle     string
+	CustomDays       int
+	CustomCycleUnit  string
+	Category         string
+	Status           string
+	PaymentMethod    string
+	NextBillingDate  string
+	Website          string
+	Notes            string
+	ReminderDays     int
 	OneTimeTermCount int
 	OneTimeTermUnit  string
 }
@@ -611,6 +617,20 @@ func calendarFeedRequestTarget(t *testing.T, rawURL string) string {
 
 func unfoldCalendarTestICS(value string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(value, "\r\n ", ""), "\n ", "")
+}
+
+func calendarEventSection(t *testing.T, ics string, marker string) string {
+	t.Helper()
+	index := strings.Index(ics, marker)
+	if index < 0 {
+		t.Fatalf("expected ICS to contain marker %q, got:\n%s", marker, ics)
+	}
+	start := strings.LastIndex(ics[:index], "BEGIN:VEVENT")
+	end := strings.Index(ics[index:], "END:VEVENT")
+	if start < 0 || end < 0 {
+		t.Fatalf("expected marker %q to be inside VEVENT, got:\n%s", marker, ics)
+	}
+	return ics[start : index+end+len("END:VEVENT")]
 }
 
 func assertCalendarFeedLineEndings(t *testing.T, value string) {

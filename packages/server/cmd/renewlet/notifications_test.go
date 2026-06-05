@@ -100,6 +100,19 @@ func TestBuildDueNotificationUsesGlobalReminderForInheritedSubscription(t *testi
 	}
 }
 
+func TestBuildDueNotificationSkipsDisabledReminderSubscription(t *testing.T) {
+	settings := defaultAppSettings()
+	settings.Timezone = "UTC"
+
+	message := buildDueNotificationForLocalDate("2026-05-14", time.Date(2026, 5, 14, 1, 2, 3, 0, time.UTC), settings, []notificationSubscription{
+		{ID: "quiet", Name: "Quiet", Price: 18, Currency: "USD", Status: "active", NextBillingDate: "2026-05-14", ReminderDays: disabledReminderDays},
+	}, true)
+
+	if message.HasPayload || len(message.Items) != 0 {
+		t.Fatalf("expected disabled reminder subscription to be excluded, got %#v", message.Items)
+	}
+}
+
 func TestRepeatReminderScheduleBuildsRepeatItem(t *testing.T) {
 	settings := defaultAppSettings()
 	settings.Timezone = "UTC"
@@ -134,6 +147,41 @@ func TestRepeatReminderScheduleBuildsRepeatItem(t *testing.T) {
 	}
 	if !strings.Contains(message.Content, "重复提醒，每 1 小时") {
 		t.Fatalf("expected repeat reminder copy in content, got %q", message.Content)
+	}
+}
+
+func TestRepeatReminderScheduleSkipsDisabledReminderSubscription(t *testing.T) {
+	settings := defaultAppSettings()
+	settings.Timezone = "UTC"
+	settings.NotificationTimeLocal = "08:00"
+
+	subscriptions := []notificationSubscription{{
+		ID:                     "quiet",
+		Name:                   "Quiet SaaS",
+		Price:                  99,
+		Currency:               "USD",
+		Status:                 "active",
+		NextBillingDate:        "2026-05-17",
+		ReminderDays:           disabledReminderDays,
+		RepeatReminderEnabled:  true,
+		RepeatReminderInterval: "1h",
+		RepeatReminderWindow:   "72h",
+	}}
+	now := time.Date(2026, 5, 14, 9, 0, 30, 0, time.UTC)
+
+	schedule := getNotificationScheduleDecision(now, settings, subscriptions, 2, false)
+	if schedule.Due {
+		t.Fatalf("expected disabled reminder subscription to skip repeat schedule, got %#v", schedule)
+	}
+
+	message := buildDueNotificationForSchedule(localScheduleOccurrence{
+		ScheduledLocalDate:  "2026-05-14",
+		ScheduledLocalTime:  "09:00",
+		TimeZone:            "UTC",
+		ScheduledInstantUTC: "2026-05-14T09:00:00Z",
+	}, now, settings, subscriptions, true)
+	if message.HasPayload || len(message.Items) != 0 {
+		t.Fatalf("expected disabled reminder subscription to skip repeat items, got %#v", message.Items)
 	}
 }
 

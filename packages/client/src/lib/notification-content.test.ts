@@ -106,6 +106,27 @@ describe("notification-content", () => {
     expect(content.items[0]?.reminderDays).not.toBe(-1);
   });
 
+  it("skips subscriptions with disabled reminders", () => {
+    const content = buildDueNotification(
+      new Date("2026-01-10T00:00:00.000Z"),
+      { ...DEFAULT_SETTINGS, timezone: "UTC", showExpired: false },
+      [
+        {
+          id: "sub-quiet",
+          name: "Quiet SaaS",
+          price: 10,
+          currency: "USD",
+          status: "active",
+          nextBillingDate: "2026-01-10",
+          reminderDays: -2,
+        },
+      ],
+    );
+
+    expect(content.hasPayload).toBe(false);
+    expect(content.items).toEqual([]);
+  });
+
   it("builds English notification content when settings locale is English", () => {
     const content = buildDueNotification(
       new Date("2026-01-10T00:00:00.000Z"),

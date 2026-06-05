@@ -28,6 +28,16 @@ function unfoldIcsText(value: string): string {
   return value.replace(/\r\n[ \t]/g, "");
 }
 
+function calendarEventSection(ics: string, marker: string): string {
+  const index = ics.indexOf(marker);
+  expect(index, `expected ICS to contain ${marker}`).toBeGreaterThanOrEqual(0);
+  const start = ics.lastIndexOf("BEGIN:VEVENT", index);
+  const end = ics.indexOf("END:VEVENT", index);
+  expect(start, `expected ${marker} to be inside VEVENT`).toBeGreaterThanOrEqual(0);
+  expect(end, `expected ${marker} to be inside VEVENT`).toBeGreaterThanOrEqual(0);
+  return ics.slice(start, end + "END:VEVENT".length);
+}
+
 describe("calendar feed worker handlers", () => {
   it("creates a reusable global feed, returns the URL on status, renders filtered ICS by token, and revokes the URL", async () => {
     const env = await createCalendarFeedTestEnv();
@@ -61,6 +71,7 @@ describe("calendar feed worker handlers", () => {
     expect(unfoldedIcs).toContain("BEGIN:VCALENDAR");
     expect(unfoldedIcs).toContain("SUMMARY:Active Plan");
     expect(unfoldedIcs).toContain("SUMMARY:Fixed Term Plan");
+    expect(unfoldedIcs).toContain("SUMMARY:Quiet Plan");
     expect(unfoldedIcs).toContain("DTSTART;VALUE=DATE:20990602");
     expect(unfoldedIcs).toContain("DTSTART;VALUE=DATE:20990605");
     expect(unfoldedIcs).toContain("UID:renewlet-expiry-");
@@ -68,6 +79,7 @@ describe("calendar feed worker handlers", () => {
     expect(unfoldedIcs).toContain("Payment method: Credit Card");
     expect(unfoldedIcs).toContain("CATEGORIES:Developer Tools");
     expect(unfoldedIcs).toContain("TRIGGER:-P5D");
+    expect(calendarEventSection(unfoldedIcs, "SUMMARY:Quiet Plan")).not.toContain("BEGIN:VALARM");
     expect(unfoldedIcs).not.toContain("developer_tools");
     expect(unfoldedIcs).not.toContain("credit_card");
     expect(unfoldedIcs).not.toContain("Paused Plan");
@@ -414,6 +426,9 @@ async function createCalendarFeedTestEnv(options: CalendarFeedTestOptions = {}):
       subscriptionRow("sub_fixed_term", "Fixed Term Plan", "active", "one-time", "2099-06-05", {
         one_time_term_count: 6,
         one_time_term_unit: "month",
+      }),
+      subscriptionRow("sub_quiet", "Quiet Plan", "active", "monthly", "2099-06-06", {
+        reminder_days: -2,
       }),
     ],
   };

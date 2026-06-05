@@ -10,7 +10,7 @@ import {
   notificationsTestBodySchema,
   type NotificationHistoryStatusFilter,
 } from "@renewlet/shared/schemas/notifications";
-import { effectiveReminderDays } from "@renewlet/shared/runtime";
+import { effectiveReminderDays, isDisabledReminderDays } from "@renewlet/shared/runtime";
 import { appSettingsSchema, settingsUpdateBodySchema, type ApiAppSettings } from "@renewlet/shared/schemas/settings";
 import type { ApiSubscription } from "@renewlet/shared/schemas/subscriptions";
 import { cleanBuiltInIconSourceSettingsPatch, mergeBuiltInIconSourceSettings } from "@renewlet/shared/built-in-icons";
@@ -359,10 +359,24 @@ function formatAmount(amount: number): string {
   return fixed.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
 }
 
+export function collectNotificationItemsForLocalDate(
+  localDate: string,
+  settings: ApiAppSettings,
+  subscriptions: ApiSubscription[],
+  options: { includeExpired?: boolean } = {},
+): NotificationEmailItem[] {
+  return collectItems(localDate, settings, subscriptions, { includeExpired: options.includeExpired ?? true });
+}
+
 function collectItems(localDate: string, settings: ApiAppSettings, subscriptions: ApiSubscription[], options: { includeExpired: boolean }): NotificationEmailItem[] {
   const items: NotificationEmailItem[] = [];
   for (const sub of subscriptions) {
+    if (isDisabledReminderDays(sub.reminderDays)) {
+      // -2 是单订阅静默哨兵；Worker Cron 和手动运行都在入口跳过，历史 payload 也不保留该订阅。
+      continue;
+    }
     const reminderDays = effectiveReminderDays(sub.reminderDays, settings.notificationReminderDays);
+    if (reminderDays === undefined) continue;
     const daysUntilNext = daysBetween(localDate, sub.nextBillingDate);
     if (sub.billingCycle === "one-time" && !sub.oneTimeTermCount) {
       // one-time 买断记录没有权益到期日；Worker 不能把购买日当成续费或过期边界。

@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
   BILLING_CYCLES,
   CUSTOM_CYCLE_UNITS,
-  INHERIT_REMINDER_DAYS,
+  DISABLED_REMINDER_DAYS,
   MAX_REMINDER_DAYS,
   REPEAT_REMINDER_INTERVALS,
   REPEAT_REMINDER_WINDOWS,
@@ -68,7 +68,7 @@ const extraSchema = z.record(z.string(), z.unknown()).optional();
 export const reminderDaysSchema = z
   .number()
   .int()
-  .min(INHERIT_REMINDER_DAYS)
+  .min(DISABLED_REMINDER_DAYS)
   .max(MAX_REMINDER_DAYS)
   .refine(isValidReminderDays, "Invalid reminder days");
 

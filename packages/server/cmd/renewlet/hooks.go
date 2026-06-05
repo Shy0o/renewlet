@@ -210,7 +210,7 @@ func normalizeSubscriptionRecord(record *core.Record) error {
 	}
 
 	reminderDays := record.GetInt("reminderDays")
-	if reminderDays < inheritReminderDays || reminderDays > maxReminderDays {
+	if reminderDays < disabledReminderDays || reminderDays > maxReminderDays {
 		return errors.New("REMINDER_DAYS_OUT_OF_RANGE")
 	}
 

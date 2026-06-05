@@ -77,7 +77,7 @@ type calendarFeedEvent struct {
 	Description  string
 	Category     string
 	URL          string
-	ReminderDays int
+	ReminderDays *int
 }
 
 type calendarFeedLabelResolver struct {
@@ -566,10 +566,13 @@ func buildCalendarFeedICS(options calendarFeedBuildOptions) string {
 		if event.URL != "" {
 			vevent.SetURL(event.URL)
 		}
-		alarm := vevent.AddAlarm()
-		alarm.SetAction(ics.ActionDisplay)
-		alarm.SetDescription(calendarFeedAlarmDescription(event, locale))
-		alarm.SetTrigger(calendarFeedAlarmTrigger(event.ReminderDays))
+		if event.ReminderDays != nil {
+			// “不提醒”只关闭日历闹钟，VEVENT 仍保留续费/到期事实，避免日历订阅丢失账期可见性。
+			alarm := vevent.AddAlarm()
+			alarm.SetAction(ics.ActionDisplay)
+			alarm.SetDescription(calendarFeedAlarmDescription(event, locale))
+			alarm.SetTrigger(calendarFeedAlarmTrigger(*event.ReminderDays))
+		}
 	}
 	return normalizeCalendarFeedLineEndings(cal.Serialize())
 }
@@ -686,14 +689,20 @@ func calendarFeedBillingCycleLabel(item calendarFeedSubscription, locale appLoca
 	return label
 }
 
-func effectiveCalendarFeedReminderDays(reminderDays int, settings appSettings) int {
+func effectiveCalendarFeedReminderDays(reminderDays int, settings appSettings) *int {
+	if reminderDays == disabledReminderDays {
+		return nil
+	}
+	value := reminderDays
 	if reminderDays == inheritReminderDays {
-		return normalizeNotificationReminderDays(settings.NotificationReminderDays)
+		value = normalizeNotificationReminderDays(settings.NotificationReminderDays)
+		return &value
 	}
 	if reminderDays < 0 || reminderDays > maxReminderDays {
-		return defaultNotificationReminderDays
+		value = defaultNotificationReminderDays
+		return &value
 	}
-	return reminderDays
+	return &value
 }
 
 func calendarFeedAlarmTrigger(days int) string {

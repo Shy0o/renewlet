@@ -10,6 +10,7 @@ import { CalendarPlus, Edit2, ExternalLink, X } from "lucide-react";
 import type { Subscription, SubscriptionStatus } from "@/types/subscription";
 import {
   DEFAULT_NOTIFICATION_REMINDER_DAYS,
+  DISABLED_REMINDER_DAYS,
   INHERIT_REMINDER_DAYS,
   STATUS_LABELS,
 } from "@/types/subscription";
@@ -95,9 +96,11 @@ function SubscriptionDetailContent({
       : isFixedTermOneTime
         ? t("subscription.detail.expiryDate")
       : t("subscription.detail.nextBilling");
-  const reminderLabel = subscription.reminderDays === INHERIT_REMINDER_DAYS
-    ? t("subscription.card.reminderInherit", { days: inheritedReminderDays })
-    : t("reminder.days", { days: subscription.reminderDays });
+  const reminderLabel = subscription.reminderDays === DISABLED_REMINDER_DAYS
+    ? t("subscription.card.reminderDisabled")
+    : subscription.reminderDays === INHERIT_REMINDER_DAYS
+      ? t("subscription.card.reminderInherit", { days: inheritedReminderDays })
+      : t("reminder.days", { days: subscription.reminderDays });
 
   const handleEdit = () => {
     if (!onEditSubscription) return;

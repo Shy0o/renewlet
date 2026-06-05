@@ -238,13 +238,17 @@ func TestNormalizeSubscriptionRecordDefaultsAndValidatesContract(t *testing.T) {
 	}
 
 	record.Set("price", 10)
+	record.Set("reminderDays", disabledReminderDays)
+	if err := normalizeSubscriptionRecord(record); err != nil {
+		t.Fatalf("expected disabled reminder days to be accepted: %v", err)
+	}
 	record.Set("reminderDays", inheritReminderDays)
 	if err := normalizeSubscriptionRecord(record); err != nil {
 		t.Fatalf("expected inherited reminder days to be accepted: %v", err)
 	}
-	record.Set("reminderDays", inheritReminderDays-1)
+	record.Set("reminderDays", disabledReminderDays-1)
 	if err := normalizeSubscriptionRecord(record); err == nil {
-		t.Fatal("expected reminder days below inherit sentinel to fail")
+		t.Fatal("expected reminder days below disabled sentinel to fail")
 	}
 	record.Set("reminderDays", maxReminderDays+1)
 	if err := normalizeSubscriptionRecord(record); err == nil {

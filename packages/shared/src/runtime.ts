@@ -38,6 +38,8 @@ export type DateOnly = string & { readonly __brand: "DateOnly" };
 /** 通知调度保存用户本地墙钟时间；真实 UTC instant 由后端按 IANA timezone 推导。 */
 export type LocalTime = string & { readonly __brand: "LocalTime" };
 
+// reminderDays 的负值是跨 Go/PocketBase、D1、前端和导入链路共享的哨兵：-2 静默，-1 继承，0 当天提醒。
+export const DISABLED_REMINDER_DAYS = -2;
 export const INHERIT_REMINDER_DAYS = -1;
 export const DEFAULT_NOTIFICATION_REMINDER_DAYS = 3;
 export const MAX_REMINDER_DAYS = 3650;
@@ -75,13 +77,18 @@ export function normalizeExchangeRateProvider(value: unknown): ExchangeRateProvi
 }
 
 export function isValidReminderDays(value: number): boolean {
-  return Number.isInteger(value) && value >= INHERIT_REMINDER_DAYS && value <= MAX_REMINDER_DAYS;
+  return Number.isInteger(value) && value >= DISABLED_REMINDER_DAYS && value <= MAX_REMINDER_DAYS;
+}
+
+export function isDisabledReminderDays(value: number): boolean {
+  return value === DISABLED_REMINDER_DAYS;
 }
 
 export function isInheritReminderDays(value: number): boolean {
   return value === INHERIT_REMINDER_DAYS;
 }
 
-export function effectiveReminderDays(reminderDays: number, notificationReminderDays: number): number {
+export function effectiveReminderDays(reminderDays: number, notificationReminderDays: number): number | undefined {
+  if (isDisabledReminderDays(reminderDays)) return undefined;
   return isInheritReminderDays(reminderDays) ? notificationReminderDays : reminderDays;
 }

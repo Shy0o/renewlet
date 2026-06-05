@@ -1,7 +1,7 @@
 import { importPayloadSchema, type ImportSubscription, type RenewletExportV1 } from "@/lib/api/schemas/import-export";
 import { getIntlCurrencySymbol, SUPPORTED_EXCHANGE_RATE_CURRENCIES } from "@/lib/currency-data";
 import type { CustomConfig } from "@/types/config";
-import { INHERIT_REMINDER_DAYS, MAX_REMINDER_DAYS, type AppSettings } from "@/types/subscription";
+import { DISABLED_REMINDER_DAYS, INHERIT_REMINDER_DAYS, MAX_REMINDER_DAYS, type AppSettings } from "@/types/subscription";
 import type { DateOnly } from "@/lib/time/date-only";
 import {
   WALLOS_DEFAULT_CURRENCIES,
@@ -444,7 +444,8 @@ function wallosStatus(row: WallosTableRow): "active" | "paused" | "cancelled" {
 function wallosReminderDays(row: WallosTableRow, warnings: string[]): number {
   if (Number(row["notify"] ?? 0) !== 1) {
     warnings.push(IMPORT_MESSAGE_CODES.notifyDisabled);
-    return 3;
+    // Wallos cron 明确只查询 notify=1；notify=0 不是“默认天数缺失”，而是单订阅不参与通知。
+    return DISABLED_REMINDER_DAYS;
   }
   const days = Number(row["notify_days_before"] ?? 3);
   if (days === INHERIT_REMINDER_DAYS) return INHERIT_REMINDER_DAYS;

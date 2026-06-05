@@ -14,6 +14,7 @@ import { useState } from 'react';
 import type { ConfigItem } from '@/types/config';
 import {
   DEFAULT_NOTIFICATION_REMINDER_DAYS,
+  DISABLED_REMINDER_DAYS,
   INHERIT_REMINDER_DAYS,
   STATUS_LABELS,
   CYCLE_LABELS,
@@ -311,7 +312,9 @@ export function SubscriptionCard({
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <Bell className="h-3.5 w-3.5" />
                 <span className="text-xs">
-                  {subscription.reminderDays === INHERIT_REMINDER_DAYS
+                  {subscription.reminderDays === DISABLED_REMINDER_DAYS
+                    ? t("subscription.card.reminderDisabled")
+                    : subscription.reminderDays === INHERIT_REMINDER_DAYS
                     ? t("subscription.card.reminderInherit", { days: inheritedReminderDays })
                     : t("subscription.card.reminderDays", { days: subscription.reminderDays })}
                 </span>

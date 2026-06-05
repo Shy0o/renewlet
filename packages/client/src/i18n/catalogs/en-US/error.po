@@ -146,7 +146,7 @@ msgstr "Start date is invalid."
 #. js-lingui-explicit-id
 #: src/i18n/descriptors/error.ts:40
 msgid "error.code.REMINDER_DAYS_OUT_OF_RANGE"
-msgstr "Reminder days must be between 0 and 3650."
+msgstr "Reminder days must be Do not remind, Default from Settings, or between 0 and 3650."
 
 #. js-lingui-explicit-id
 #: src/i18n/descriptors/error.ts:5

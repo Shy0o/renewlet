@@ -123,6 +123,42 @@ describe("buildRenewalCalendarIcs", () => {
     expect(ics.trimEnd().endsWith("END:VCALENDAR")).toBe(true);
   });
 
+  it("keeps calendar events without alarms when reminder days are disabled", () => {
+    const event = buildRenewalCalendarEvent({
+      subscription: {
+        id: "sub_quiet",
+        name: "Quiet renewal",
+        price: 5,
+        currency: "USD",
+        billingCycle: "monthly",
+        category: "Productivity",
+        nextBillingDate: "2026-06-02",
+      },
+      labels: {
+        amount: "$5.00",
+        billingCycle: "Monthly",
+        category: "Productivity",
+      },
+      reminderDays: -2,
+      text: {
+        amount: ({ amount }) => `Amount: ${amount}`,
+        billingCycle: (cycle) => `Billing cycle: ${cycle}`,
+        category: (category) => `Category: ${category}`,
+        paymentMethod: (paymentMethod) => `Payment method: ${paymentMethod}`,
+        notes: (notes) => `Notes: ${notes}`,
+      },
+    });
+    const ics = buildRenewalCalendarIcs({
+      name: "Renewlet Renewals",
+      generatedAt: new Date("2026-05-29T10:20:30Z"),
+      events: [event],
+    });
+
+    expect(event.reminderDays).toBe(-2);
+    expect(ics).toContain("SUMMARY:Quiet renewal\r\n");
+    expect(ics).not.toContain("BEGIN:VALARM");
+  });
+
   it("omits subscription refresh metadata for one-off downloads", () => {
     const ics = buildRenewalCalendarIcs({
       name: "Renewlet - Netflix",

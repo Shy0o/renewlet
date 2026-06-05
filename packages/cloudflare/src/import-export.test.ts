@@ -204,6 +204,20 @@ describe("Cloudflare import", () => {
     expect(insert?.values[17]).toBe(0);
   });
 
+  it("preserves disabled reminder days before binding D1 statements", async () => {
+    const { env, db, statements } = envFixture();
+    const response = await applyImport(requestFor("/api/app/import/apply", importPayload([
+      importSubscription({
+        reminderDays: -2,
+      }),
+    ])), env);
+
+    expect(response.status).toBe(200);
+    expect(db.batch).toHaveBeenCalledTimes(1);
+    const insert = statements.find((statement) => statement.sql.includes("INSERT INTO subscriptions"));
+    expect(insert?.values[22]).toBe(-2);
+  });
+
   it("skips existing import keys unless replace is selected", async () => {
     dbMocks.listSubscriptions.mockResolvedValue([
       {

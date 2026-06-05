@@ -289,6 +289,24 @@ describe("SubscriptionDialog", () => {
     expect(screen.getByRole("combobox", { name: "到期提醒" })).toHaveTextContent("默认值从设置中获取（提前 5 天）");
   });
 
+  it("shows disabled reminders and hides repeat reminder controls when editing quiet subscriptions", () => {
+    render(
+      <TooltipProvider delayDuration={0}>
+        <SubscriptionDialog
+          mode="edit"
+          open
+          onOpenChange={vi.fn()}
+          onSubmit={vi.fn()}
+          subscription={makeSubscription({ reminderDays: -2, repeatReminderEnabled: true })}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole("combobox", { name: "到期提醒" })).toHaveTextContent("不要提醒");
+    expect(screen.queryByLabelText("重复提醒")).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "间隔" })).not.toBeInTheDocument();
+  });
+
   it("opens the date picker on the month of the selected field value", async () => {
     const user = userEvent.setup();
     const subscription: Subscription = {

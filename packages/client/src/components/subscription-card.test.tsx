@@ -654,4 +654,23 @@ describe("SubscriptionCard", () => {
 
     expect(screen.getByText("默认提醒：提前 5 天")).toBeInTheDocument();
   });
+
+  it("renders disabled reminder days", () => {
+    render(
+      <TooltipProvider delayDuration={0}>
+        <SubscriptionCard
+          subscription={createSubscription({ reminderDays: -2 })}
+          viewMode="list"
+          timeZone="Asia/Shanghai"
+          inheritedReminderDays={5}
+          categoryByValue={new Map(mocks.categories.map((category) => [category.value, category]))}
+          paymentMethodByValue={new Map(mocks.paymentMethods.map((method) => [method.value, method]))}
+          onEdit={vi.fn()}
+          onDelete={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("不提醒")).toBeInTheDocument();
+  });
 });

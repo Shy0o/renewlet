@@ -42,6 +42,18 @@ describe("subscription-export", () => {
     expect(csv).not.toContain('"-1"');
   });
 
+  it("renders disabled reminder days as a user-facing CSV label", () => {
+    const csv = buildSubscriptionsCsv([makeSubscription({ reminderDays: -2 })], {
+      categoryLabelByValue: new Map([["productivity", "生产力"]]),
+      statusLabelByValue: new Map([["active", "活跃"]]),
+      locale: "zh-CN",
+      today: assertDateOnly("2026-01-01"),
+    });
+
+    expect(csv).toContain('"不提醒"');
+    expect(csv).not.toContain('"-2"');
+  });
+
   it("renders concrete custom billing cycles in CSV", () => {
     const csv = buildSubscriptionsCsv([makeSubscription({
       billingCycle: "custom",

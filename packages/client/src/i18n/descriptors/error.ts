@@ -37,7 +37,7 @@ export const messages = [
   msg({ id: "error.code.TAGS_MUST_BE_STRING_ARRAY", message: "标签必须是字符串数组" }),
   msg({ id: "error.code.TAGS_TOO_MANY", message: "标签最多支持 100 个" }),
   msg({ id: "error.code.TAG_TOO_LONG", message: "单个标签不能超过 40 个字符" }),
-  msg({ id: "error.code.REMINDER_DAYS_OUT_OF_RANGE", message: "提醒天数必须在 0 到 3650 之间" }),
+  msg({ id: "error.code.REMINDER_DAYS_OUT_OF_RANGE", message: "提醒天数必须是不提醒、继承默认值或 0 到 3650 之间" }),
   msg({ id: "error.code.SETTINGS_JSON_INVALID", message: "设置数据无效" }),
   msg({ id: "error.code.CUSTOM_CONFIG_JSON_INVALID", message: "自定义配置数据无效" }),
   msg({ id: "error.code.CUSTOM_CONFIG_GROUP_NOT_ARRAY", message: "自定义配置分组必须是数组" }),

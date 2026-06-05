@@ -28,6 +28,7 @@ import { buildAndroidCalendarIntentUrl, isAndroidChromeUserAgent, openValidatedW
 import { downloadFile } from "@/shared/browser/download-file";
 import {
   DEFAULT_NOTIFICATION_REMINDER_DAYS,
+  DISABLED_REMINDER_DAYS,
   INHERIT_REMINDER_DAYS,
   type Subscription,
 } from "@/types/subscription";
@@ -118,9 +119,11 @@ function ResolvedAddToCalendarDialog({ open, onOpenChange, subscription }: Resol
   const billingCycleLabel = formatBillingCycleLabel(subscription, locale);
   const isExpiryEvent = subscription.billingCycle === "one-time";
   const globalReminderDays = settings?.notificationReminderDays ?? DEFAULT_NOTIFICATION_REMINDER_DAYS;
-  const reminderDays = subscription.reminderDays === INHERIT_REMINDER_DAYS
-    ? globalReminderDays
-    : subscription.reminderDays;
+  const reminderDays = subscription.reminderDays === DISABLED_REMINDER_DAYS
+    ? undefined
+    : subscription.reminderDays === INHERIT_REMINDER_DAYS
+      ? globalReminderDays
+      : subscription.reminderDays;
 
   const renewalEvent = useMemo<RenewalCalendarEvent>(() => buildRenewalCalendarEvent({
     subscription,
@@ -130,6 +133,7 @@ function ResolvedAddToCalendarDialog({ open, onOpenChange, subscription }: Resol
       category: categoryLabel,
       paymentMethod: paymentMethodLabel,
     },
+    // “不提醒”只影响 ICS alarm；一次性下载仍保留这条续费/到期事件本身。
     reminderDays,
     text: {
       amount: ({ amount }) => t("subscription.addToCalendar.description.amount", { amount }),

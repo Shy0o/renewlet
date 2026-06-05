@@ -23,6 +23,7 @@ const (
 	legacyWebhookHeadersExample = `{"Authorization": "Bearer your-token", "Content-Type": "application/json"}`
 	legacyWebhookPayloadExample = `{"title": "{title}", "content": "{content}", "timestamp": "{timestamp}"}`
 
+	disabledReminderDays            = -2
 	inheritReminderDays             = -1
 	defaultNotificationReminderDays = 3
 	maxReminderDays                 = 3650

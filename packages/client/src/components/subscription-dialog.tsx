@@ -39,7 +39,7 @@ import { useCustomConfig } from "@/contexts/CustomConfigContext";
 import { useDeferredDialogCleanup } from "@/hooks/use-deferred-dialog-cleanup";
 import { useSettings } from "@/hooks/use-settings";
 import type { Subscription, SubscriptionDraft } from "@/types/subscription";
-import { DEFAULT_NOTIFICATION_REMINDER_DAYS, INHERIT_REMINDER_DAYS, REMINDER_DAYS_OPTIONS } from "@/types/subscription";
+import { DEFAULT_NOTIFICATION_REMINDER_DAYS, DISABLED_REMINDER_DAYS, INHERIT_REMINDER_DAYS, REMINDER_DAYS_OPTIONS } from "@/types/subscription";
 import { createSubscriptionFormState, type SubscriptionFormState } from "@/types/subscription-form";
 import { useI18n } from "@/i18n/I18nProvider";
 import { todayDateOnlyInTimeZone } from "@/lib/time/date-only";
@@ -173,6 +173,7 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
     if (!editSubscription) return;
 
     const subscription = editSubscription;
+    const isDisabledReminder = subscription.reminderDays === DISABLED_REMINDER_DAYS;
     const isInheritReminder = subscription.reminderDays === INHERIT_REMINDER_DAYS;
     const isPresetReminder = REMINDER_DAYS_OPTIONS.some((opt) => opt.value === subscription.reminderDays);
 
@@ -193,10 +194,10 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
       startDate: subscription.startDate,
       nextBillingDate: subscription.nextBillingDate,
       autoCalculate: subscription.autoCalculateNextBillingDate,
-      reminderType: isInheritReminder ? "inherit" : isPresetReminder ? "preset" : "custom",
-      reminderDays: isInheritReminder ? String(INHERIT_REMINDER_DAYS) : isPresetReminder ? subscription.reminderDays.toString() : "3",
-      customReminderDays: !isInheritReminder && !isPresetReminder ? subscription.reminderDays.toString() : "",
-      repeatReminderEnabled: subscription.repeatReminderEnabled,
+      reminderType: isDisabledReminder ? "disabled" : isInheritReminder ? "inherit" : isPresetReminder ? "preset" : "custom",
+      reminderDays: isDisabledReminder ? String(DISABLED_REMINDER_DAYS) : isInheritReminder ? String(INHERIT_REMINDER_DAYS) : isPresetReminder ? subscription.reminderDays.toString() : "3",
+      customReminderDays: !isDisabledReminder && !isInheritReminder && !isPresetReminder ? subscription.reminderDays.toString() : "",
+      repeatReminderEnabled: isDisabledReminder ? false : subscription.repeatReminderEnabled,
       repeatReminderInterval: subscription.repeatReminderInterval,
       repeatReminderWindow: subscription.repeatReminderWindow,
       website: subscription.website ?? "",
@@ -280,11 +281,13 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
     if (nextFormData.billingCycle === "one-time" && nextFormData.oneTimeMode === "term" && parsePositiveIntegerInput(nextFormData.oneTimeTermCount) === null) {
       errors.oneTimeTerm = t("subscription.validation.oneTimeTermInvalid");
     }
-    const reminderValue = nextFormData.reminderType === "inherit"
-      ? INHERIT_REMINDER_DAYS
-      : nextFormData.reminderType === "custom"
-        ? parseNonNegativeIntegerInput(nextFormData.customReminderDays)
-        : parseReminderDaysInput(nextFormData.reminderDays);
+    const reminderValue = nextFormData.reminderType === "disabled"
+      ? DISABLED_REMINDER_DAYS
+      : nextFormData.reminderType === "inherit"
+        ? INHERIT_REMINDER_DAYS
+        : nextFormData.reminderType === "custom"
+          ? parseNonNegativeIntegerInput(nextFormData.customReminderDays)
+          : parseReminderDaysInput(nextFormData.reminderDays);
     if (reminderValue === null) {
       errors.reminderDays = t("subscription.validation.reminderInvalid");
     }

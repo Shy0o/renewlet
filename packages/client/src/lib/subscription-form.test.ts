@@ -162,6 +162,23 @@ describe("subscription-form", () => {
     });
   });
 
+  it("saves disabled reminders and turns off repeat reminders in drafts", () => {
+    const form = createSubscriptionFormState({
+      name: "Quiet Reminder",
+      price: "10",
+      startDate: assertDateOnly("2026-01-01"),
+      nextBillingDate: assertDateOnly("2026-02-01"),
+      reminderType: "disabled",
+      reminderDays: "-2",
+      repeatReminderEnabled: true,
+    });
+
+    expect(toSubscriptionDraft(form)).toMatchObject({
+      reminderDays: -2,
+      repeatReminderEnabled: false,
+    });
+  });
+
   it("preserves the auto-calculate switch in the draft", () => {
     const base = createSubscriptionFormState({
       name: "Manual renewal",

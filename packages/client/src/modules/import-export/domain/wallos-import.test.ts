@@ -423,8 +423,9 @@ describe("wallos import", () => {
 
     expect(prepared.warnings).toContain("IMPORT_WARNING_FOR_SUBSCRIPTION|Lifetime Tool|IMPORT_WARNING_WALLOS_ONE_TIME");
     expect(prepared.warnings).toContain("IMPORT_WARNING_FOR_SUBSCRIPTION|Lifetime Tool|IMPORT_WARNING_WALLOS_NOTIFY_DISABLED");
+    expect(prepared.payload.subscriptions[0]?.reminderDays).toBe(-2);
     expect(formatted).toContain("Lifetime Tool：一次性购买已按买断记录导入，不参与自动续费。");
-    expect(formatted).toContain("Lifetime Tool：Wallos 这条订阅关闭了通知；Renewlet 没有单条通知开关，已保留默认提前 3 天提醒。");
+    expect(formatted).toContain("Lifetime Tool：Wallos 这条订阅关闭了通知；已按“不提醒”导入，可在预览中修改。");
     expect(formatted.join("\n")).not.toContain("IMPORT_WARNING_WALLOS");
   });
 

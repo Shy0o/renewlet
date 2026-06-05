@@ -18,12 +18,13 @@ import { createDefaultAppSettings } from "@renewlet/shared/settings-defaults";
 import {
   CUSTOM_CYCLE_UNITS as SHARED_CUSTOM_CYCLE_UNITS,
   DEFAULT_NOTIFICATION_REMINDER_DAYS,
+  DISABLED_REMINDER_DAYS,
   INHERIT_REMINDER_DAYS,
   MAX_REMINDER_DAYS,
   type CustomCycleUnit as SharedCustomCycleUnit,
 } from "@renewlet/shared/runtime";
 
-export { DEFAULT_NOTIFICATION_REMINDER_DAYS, INHERIT_REMINDER_DAYS, MAX_REMINDER_DAYS };
+export { DEFAULT_NOTIFICATION_REMINDER_DAYS, DISABLED_REMINDER_DAYS, INHERIT_REMINDER_DAYS, MAX_REMINDER_DAYS };
 
 export const SUBSCRIPTION_STATUSES = ['trial', 'active', 'expired', 'paused', 'cancelled'] as const;
 /** 订阅状态（影响展示、统计与提醒逻辑）。 */
@@ -172,7 +173,7 @@ interface SubscriptionBase {
   notes: string | undefined;
   /** 标签。 */
   tags: string[];
-  /** 提前多少天提醒；-1 表示继承设置页的全局提醒提前时间。 */
+  /** 提前多少天提醒；-2 表示不提醒，-1 表示继承设置页的全局提醒提前时间。 */
   reminderDays: number;
   /** 是否为该订阅启用重复提醒。 */
   repeatReminderEnabled: boolean;

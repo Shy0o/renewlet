@@ -259,6 +259,25 @@ describe("renewlet import", () => {
     expect(prepared.warnings).toContain("IMPORT_WARNING_FOR_SUBSCRIPTION|Legacy Invalid|IMPORT_WARNING_RENEWLET_LEGACY_TAGS_TRIMMED");
   });
 
+  it("accepts disabled reminder days from legacy Renewlet imports", async () => {
+    const prepared = await parseJsonText(JSON.stringify({
+      subscriptions: [{
+        id: "legacy-quiet",
+        name: "Legacy Quiet",
+        price: 10,
+        currency: "USD",
+        billingCycle: "monthly",
+        category: "productivity",
+        status: "active",
+        startDate: "2026-01-01",
+        nextBillingDate: "2026-02-01",
+        reminderDays: -2,
+      }],
+    }), context);
+
+    expect(prepared.payload.subscriptions[0]?.reminderDays).toBe(-2);
+  });
+
   it("builds current Renewlet v1 export rows that satisfy schema and keep pinned", () => {
     const row = subscriptionToExportRow(currentExportSubscription);
 

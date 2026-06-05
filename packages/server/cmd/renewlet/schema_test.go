@@ -82,7 +82,7 @@ func TestEnsureSchemaCreatesContractFieldsAndIndexes(t *testing.T) {
 		"updated":      core.FieldTypeAutodate,
 	})
 	assertNumberField(t, app, "subscriptions", "price", false, 0, maxSubscriptionPrice)
-	assertNumberField(t, app, "subscriptions", "reminderDays", false, inheritReminderDays, maxReminderDays)
+	assertNumberField(t, app, "subscriptions", "reminderDays", false, disabledReminderDays, maxReminderDays)
 	assertSelectFieldValues(t, app, "subscriptions", "billingCycle", "weekly", "monthly", "quarterly", "semi-annual", "annual", "custom", "one-time")
 	assertSelectFieldValues(t, app, "subscriptions", "customCycleUnit", "day", "week", "month", "year")
 	assertNumberField(t, app, "subscriptions", "oneTimeTermCount", false, 0, maxReminderDays)

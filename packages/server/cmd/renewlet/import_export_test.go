@@ -158,6 +158,28 @@ func TestImportApplyPreservesInheritedReminderDays(t *testing.T) {
 	}
 }
 
+func TestImportApplyPreservesDisabledReminderDays(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	registerRecordHooks(app)
+	user, token := createRouteTestUser(t, app, "user")
+
+	body := importRequestBodyWithReminderDays("skip", "renewlet", "renewlet-sub-quiet", disabledReminderDays, 12)
+	res := serveTestRequest(t, app, http.MethodPost, "/api/app/import/apply", body, token)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected disabled reminder import apply 200, got %d: %s", res.Code, res.Body.String())
+	}
+	rows, err := app.FindAllRecords("subscriptions", dbx.HashExp{"user": user.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].GetInt("reminderDays") != disabledReminderDays {
+		t.Fatalf("expected disabled reminder days to be preserved, got rows=%d reminderDays=%d", len(rows), rows[0].GetInt("reminderDays"))
+	}
+}
+
 func TestImportPreviewMarksDuplicateSourceId(t *testing.T) {
 	app := newSchemaTestApp(t)
 	if err := ensureSchema(app); err != nil {

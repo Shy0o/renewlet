@@ -236,7 +236,7 @@ msgstr "Wallos user"
 #. js-lingui-explicit-id
 #: src/i18n/descriptors/subscription.ts:317
 msgid "import.warning.wallosNotifyDisabled"
-msgstr "Notifications are off for this Wallos subscription. Renewlet kept the default 3-day reminder."
+msgstr "This Wallos subscription had notifications disabled, so it was imported as “Do not remind”. You can change it in the preview."
 
 #. js-lingui-explicit-id
 #: src/i18n/descriptors/subscription.ts:246
@@ -979,6 +979,11 @@ msgid "subscription.card.reminderDays"
 msgstr "Remind {days} days before"
 
 #. js-lingui-explicit-id
+#: src/i18n/descriptors/subscription.ts:157
+msgid "subscription.card.reminderDisabled"
+msgstr "No reminders"
+
+#. js-lingui-explicit-id
 #: src/i18n/descriptors/subscription.ts:144
 msgid "subscription.detail.reminder"
 msgstr "Reminder"
@@ -1006,7 +1011,7 @@ msgstr "Reminder days"
 #. js-lingui-explicit-id
 #: src/i18n/descriptors/subscription.ts:65
 msgid "subscription.validation.reminderInvalid"
-msgstr "Reminder days must be an integer between 0 and 3650."
+msgstr "Reminder days must be Do not remind, Default from Settings, or an integer between 0 and 3650."
 
 #. js-lingui-explicit-id
 #: src/i18n/descriptors/subscription.ts:185
@@ -1994,9 +1999,19 @@ msgid "subscription.reminderInheritCsv"
 msgstr "Default from Settings"
 
 #. js-lingui-explicit-id
+#: src/i18n/descriptors/subscription.ts:125
+msgid "subscription.reminderDisabledCsv"
+msgstr "No reminders"
+
+#. js-lingui-explicit-id
 #: src/i18n/descriptors/subscription.ts:123
 msgid "subscription.reminderInherit"
 msgstr "Default from Settings ({days} days before)"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/subscription.ts:123
+msgid "subscription.reminderDisabled"
+msgstr "Do not remind"
 
 #. js-lingui-explicit-id
 #: src/i18n/descriptors/subscription.ts:156

@@ -5,7 +5,7 @@ import {
   subscriptionCalendarFeedCreateResponseSchema,
 } from "@renewlet/shared/schemas/calendar-feed";
 import { buildRenewalCalendarEvent, buildRenewalCalendarIcs, type RenewalCalendarEvent } from "@renewlet/shared/ics";
-import { effectiveReminderDays, isValidDateOnly } from "@renewlet/shared/runtime";
+import { effectiveReminderDays, isDisabledReminderDays, isValidDateOnly } from "@renewlet/shared/runtime";
 import { customConfigSchema, type ApiCustomConfig } from "@renewlet/shared/schemas/custom-config";
 import type { ApiAppSettings } from "@renewlet/shared/schemas/settings";
 import type { ApiSubscription } from "@renewlet/shared/schemas/subscriptions";
@@ -389,6 +389,9 @@ function calendarEvent(
   labels: CalendarFeedLabelResolver,
 ): RenewalCalendarEvent {
   const locale = settings.locale;
+  const reminderDays = isDisabledReminderDays(subscription.reminderDays)
+    ? undefined
+    : effectiveReminderDays(subscription.reminderDays, settings.notificationReminderDays);
   return buildRenewalCalendarEvent({
     subscription,
     labels: {
@@ -397,7 +400,8 @@ function calendarEvent(
       category: labels.categoryLabel(subscription.category),
       paymentMethod: labels.paymentMethodLabel(subscription.paymentMethod),
     },
-    reminderDays: effectiveReminderDays(subscription.reminderDays, settings.notificationReminderDays),
+    // “不提醒”不隐藏日历事件，只让 ICS 省略 VALARM，外部日历仍能展示账期。
+    reminderDays,
     text: {
       amount: ({ amount, currency }) => serverFormat(locale, "calendarFeed.description.amount", { amount, currency }),
       billingCycle: (cycle) => serverFormat(locale, "calendarFeed.description.billingCycle", { cycle }),

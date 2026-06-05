@@ -19,6 +19,7 @@ import type {
   SubscriptionStatus,
 } from "@/types/subscription";
 import {
+  DISABLED_REMINDER_DAYS,
   INHERIT_REMINDER_DAYS,
   CURRENCY_OPTIONS,
   CUSTOM_CYCLE_UNITS,
@@ -120,7 +121,8 @@ export const SubscriptionFormFields = memo(function SubscriptionFormFields({
   const repeatReminderSentenceInterval = label(REPEAT_REMINDER_SENTENCE_INTERVAL_LABELS[formData.repeatReminderInterval]);
   const repeatReminderWindowHours =
     formData.repeatReminderWindow === "full" ? null : Number.parseInt(formData.repeatReminderWindow, 10);
-  const reminderDaysForPreview = formData.reminderType === "inherit"
+  const isReminderDisabled = formData.reminderType === "disabled";
+  const reminderDaysForPreview = isReminderDisabled || formData.reminderType === "inherit"
     ? notificationReminderDays
     : toReminderDays(formData);
   const repeatReminderPreview =
@@ -381,23 +383,29 @@ export const SubscriptionFormFields = memo(function SubscriptionFormFields({
       <div className="grid gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Label>{t("subscription.field.reminder")}</Label>
-          <div className="flex items-center gap-2">
-            <Label htmlFor={id("repeatReminderEnabled")} className="text-sm text-muted-foreground cursor-pointer">
-              {t("subscription.repeatReminder")}
-            </Label>
-            <Switch
-              id={id("repeatReminderEnabled")}
-              checked={formData.repeatReminderEnabled}
-              onCheckedChange={(checked) => update("repeatReminderEnabled", checked)}
-            />
-          </div>
+          {!isReminderDisabled && (
+            <div className="flex items-center gap-2">
+              <Label htmlFor={id("repeatReminderEnabled")} className="text-sm text-muted-foreground cursor-pointer">
+                {t("subscription.repeatReminder")}
+              </Label>
+              <Switch
+                id={id("repeatReminderEnabled")}
+                checked={formData.repeatReminderEnabled}
+                onCheckedChange={(checked) => update("repeatReminderEnabled", checked)}
+              />
+            </div>
+          )}
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
           <Select
-            value={formData.reminderType === "custom" ? "custom" : formData.reminderType === "inherit" ? String(INHERIT_REMINDER_DAYS) : formData.reminderDays}
+            value={formData.reminderType === "custom" ? "custom" : formData.reminderType === "disabled" ? String(DISABLED_REMINDER_DAYS) : formData.reminderType === "inherit" ? String(INHERIT_REMINDER_DAYS) : formData.reminderDays}
             onValueChange={(value) => {
               if (value === "custom") {
                 update("reminderType", "custom");
+              } else if (value === String(DISABLED_REMINDER_DAYS)) {
+                update("reminderType", "disabled");
+                update("reminderDays", String(DISABLED_REMINDER_DAYS));
+                update("repeatReminderEnabled", false);
               } else if (value === String(INHERIT_REMINDER_DAYS)) {
                 update("reminderType", "inherit");
                 update("reminderDays", String(INHERIT_REMINDER_DAYS));
@@ -419,6 +427,9 @@ export const SubscriptionFormFields = memo(function SubscriptionFormFields({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value={String(DISABLED_REMINDER_DAYS)}>
+                {t("subscription.reminderDisabled")}
+              </SelectItem>
               <SelectItem value={String(INHERIT_REMINDER_DAYS)}>
                 {t("subscription.reminderInherit", { days: notificationReminderDays })}
               </SelectItem>
@@ -451,7 +462,7 @@ export const SubscriptionFormFields = memo(function SubscriptionFormFields({
         </div>
         <FieldError id={id("reminder-error")} message={errors.reminderDays} />
 
-        {formData.repeatReminderEnabled && (
+        {!isReminderDisabled && formData.repeatReminderEnabled && (
           <div className="grid gap-3 rounded-lg border border-border bg-secondary/30 p-3 sm:grid-cols-2">
             <div className="grid gap-2">
               <Label htmlFor={id("repeatReminderInterval")}>{t("subscription.repeatReminderInterval")}</Label>

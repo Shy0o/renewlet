@@ -113,8 +113,8 @@ describe("subscription API schemas", () => {
     }).success).toBe(false);
   });
 
-  it("accepts inherited and explicit reminder day boundaries", () => {
-    for (const reminderDays of [-1, 0, 3, 3650]) {
+  it("accepts disabled, inherited and explicit reminder day boundaries", () => {
+    for (const reminderDays of [-2, -1, 0, 3, 3650]) {
       expect(subscriptionCreateBodySchema.safeParse({
         ...validSubscriptionCreateBody,
         reminderDays,
@@ -126,7 +126,7 @@ describe("subscription API schemas", () => {
       }).success).toBe(true);
     }
 
-    for (const reminderDays of [-2, 3651]) {
+    for (const reminderDays of [-3, 3651]) {
       expect(subscriptionCreateBodySchema.safeParse({
         ...validSubscriptionCreateBody,
         reminderDays,

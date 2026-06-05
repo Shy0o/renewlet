@@ -91,6 +91,17 @@ describe("Cloudflare subscription mapper", () => {
     });
   });
 
+  it("persists disabled reminder days through the API mapper", () => {
+    const row = toSubscriptionRow("sub_quiet", "usr_custom", subscriptionBody({
+      reminderDays: -2,
+    }), "2026-06-05T00:00:00.000Z", "2026-06-05T00:00:00.000Z");
+
+    expect(row.reminder_days).toBe(-2);
+    expect(toApiSubscription(row)).toMatchObject({
+      reminderDays: -2,
+    });
+  });
+
   it("clears one-time term fields for recurring subscriptions", () => {
     const row = toSubscriptionRow("sub_monthly", "usr_custom", subscriptionBody({
       billingCycle: "monthly",

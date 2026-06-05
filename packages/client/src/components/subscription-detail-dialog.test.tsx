@@ -177,6 +177,17 @@ describe("SubscriptionDetailDialog", () => {
     expect(within(dialog).queryByText("自定义")).not.toBeInTheDocument();
   });
 
+  it("renders disabled reminders in the read-only detail view", () => {
+    renderDetailDialog({
+      subscription: {
+        ...baseSubscription,
+        reminderDays: -2,
+      },
+    });
+
+    expect(within(screen.getByRole("dialog", { name: "Fastmail" })).getByText("不提醒")).toBeInTheDocument();
+  });
+
   it("uses a mobile drawer for small screens", () => {
     mockMobile(true);
     renderDetailDialog();
