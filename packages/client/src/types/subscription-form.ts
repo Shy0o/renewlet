@@ -9,6 +9,7 @@
 import type {
   BillingCycle,
   Category,
+  CustomCycleUnit,
   PaymentMethod,
   RepeatReminderInterval,
   RepeatReminderWindow,
@@ -39,6 +40,7 @@ export type SubscriptionFormState = {
   currency: string;
   billingCycle: BillingCycle;
   customDays: string;
+  customCycleUnit: CustomCycleUnit;
   category: Category;
   status: SubscriptionStatus;
   paymentMethod: PaymentMethod | "";
@@ -68,6 +70,7 @@ export function createSubscriptionFormState(
     currency: "CNY",
     billingCycle: "monthly",
     customDays: "",
+    customCycleUnit: "day",
     category: "productivity",
     status: "active",
     paymentMethod: "",

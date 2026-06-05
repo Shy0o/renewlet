@@ -8,10 +8,11 @@
  * 注意： CSV 面向表格软件，任何新增字段都要继续经过 `escapeCsvCell`，
  * 避免 `= + - @ tab` 开头的内容被当作公式执行。
  */
-import { localizedLabel, type Locale } from "@/i18n/locales";
+import type { Locale } from "@/i18n/locales";
 import { translate } from "@/i18n/messages";
 import type { DateOnly } from "@/lib/time/date-only";
-import { INHERIT_REMINDER_DAYS, CYCLE_LABELS, type Subscription } from "@/types/subscription";
+import { formatBillingCycleLabel } from "@/lib/subscription-billing";
+import { INHERIT_REMINDER_DAYS, type Subscription } from "@/types/subscription";
 import { getEffectiveSubscriptionStatus } from "./subscription-status";
 
 interface SubscriptionExportLabelMaps {
@@ -56,7 +57,7 @@ export function buildSubscriptionsCsv(
       subscription.name,
       subscription.price,
       subscription.currency,
-      localizedLabel(CYCLE_LABELS[subscription.billingCycle], labelMaps.locale),
+      formatBillingCycleLabel(subscription, labelMaps.locale),
       labelMaps.categoryLabelByValue.get(subscription.category) ?? subscription.category,
       labelMaps.statusLabelByValue.get(effectiveStatus) ?? effectiveStatus,
       subscription.startDate,

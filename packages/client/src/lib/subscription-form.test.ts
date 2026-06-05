@@ -129,6 +129,7 @@ describe("subscription-form", () => {
       price: "19.99",
       billingCycle: "custom",
       customDays: "45",
+      customCycleUnit: "year",
       reminderType: "custom",
       customReminderDays: "0",
       startDate: assertDateOnly("2026-01-01"),
@@ -138,6 +139,7 @@ describe("subscription-form", () => {
     expect(toSubscriptionDraft(valid)).toMatchObject({
       price: 19.99,
       customDays: 45,
+      customCycleUnit: "year",
       reminderDays: 0,
       autoCalculateNextBillingDate: true,
     });
@@ -180,12 +182,15 @@ describe("subscription-form", () => {
       autoCalculate: true,
       customDays: "30",
       startDate: assertDateOnly("2026-05-14"),
-      nextBillingDate: assertDateOnly("2026-05-14"),
+      nextBillingDate: undefined,
     });
 
+    expect(getSubscriptionDraftValidationError(form)).toBeNull();
     expect(toSubscriptionDraft(form)).toMatchObject({
       billingCycle: "one-time",
+      nextBillingDate: "2026-05-14",
       customDays: undefined,
+      customCycleUnit: undefined,
       autoCalculateNextBillingDate: false,
     });
   });

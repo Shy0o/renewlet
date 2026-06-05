@@ -1,7 +1,7 @@
 // subscription-billing 测试保护周期折算和一次性购买口径，统计页、首页和导出都依赖同一算法。
 import { describe, expect, it } from "vitest";
 import { assertDateOnly } from "@/lib/time/date-only";
-import { calculateNextBillingDate, toMonthlyAmount } from "./subscription-billing";
+import { calculateNextBillingDate, formatBillingCycleLabel, toMonthlyAmount } from "./subscription-billing";
 
 describe("subscription-billing", () => {
   it("calculates the next billing date by adding one cycle to the start date", () => {
@@ -13,6 +13,8 @@ describe("subscription-billing", () => {
     expect(calculateNextBillingDate(startDate, "semi-annual")).toBe("2026-11-15");
     expect(calculateNextBillingDate(startDate, "annual")).toBe("2027-05-15");
     expect(calculateNextBillingDate(startDate, "custom", 45)).toBe("2026-06-29");
+    expect(calculateNextBillingDate(startDate, "custom", 2, undefined, "week")).toBe("2026-05-29");
+    expect(calculateNextBillingDate(startDate, "custom", 3, undefined, "year")).toBe("2029-05-15");
   });
 
   it("uses 30 days for custom cycle previews when custom days are empty", () => {
@@ -22,6 +24,8 @@ describe("subscription-billing", () => {
   it("follows Temporal date-only semantics for month-end and leap-year boundaries", () => {
     expect(calculateNextBillingDate(assertDateOnly("2026-01-31"), "monthly")).toBe("2026-02-28");
     expect(calculateNextBillingDate(assertDateOnly("2024-02-29"), "annual")).toBe("2025-02-28");
+    expect(calculateNextBillingDate(assertDateOnly("2026-01-31"), "custom", 1, undefined, "month")).toBe("2026-02-28");
+    expect(calculateNextBillingDate(assertDateOnly("2024-02-29"), "custom", 1, undefined, "year")).toBe("2025-02-28");
   });
 
   it("finds the next billing occurrence on or after the reference date", () => {
@@ -52,5 +56,25 @@ describe("subscription-billing", () => {
 
     expect(calculateNextBillingDate(startDate, "one-time", undefined, assertDateOnly("2027-01-01"))).toBe(startDate);
     expect(toMonthlyAmount(199, "one-time")).toBe(0);
+  });
+
+  it("converts custom cycle units to monthly amounts", () => {
+    expect(toMonthlyAmount(30, "custom", 15, "day")).toBe(60);
+    expect(toMonthlyAmount(10, "custom", 2, "week")).toBe(21.65);
+    expect(toMonthlyAmount(120, "custom", 3, "month")).toBe(40);
+    expect(toMonthlyAmount(360, "custom", 3, "year")).toBe(10);
+  });
+
+  it("formats custom cycle labels with concrete units", () => {
+    expect(formatBillingCycleLabel({
+      billingCycle: "custom",
+      customDays: 3,
+      customCycleUnit: "year",
+    }, "zh-CN")).toBe("每 3 年");
+    expect(formatBillingCycleLabel({
+      billingCycle: "custom",
+      customDays: 2,
+      customCycleUnit: "week",
+    }, "en-US")).toBe("Every 2 weeks");
   });
 });

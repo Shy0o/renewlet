@@ -21,6 +21,7 @@ import type {
 import {
   INHERIT_REMINDER_DAYS,
   CURRENCY_OPTIONS,
+  CUSTOM_CYCLE_UNITS,
   CYCLE_LABELS,
   REMINDER_DAYS_OPTIONS,
   REPEAT_REMINDER_INTERVAL_OPTIONS,
@@ -30,6 +31,7 @@ import {
 import type { SubscriptionFormReminderType, SubscriptionFormState } from "@/types/subscription-form";
 import { createCurrencySelectOptions } from "@/lib/searchable-options";
 import { toReminderDays } from "@/lib/subscription-form";
+import { customCycleUnitLabelKey } from "@/lib/subscription-billing";
 import { useI18n } from "@/i18n/I18nProvider";
 import { localizedLabel } from "@/i18n/locales";
 import { errorFieldByFormKey, type SubscriptionFormErrors, type SubscriptionFormFieldsProps } from "@/components/subscription-form-fields-model";
@@ -60,8 +62,10 @@ export const SubscriptionFormFields = memo(function SubscriptionFormFields({
           ...prev,
           billingCycle: nextBillingCycle,
           customDays: nextBillingCycle === "custom" ? prev.customDays : "",
+          customCycleUnit: nextBillingCycle === "custom" ? prev.customCycleUnit : "day",
           // 一次性购买不是续费周期，表单层先关闭自动推算，保存边界会再次清空该字段。
           autoCalculate: nextBillingCycle === "one-time" ? false : prev.autoCalculate,
+          nextBillingDate: nextBillingCycle === "one-time" ? undefined : prev.nextBillingDate,
         };
       }
       if (key === "startDate") {
@@ -72,11 +76,13 @@ export const SubscriptionFormFields = memo(function SubscriptionFormFields({
           // 开始日后移后，原手动到期日可能变成非法值；清空比静默改成同一天更能保留用户意图。
           // 比较保持在 DateOnly 字符串语义内，避免本地 Date 时区换算导致跨天误判。
           nextBillingDate:
-            nextStartDate &&
-            prev.nextBillingDate &&
-            compareDateOnly(prev.nextBillingDate, nextStartDate) < 0
+            prev.billingCycle === "one-time"
               ? undefined
-              : prev.nextBillingDate,
+              : nextStartDate &&
+                  prev.nextBillingDate &&
+                  compareDateOnly(prev.nextBillingDate, nextStartDate) < 0
+                ? undefined
+                : prev.nextBillingDate,
         };
       }
       return { ...prev, [key]: value };
@@ -218,7 +224,11 @@ export const SubscriptionFormFields = memo(function SubscriptionFormFields({
             value={formData.billingCycle}
             onValueChange={(value) => update("billingCycle", value as BillingCycle)}
           >
-            <SelectTrigger className="border-border bg-secondary">
+            <SelectTrigger
+              id={id("cycle")}
+              className="border-border bg-secondary"
+              aria-label={t("subscription.field.billingCycle")}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -233,22 +243,40 @@ export const SubscriptionFormFields = memo(function SubscriptionFormFields({
 
         {formData.billingCycle === "custom" ? (
           <div className="grid gap-2">
-            <Label htmlFor={id("customDays")}>{t("subscription.field.customDays")}</Label>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm text-muted-foreground">{t("subscription.customCycleEvery")}</span>
+            <Label htmlFor={id("customDays")}>{t("subscription.field.customCycle")}</Label>
+            <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_5rem] items-center gap-2" data-testid="custom-cycle-inline-control">
+              <span className="whitespace-nowrap text-sm text-muted-foreground">{t("subscription.customCycleEvery")}</span>
               <NumericInput
                 id={id("customDays")} name={id("customDays")}
                 allowNegative={false}
                 decimalScale={0}
                 inputMode="numeric" enterKeyHint="next"
-                placeholder="30"
+                placeholder={t("subscription.customCycleCountPlaceholder")}
                 value={formData.customDays}
                 onRawValueChange={(value: string) => update("customDays", value)}
                 aria-invalid={Boolean(errors.customDays)}
                 aria-describedby={errors.customDays ? id("customDays-error") : undefined}
-                className="border-border bg-secondary"
+                className="min-w-0 border-border bg-secondary"
               />
-              <span className="text-sm text-muted-foreground">{t("subscription.daysUnit")}</span>
+              <Select
+                value={formData.customCycleUnit}
+                onValueChange={(value) => update("customCycleUnit", value as SubscriptionFormState["customCycleUnit"])}
+              >
+                <SelectTrigger
+                  id={id("customCycleUnit")}
+                  className="h-10 min-w-0 overflow-hidden border-border bg-secondary px-2"
+                  aria-label={t("subscription.field.customCycleUnit")}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CUSTOM_CYCLE_UNITS.map((unit) => (
+                    <SelectItem key={unit} value={unit}>
+                      {t(customCycleUnitLabelKey(unit))}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <FieldError id={id("customDays-error")} message={errors.customDays} />
           </div>

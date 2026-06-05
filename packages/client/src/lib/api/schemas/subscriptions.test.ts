@@ -9,6 +9,7 @@ const validSubscriptionCreateBody = {
   currency: "CNY",
   billingCycle: "monthly",
   customDays: null,
+  customCycleUnit: null,
   category: "productivity",
   status: "active",
   paymentMethod: null,
@@ -32,6 +33,7 @@ const validSubscriptionResponseBody = {
   price: validSubscriptionCreateBody.price,
   currency: validSubscriptionCreateBody.currency,
   billingCycle: validSubscriptionCreateBody.billingCycle,
+  customCycleUnit: undefined,
   category: validSubscriptionCreateBody.category,
   status: validSubscriptionCreateBody.status,
   pinned: validSubscriptionCreateBody.pinned,
@@ -155,6 +157,33 @@ describe("subscription API schemas", () => {
       billingCycle: "one-time",
       customDays: null,
       autoCalculateNextBillingDate: false,
+    }).success).toBe(true);
+  });
+
+  it("accepts custom cycle units on custom subscriptions", () => {
+    expect(subscriptionCreateBodySchema.parse({
+      ...validSubscriptionCreateBody,
+      billingCycle: "custom",
+      customDays: 3,
+      customCycleUnit: "year",
+    })).toMatchObject({
+      billingCycle: "custom",
+      customDays: 3,
+      customCycleUnit: "year",
+    });
+
+    expect(subscriptionCreateBodySchema.safeParse({
+      ...validSubscriptionCreateBody,
+      billingCycle: "custom",
+      customDays: 3,
+      customCycleUnit: "decade",
+    }).success).toBe(false);
+
+    expect(apiSubscriptionSchema.safeParse({
+      ...validSubscriptionResponseBody,
+      billingCycle: "custom",
+      customDays: 2,
+      customCycleUnit: "week",
     }).success).toBe(true);
   });
 

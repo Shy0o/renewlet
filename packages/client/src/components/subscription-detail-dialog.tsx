@@ -9,7 +9,6 @@ import { Drawer } from "vaul";
 import { CalendarPlus, Edit2, ExternalLink, X } from "lucide-react";
 import type { Subscription, SubscriptionStatus } from "@/types/subscription";
 import {
-  CYCLE_LABELS,
   DEFAULT_NOTIFICATION_REMINDER_DAYS,
   INHERIT_REMINDER_DAYS,
   STATUS_LABELS,
@@ -25,6 +24,7 @@ import { useSettings } from "@/hooks/use-settings";
 import { useI18n } from "@/i18n/I18nProvider";
 import { cn } from "@/lib/utils";
 import type { DateOnly } from "@/lib/time/date-only";
+import { formatBillingCycleLabel } from "@/lib/subscription-billing";
 import { getEffectiveSubscriptionStatus } from "@/modules/subscriptions/domain/subscription-status";
 
 const DEFAULT_LOGO_FALLBACK_COLOR = "hsl(var(--primary))";
@@ -79,7 +79,7 @@ function SubscriptionDetailContent({
 }: SubscriptionDetailContentProps) {
   const { config } = useCustomConfig();
   const { data: settings } = useSettings();
-  const { t, label, formatDateOnly, formatCurrency } = useI18n();
+  const { t, locale, label, formatDateOnly, formatCurrency } = useI18n();
   const category = config.categories.find((item) => item.value === subscription.category);
   const paymentMethod = subscription.paymentMethod
     ? config.paymentMethods.find((item) => item.value === subscription.paymentMethod)
@@ -125,7 +125,7 @@ function SubscriptionDetailContent({
             {formatCurrency(subscription.price, subscription.currency)}
           </p>
           <p className="text-sm text-muted-foreground">
-            {label(CYCLE_LABELS[subscription.billingCycle])}
+            {formatBillingCycleLabel(subscription, locale)}
           </p>
         </div>
         <Badge variant="outline" className={cn("shrink-0", statusBadgeClassNames[effectiveStatus])}>

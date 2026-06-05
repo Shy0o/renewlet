@@ -239,6 +239,7 @@ describe("renewlet import", () => {
       currency: "USD",
       billingCycle: "monthly",
       customDays: undefined,
+      customCycleUnit: undefined,
       category: "developer_tools",
       status: "active",
       pinned: false,

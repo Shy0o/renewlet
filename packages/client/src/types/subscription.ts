@@ -16,9 +16,11 @@ import type { DateOnly } from '@/lib/time/date-only';
 import type { LocalTime } from '@/lib/time/local-time';
 import { createDefaultAppSettings } from "@renewlet/shared/settings-defaults";
 import {
+  CUSTOM_CYCLE_UNITS as SHARED_CUSTOM_CYCLE_UNITS,
   DEFAULT_NOTIFICATION_REMINDER_DAYS,
   INHERIT_REMINDER_DAYS,
   MAX_REMINDER_DAYS,
+  type CustomCycleUnit as SharedCustomCycleUnit,
 } from "@renewlet/shared/runtime";
 
 export { DEFAULT_NOTIFICATION_REMINDER_DAYS, INHERIT_REMINDER_DAYS, MAX_REMINDER_DAYS };
@@ -30,6 +32,10 @@ export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 export const BILLING_CYCLES = ['weekly', 'monthly', 'quarterly', 'semi-annual', 'annual', 'custom', 'one-time'] as const;
 /** 扣费周期（用于计算月度/年度支出与续费日期；one-time 表示买断/一次性购买）。 */
 export type BillingCycle = (typeof BILLING_CYCLES)[number];
+
+export const CUSTOM_CYCLE_UNITS = SHARED_CUSTOM_CYCLE_UNITS;
+/** 自定义扣费周期单位；仅 billingCycle=custom 时有效，旧记录缺省按 day 解释。 */
+export type CustomCycleUnit = SharedCustomCycleUnit;
 
 export const CATEGORIES = [
   'productivity',
@@ -179,15 +185,17 @@ interface SubscriptionBase {
 }
 
 export interface CustomCycleSubscription extends SubscriptionBase {
-  /** 自定义周期必须携带自定义天数；统计折算和自动续费日期计算都依赖这个不变量。 */
+  /** 自定义周期必须携带数量和单位；统计折算和自动续费日期计算都依赖这个不变量。 */
   billingCycle: "custom";
   customDays: number;
+  customCycleUnit: CustomCycleUnit;
 }
 
 export interface FixedCycleSubscription extends SubscriptionBase {
-  /** 固定周期不携带自定义天数，避免历史 customDays 脏值影响金额折算。 */
+  /** 固定周期不携带自定义数量/单位，避免历史 custom 脏值影响金额折算。 */
   billingCycle: Exclude<BillingCycle, "custom">;
   customDays: undefined;
+  customCycleUnit: undefined;
 }
 
 export type Subscription = CustomCycleSubscription | FixedCycleSubscription;

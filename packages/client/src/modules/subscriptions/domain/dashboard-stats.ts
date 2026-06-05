@@ -31,7 +31,7 @@ export function buildDashboardStats({
   const activeSubscriptions = subscriptions.filter((subscription) => isEffectivelyActiveSubscription(subscription, today));
   const totalMonthly = activeSubscriptions.reduce((sum, subscription) => {
     const amountInDefault = convert(subscription.price, subscription.currency, defaultCurrency);
-    return sum + toMonthlyAmount(amountInDefault, subscription.billingCycle, subscription.customDays);
+    return sum + toMonthlyAmount(amountInDefault, subscription.billingCycle, subscription.customDays, subscription.customCycleUnit);
   }, 0);
   const upcomingCount = subscriptions.filter((subscription) => {
     if (!isEffectivelyActiveSubscription(subscription, today)) return false;

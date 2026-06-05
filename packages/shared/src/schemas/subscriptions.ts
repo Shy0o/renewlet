@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   BILLING_CYCLES,
+  CUSTOM_CYCLE_UNITS,
   INHERIT_REMINDER_DAYS,
   MAX_REMINDER_DAYS,
   REPEAT_REMINDER_INTERVALS,
@@ -9,6 +10,7 @@ import {
   isValidDateOnly,
   isValidReminderDays,
   type BillingCycle,
+  type CustomCycleUnit,
   type RepeatReminderInterval,
   type RepeatReminderWindow,
   type SubscriptionStatus,
@@ -83,6 +85,7 @@ export const subscriptionCreateBodySchema = z.object({
   currency: z.string().trim().regex(/^[A-Z]{3}$/),
   billingCycle: z.enum(BILLING_CYCLES),
   customDays: z.number().int().positive().nullable().optional(),
+  customCycleUnit: z.enum(CUSTOM_CYCLE_UNITS).nullable().optional(),
   category: z.string().trim().min(1).max(80),
   status: z.enum(SUBSCRIPTION_STATUSES),
   pinned: z.boolean().default(false),
@@ -120,6 +123,7 @@ export const apiSubscriptionSchema = z.object({
   currency: z.string(),
   billingCycle: z.enum(BILLING_CYCLES),
   customDays: z.number().int().optional(),
+  customCycleUnit: z.enum(CUSTOM_CYCLE_UNITS).optional(),
   category: z.string().min(1),
   status: z.enum(SUBSCRIPTION_STATUSES),
   pinned: z.boolean(),
@@ -161,6 +165,7 @@ export const subscriptionDeleteResponseSchema = z.object({
 
 export type ApiSubscription = z.infer<typeof apiSubscriptionSchema> & {
   billingCycle: BillingCycle;
+  customCycleUnit?: CustomCycleUnit | undefined;
   status: SubscriptionStatus;
   repeatReminderInterval: RepeatReminderInterval;
   repeatReminderWindow: RepeatReminderWindow;

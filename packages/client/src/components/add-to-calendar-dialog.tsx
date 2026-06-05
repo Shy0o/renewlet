@@ -23,10 +23,10 @@ import { useSettings } from "@/hooks/use-settings";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useI18n } from "@/i18n/I18nProvider";
 import { addDateOnly } from "@/lib/time/date-only";
+import { formatBillingCycleLabel } from "@/lib/subscription-billing";
 import { buildAndroidCalendarIntentUrl, isAndroidChromeUserAgent, openValidatedWebcalUrl } from "@/shared/browser/calendar-links";
 import { downloadFile } from "@/shared/browser/download-file";
 import {
-  CYCLE_LABELS,
   DEFAULT_NOTIFICATION_REMINDER_DAYS,
   INHERIT_REMINDER_DAYS,
   type Subscription,
@@ -95,7 +95,7 @@ export function AddToCalendarDialog({ open, onOpenChange, subscription }: AddToC
  */
 function ResolvedAddToCalendarDialog({ open, onOpenChange, subscription }: ResolvedAddToCalendarDialogProps) {
   const isMobile = useMediaQuery("(max-width: 639px)");
-  const { t, label, formatCurrency, formatDateOnly } = useI18n();
+  const { t, locale, label, formatCurrency, formatDateOnly } = useI18n();
   const { config } = useCustomConfig();
   const { data: settings } = useSettings();
   const subscriptionFeedStatus = useSubscriptionCalendarFeedStatus(subscription.id, open);
@@ -115,7 +115,7 @@ function ResolvedAddToCalendarDialog({ open, onOpenChange, subscription }: Resol
     : undefined;
   const categoryLabel = category ? label(category.labels) : subscription.category;
   const paymentMethodLabel = paymentMethod ? label(paymentMethod.labels) : subscription.paymentMethod;
-  const billingCycleLabel = label(CYCLE_LABELS[subscription.billingCycle]);
+  const billingCycleLabel = formatBillingCycleLabel(subscription, locale);
   const globalReminderDays = settings?.notificationReminderDays ?? DEFAULT_NOTIFICATION_REMINDER_DAYS;
   const reminderDays = subscription.reminderDays === INHERIT_REMINDER_DAYS
     ? globalReminderDays

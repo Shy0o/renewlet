@@ -35,10 +35,10 @@ export async function createSubscription(request: Request, env: Env): Promise<Re
   const row = toSubscriptionRow(newId("sub"), auth.user.id, body, timestamp, timestamp);
   await env.DB.prepare(`
     INSERT INTO subscriptions (
-      id, user_id, name, logo, price, currency, billing_cycle, custom_days, category, status, pinned, payment_method,
+      id, user_id, name, logo, price, currency, billing_cycle, custom_days, custom_cycle_unit, category, status, pinned, payment_method,
       start_date, next_billing_date, auto_calculate_next_billing_date, trial_end_date, website, notes, tags_json,
       reminder_days, repeat_reminder_enabled, repeat_reminder_interval, repeat_reminder_window, extra_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(...subscriptionRowValues(row)).run();
   return json({ subscription: toApiSubscription(row) }, { status: 201 });
 }
@@ -56,7 +56,7 @@ export async function updateSubscription(request: Request, env: Env, id: string)
   const merged = toSubscriptionRow(existing.id, auth.user.id, mergedBody, existing.created_at, timestamp);
   await env.DB.prepare(`
     UPDATE subscriptions SET
-      name = ?, logo = ?, price = ?, currency = ?, billing_cycle = ?, custom_days = ?, category = ?, status = ?,
+      name = ?, logo = ?, price = ?, currency = ?, billing_cycle = ?, custom_days = ?, custom_cycle_unit = ?, category = ?, status = ?,
       pinned = ?, payment_method = ?, start_date = ?, next_billing_date = ?, auto_calculate_next_billing_date = ?,
       trial_end_date = ?, website = ?, notes = ?, tags_json = ?, reminder_days = ?, repeat_reminder_enabled = ?,
       repeat_reminder_interval = ?, repeat_reminder_window = ?, extra_json = ?, updated_at = ?
@@ -68,6 +68,7 @@ export async function updateSubscription(request: Request, env: Env, id: string)
     merged.currency,
     merged.billing_cycle,
     merged.custom_days,
+    merged.custom_cycle_unit,
     merged.category,
     merged.status,
     merged.pinned,
@@ -110,6 +111,7 @@ function toBody(row: SubscriptionRow): SubscriptionBody {
     currency: row.currency,
     billingCycle: row.billing_cycle as SubscriptionBody["billingCycle"],
     customDays: row.custom_days,
+    customCycleUnit: row.custom_cycle_unit,
     category: row.category,
     status: row.status as SubscriptionBody["status"],
     pinned: row.pinned === 1,
@@ -145,8 +147,9 @@ export function toSubscriptionRow(
     price: body.price,
     currency: body.currency,
     billing_cycle: body.billingCycle,
-    // 非 custom 周期必须把 custom_days 清空，否则后续编辑会把旧自定义天数“复活”。
+    // 非 custom 周期必须把自定义字段清空，否则后续编辑会把旧自定义周期“复活”。
     custom_days: body.billingCycle === "custom" ? body.customDays ?? 1 : null,
+    custom_cycle_unit: body.billingCycle === "custom" ? body.customCycleUnit ?? "day" : null,
     category: body.category,
     status: body.status,
     pinned: boolToInt(body.pinned),
@@ -172,7 +175,7 @@ export function toSubscriptionRow(
 
 export function subscriptionRowValues(row: SubscriptionRow): unknown[] {
   return [
-    row.id, row.user_id, row.name, row.logo, row.price, row.currency, row.billing_cycle, row.custom_days,
+    row.id, row.user_id, row.name, row.logo, row.price, row.currency, row.billing_cycle, row.custom_days, row.custom_cycle_unit,
     row.category, row.status, row.pinned, row.payment_method, row.start_date, row.next_billing_date,
     row.auto_calculate_next_billing_date, row.trial_end_date, row.website, row.notes, row.tags_json,
     row.reminder_days, row.repeat_reminder_enabled, row.repeat_reminder_interval, row.repeat_reminder_window,

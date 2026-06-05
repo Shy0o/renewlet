@@ -56,6 +56,8 @@ type calendarFeedSubscription struct {
 	Price           float64
 	Currency        string
 	BillingCycle    string
+	CustomDays      int
+	CustomCycleUnit string
 	Category        string
 	Status          string
 	PaymentMethod   string
@@ -425,6 +427,8 @@ func calendarFeedSubscriptionFromRecord(row *core.Record) calendarFeedSubscripti
 		Price:           row.GetFloat("price"),
 		Currency:        row.GetString("currency"),
 		BillingCycle:    row.GetString("billingCycle"),
+		CustomDays:      row.GetInt("customDays"),
+		CustomCycleUnit: row.GetString("customCycleUnit"),
 		Category:        row.GetString("category"),
 		Status:          row.GetString("status"),
 		PaymentMethod:   row.GetString("paymentMethod"),
@@ -615,7 +619,7 @@ func calendarFeedDescription(item calendarFeedSubscription, settings appSettings
 	locale := normalizeAppLocale(settings.Locale)
 	lines := []string{
 		serverFormat(locale, "calendarFeed.description.amount", map[string]interface{}{"amount": formatAmount(item.Price), "currency": item.Currency}),
-		serverFormat(locale, "calendarFeed.description.billingCycle", map[string]interface{}{"cycle": calendarFeedBillingCycleLabel(item.BillingCycle, locale)}),
+		serverFormat(locale, "calendarFeed.description.billingCycle", map[string]interface{}{"cycle": calendarFeedBillingCycleLabel(item, locale)}),
 		serverFormat(locale, "calendarFeed.description.category", map[string]interface{}{"category": labels.categoryLabel(item.Category)}),
 	}
 	if item.PaymentMethod != "" {
@@ -627,11 +631,26 @@ func calendarFeedDescription(item calendarFeedSubscription, settings appSettings
 	return strings.Join(lines, "\n")
 }
 
-func calendarFeedBillingCycleLabel(cycle string, locale appLocale) string {
-	key := "calendarFeed.billingCycle." + cycle
+func calendarFeedBillingCycleLabel(item calendarFeedSubscription, locale appLocale) string {
+	if item.BillingCycle == "custom" {
+		unit := item.CustomCycleUnit
+		if !isValidCustomCycleUnit(unit) {
+			unit = "day"
+		}
+		unitLabel := serverText(locale, "calendarFeed.customCycleUnit."+unit)
+		if unitLabel == "calendarFeed.customCycleUnit."+unit {
+			unitLabel = unit
+		}
+		count := item.CustomDays
+		if count <= 0 {
+			count = 1
+		}
+		return serverFormat(locale, "calendarFeed.billingCycle.customValue", map[string]interface{}{"count": count, "unit": unitLabel})
+	}
+	key := "calendarFeed.billingCycle." + item.BillingCycle
 	label := serverText(locale, key)
 	if label == key {
-		return cycle
+		return item.BillingCycle
 	}
 	return label
 }

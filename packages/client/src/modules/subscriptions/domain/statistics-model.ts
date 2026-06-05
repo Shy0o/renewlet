@@ -69,7 +69,7 @@ export function buildStatisticsModel({
   const calculateMonthlyAmount = (subscription: Subscription): number => {
     // 先换算币种再折算周期，保证所有图表都以用户当前统计货币为唯一口径。
     const amountInDefault = convertToDefault(subscription.price, subscription.currency);
-    return toMonthlyAmount(amountInDefault, subscription.billingCycle, subscription.customDays);
+    return toMonthlyAmount(amountInDefault, subscription.billingCycle, subscription.customDays, subscription.customCycleUnit);
   };
 
   const totalMonthly = activeSubscriptions.reduce((sum, subscription) => sum + calculateMonthlyAmount(subscription), 0);

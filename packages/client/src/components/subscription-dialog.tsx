@@ -183,6 +183,7 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
       currency: subscription.currency,
       billingCycle: subscription.billingCycle,
       customDays: subscription.customDays?.toString() || "",
+      customCycleUnit: subscription.customCycleUnit ?? "day",
       category: subscription.category,
       status: subscription.status,
       paymentMethod: subscription.paymentMethod || "",
@@ -215,10 +216,18 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
     }
     if (formData.autoCalculate && formData.startDate) {
       const customDays = formData.billingCycle === "custom" ? parsePositiveIntegerInput(formData.customDays) ?? 30 : undefined;
-      const nextDate = calculateNextBillingDate(formData.startDate, formData.billingCycle, customDays, billingReferenceDate);
+      const customCycleUnit = formData.billingCycle === "custom" ? formData.customCycleUnit : "day";
+      const nextDate = calculateNextBillingDate(formData.startDate, formData.billingCycle, customDays, billingReferenceDate, customCycleUnit);
       setFormData((prev) => ({ ...prev, nextBillingDate: nextDate }));
     }
-  }, [billingReferenceDate, formData.startDate, formData.billingCycle, formData.customDays, formData.autoCalculate]);
+  }, [
+    billingReferenceDate,
+    formData.startDate,
+    formData.billingCycle,
+    formData.customDays,
+    formData.customCycleUnit,
+    formData.autoCalculate,
+  ]);
 
   /** 表单提交：create → 回传 draft；edit → merge id 后回传完整 Subscription。 */
   const handleFieldChange = useCallback(
@@ -248,9 +257,9 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
     if (parseNonNegativeFiniteNumberInput(nextFormData.price) === null) {
       errors.price = t("subscription.validation.amountInvalid");
     }
-    if (!nextFormData.startDate || !nextFormData.nextBillingDate) {
+    if (!nextFormData.startDate || (nextFormData.billingCycle !== "one-time" && !nextFormData.nextBillingDate)) {
       errors.dates = t("subscription.validation.datesRequired");
-    } else if (isRenewalDateBeforeStartDate(nextFormData)) {
+    } else if (nextFormData.billingCycle !== "one-time" && isRenewalDateBeforeStartDate(nextFormData)) {
       errors.dates = t("subscription.validation.dateOrderInvalid");
     }
     if (nextFormData.billingCycle === "custom" && parsePositiveIntegerInput(nextFormData.customDays) === null) {

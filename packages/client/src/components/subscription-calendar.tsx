@@ -10,7 +10,6 @@
 
 import { useState, useMemo } from 'react';
 import type { Subscription } from '@/types/subscription';
-import { CYCLE_LABELS } from '@/types/subscription';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import { useExchangeRates } from '@/hooks/use-exchange-rates';
@@ -35,6 +34,7 @@ import { dateToDateOnly, isSameMonthDateOnly, todayDateOnlyInTimeZone } from '@/
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useI18n } from '@/i18n/I18nProvider';
+import { formatBillingCycleLabel } from '@/lib/subscription-billing';
 import { SubscriptionDetailDialog } from '@/components/subscription-detail-dialog';
 import { DaySubscriptionsDialog } from './subscription-calendar-dialogs';
 import type { CalendarDaySubscriptions } from './subscription-calendar-dialogs';
@@ -60,7 +60,7 @@ const WEEKDAY_REFERENCE_DATES = [
 
 /** 续费日历组件。 */
 export const SubscriptionCalendar = ({ subscriptions, onEditSubscription }: SubscriptionCalendarProps) => {
-  const { t, label, formatDateTime, formatCurrency } = useI18n();
+  const { t, locale, formatDateTime, formatCurrency } = useI18n();
   const isMobileCalendar = useMediaQuery("(max-width: 639px)");
   // 默认货币来自 Settings（持久化到 SQLite），用于日历底部“预计支出”的换算口径。
   const { data: settings } = useSettings();
@@ -456,7 +456,7 @@ export const SubscriptionCalendar = ({ subscriptions, onEditSubscription }: Subs
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-sm font-medium text-foreground">{sub.name}</p>
                                 <p className="mt-0.5 text-xs text-muted-foreground">
-                                  {label(CYCLE_LABELS[sub.billingCycle])}
+                                  {formatBillingCycleLabel(sub, locale)}
                                 </p>
                               </div>
                               <p className="max-w-[45%] shrink-0 truncate text-right text-sm font-semibold text-foreground">

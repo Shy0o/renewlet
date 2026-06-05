@@ -11,8 +11,7 @@ import type { ImportConflictMode, ImportItemAction, ImportPreviewItem, ImportPre
 import { formatImportMessage } from "@/modules/import-export/domain/import-message-format";
 import { loadImportAssetBlob } from "@/modules/import-export/domain/wallos-import";
 import type { PreparedImport } from "@/modules/import-export/domain/import-export-model";
-import { CYCLE_LABELS } from "@/types/subscription";
-import { localizedLabel } from "@/i18n/locales";
+import { formatBillingCycleLabel } from "@/lib/subscription-billing";
 import { cn } from "@/lib/utils";
 
 export type PreviewFilter = "all" | "create" | "replace" | "skip" | "warning" | "error";
@@ -143,6 +142,13 @@ function PreviewRow({
   const logoAutoMatch = prepared.logoAutoMatches?.find((match) => match.subscriptionIndex === item.index && match.url === subscription?.logo);
   const messages = [...item.warnings, ...item.errors];
   const localizedMessages = messages.map((message) => ({ raw: message, text: formatImportMessage(message, t) }));
+  const billingCycle = subscription
+    ? {
+        billingCycle: subscription.billingCycle,
+        customDays: subscription.customDays ?? undefined,
+        customCycleUnit: subscription.customCycleUnit ?? undefined,
+      }
+    : null;
   return (
     <div className={cn("border-b border-border p-3 last:border-b-0", manualSkipped && "bg-secondary/20")}>
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
@@ -165,7 +171,7 @@ function PreviewRow({
                   variant={subscription.billingCycle === "one-time" ? "secondary" : "outline"}
                   className="bg-secondary/40 text-[11px] font-medium text-muted-foreground"
                 >
-                  {localizedLabel(CYCLE_LABELS[subscription.billingCycle], locale)}
+                  {billingCycle ? formatBillingCycleLabel(billingCycle, locale) : null}
                 </Badge>
                 {logoAutoMatch ? (
                   <Badge variant="outline" className="bg-primary/10 text-[11px] font-medium text-primary" data-testid={`import-logo-auto-match-${item.index}`}>

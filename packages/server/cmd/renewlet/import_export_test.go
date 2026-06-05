@@ -179,7 +179,8 @@ func TestImportApplyAcceptsOneTimeBillingCycle(t *testing.T) {
 	registerRecordHooks(app)
 	user, token := createRouteTestUser(t, app, "user")
 
-	res := serveTestRequest(t, app, http.MethodPost, "/api/app/import/apply", importRequestBodyWithBillingCycle("skip", "one-time", nil, true, 199), token)
+	customCycleUnit := "year"
+	res := serveTestRequest(t, app, http.MethodPost, "/api/app/import/apply", importRequestBodyWithBillingCycleUnit("skip", "one-time", nil, &customCycleUnit, true, 199), token)
 	if res.Code != http.StatusOK {
 		t.Fatalf("expected one-time import apply 200, got %d: %s", res.Code, res.Body.String())
 	}
@@ -187,8 +188,31 @@ func TestImportApplyAcceptsOneTimeBillingCycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].GetString("billingCycle") != "one-time" || rows[0].GetInt("customDays") != 0 || rows[0].GetBool("autoCalculateNextBillingDate") {
-		t.Fatalf("expected one-time record normalized, got rows=%d cycle=%q customDays=%d auto=%v", len(rows), rows[0].GetString("billingCycle"), rows[0].GetInt("customDays"), rows[0].GetBool("autoCalculateNextBillingDate"))
+	if len(rows) != 1 || rows[0].GetString("billingCycle") != "one-time" || rows[0].GetInt("customDays") != 0 || rows[0].GetString("customCycleUnit") != "" || rows[0].GetBool("autoCalculateNextBillingDate") {
+		t.Fatalf("expected one-time record normalized, got rows=%d cycle=%q customDays=%d customCycleUnit=%q auto=%v", len(rows), rows[0].GetString("billingCycle"), rows[0].GetInt("customDays"), rows[0].GetString("customCycleUnit"), rows[0].GetBool("autoCalculateNextBillingDate"))
+	}
+}
+
+func TestImportApplyAcceptsCustomCycleUnit(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	registerRecordHooks(app)
+	user, token := createRouteTestUser(t, app, "user")
+
+	customDays := 3
+	customCycleUnit := "year"
+	res := serveTestRequest(t, app, http.MethodPost, "/api/app/import/apply", importRequestBodyWithBillingCycleUnit("skip", "custom", &customDays, &customCycleUnit, true, 360), token)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected custom unit import apply 200, got %d: %s", res.Code, res.Body.String())
+	}
+	rows, err := app.FindAllRecords("subscriptions", dbx.HashExp{"user": user.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].GetString("billingCycle") != "custom" || rows[0].GetInt("customDays") != 3 || rows[0].GetString("customCycleUnit") != "year" {
+		t.Fatalf("expected custom record to keep unit, got rows=%d cycle=%q customDays=%d customCycleUnit=%q", len(rows), rows[0].GetString("billingCycle"), rows[0].GetInt("customDays"), rows[0].GetString("customCycleUnit"))
 	}
 }
 
@@ -266,6 +290,10 @@ func importRequestBodyWithSkipIndexes(conflictMode string, skipIndexes []int, pr
 }
 
 func importRequestBodyWithBillingCycle(conflictMode string, billingCycle string, customDays *int, autoCalculate bool, prices ...int) string {
+	return importRequestBodyWithBillingCycleUnit(conflictMode, billingCycle, customDays, nil, autoCalculate, prices...)
+}
+
+func importRequestBodyWithBillingCycleUnit(conflictMode string, billingCycle string, customDays *int, customCycleUnit *string, autoCalculate bool, prices ...int) string {
 	body := importRequestBodyWithOptions(conflictMode, "wallos", "1:42", "high", nil, prices...)
 	var decoded map[string]interface{}
 	_ = json.Unmarshal([]byte(body), &decoded)
@@ -275,6 +303,7 @@ func importRequestBodyWithBillingCycle(conflictMode string, billingCycle string,
 		subscription := item.(map[string]interface{})
 		subscription["billingCycle"] = billingCycle
 		subscription["customDays"] = customDays
+		subscription["customCycleUnit"] = customCycleUnit
 		subscription["autoCalculateNextBillingDate"] = autoCalculate
 	}
 	data, _ := json.Marshal(decoded)
@@ -338,6 +367,7 @@ func importSubscriptionBody(source string, sourceID string, confidence string, p
 		"currency":                     "USD",
 		"billingCycle":                 "monthly",
 		"customDays":                   nil,
+		"customCycleUnit":              nil,
 		"category":                     "developer_tools",
 		"status":                       "active",
 		"pinned":                       false,

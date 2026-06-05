@@ -296,6 +296,46 @@ func TestCalendarFeedUsesBuiltInLabelsWhenCustomConfigIsMissing(t *testing.T) {
 	}
 }
 
+func TestCalendarFeedDescribesCustomCycleUnit(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	user, token := createRouteTestUser(t, app, "calendar-custom-cycle")
+	settings := defaultAppSettings()
+	settings.Locale = "zh-CN"
+	settings.Timezone = "UTC"
+	createCalendarFeedTestSettings(t, app, user, settings)
+	createCalendarFeedTestSubscription(t, app, user.Id, calendarFeedTestSubscription{
+		Name:            "Three Year Plan",
+		Price:           360,
+		BillingCycle:    "custom",
+		CustomDays:      3,
+		CustomCycleUnit: "year",
+		Category:        "developer_tools",
+		Status:          "active",
+		NextBillingDate: "2099-06-02",
+	})
+
+	createRes := serveTestRequest(t, app, http.MethodPost, "/api/app/calendar-feed", `{}`, token)
+	if createRes.Code != http.StatusOK {
+		t.Fatalf("expected calendar feed create 200, got %d: %s", createRes.Code, createRes.Body.String())
+	}
+	var createBody calendarFeedCreateResponse
+	if err := json.Unmarshal(createRes.Body.Bytes(), &createBody); err != nil {
+		t.Fatal(err)
+	}
+
+	icsRes := serveTestRequest(t, app, http.MethodGet, calendarFeedRequestTarget(t, createBody.CalendarFeed.FeedURL), "", "")
+	if icsRes.Code != http.StatusOK {
+		t.Fatalf("expected calendar feed ICS 200, got %d: %s", icsRes.Code, icsRes.Body.String())
+	}
+	unfoldedICS := unfoldCalendarTestICS(icsRes.Body.String())
+	if !strings.Contains(unfoldedICS, "周期：每 3 年") {
+		t.Fatalf("expected ICS to describe custom cycle unit, got:\n%s", unfoldedICS)
+	}
+}
+
 func TestCalendarFeedUsesBuiltInLabelsWhenCustomConfigMissesEntry(t *testing.T) {
 	app := newSchemaTestApp(t)
 	if err := ensureSchema(app); err != nil {
@@ -420,6 +460,8 @@ type calendarFeedTestSubscription struct {
 	Price           float64
 	Currency        string
 	BillingCycle    string
+	CustomDays      int
+	CustomCycleUnit string
 	Category        string
 	Status          string
 	PaymentMethod   string
@@ -493,7 +535,8 @@ func createCalendarFeedTestSubscription(t *testing.T, app core.App, userID strin
 	record.Set("price", input.Price)
 	record.Set("currency", fallbackString(input.Currency, "USD"))
 	record.Set("billingCycle", fallbackString(input.BillingCycle, "monthly"))
-	record.Set("customDays", 0)
+	record.Set("customDays", input.CustomDays)
+	record.Set("customCycleUnit", input.CustomCycleUnit)
 	record.Set("category", fallbackString(input.Category, "General"))
 	record.Set("status", fallbackString(input.Status, "active"))
 	record.Set("paymentMethod", input.PaymentMethod)

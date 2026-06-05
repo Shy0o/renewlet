@@ -7,7 +7,7 @@
  * 注意： 弹窗中的金额、周期和状态标签必须继续复用 subscription domain 常量，避免日历视图口径分叉。
  */
 import type { Subscription, SubscriptionStatus } from '@/types/subscription';
-import { STATUS_LABELS, CYCLE_LABELS } from '@/types/subscription';
+import { STATUS_LABELS } from '@/types/subscription';
 import { Button } from '@/components/ui/button';
 import { CalendarDays, X } from 'lucide-react';
 import { Drawer } from 'vaul';
@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import type { DateOnly } from '@/lib/time/date-only';
 import { getEffectiveSubscriptionStatus } from '@/modules/subscriptions/domain/subscription-status';
 import { SubscriptionLogo } from '@/components/subscription-logo';
+import { formatBillingCycleLabel } from '@/lib/subscription-billing';
 
 const DEFAULT_LOGO_FALLBACK_COLOR = "hsl(var(--primary))";
 
@@ -63,7 +64,7 @@ interface DaySubscriptionsListProps {
 
 function DaySubscriptionsList({ subscriptions, onSelectSubscription, today }: DaySubscriptionsListProps) {
   const { config } = useCustomConfig();
-  const { label, formatCurrency } = useI18n();
+  const { locale, label, formatCurrency } = useI18n();
 
   return (
     <div className="grid min-w-0 max-w-full grid-cols-1 gap-2" data-testid="calendar-day-subscription-list">
@@ -89,7 +90,7 @@ function DaySubscriptionsList({ subscriptions, onSelectSubscription, today }: Da
             <div className="min-w-0 flex-1">
               <TruncatedTooltipText as="p" text={sub.name} className="text-sm font-medium" />
               <p className="text-xs text-muted-foreground">
-                {label(CYCLE_LABELS[sub.billingCycle])}
+                {formatBillingCycleLabel(sub, locale)}
               </p>
             </div>
             <div className="min-w-0 max-w-[42%] shrink-0 text-right">

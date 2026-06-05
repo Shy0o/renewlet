@@ -92,7 +92,8 @@ describe("wallos import", () => {
 
     expect(prepared.payload.source).toBe("wallos");
     expect(prepared.payload.subscriptions[0]?.billingCycle).toBe("custom");
-    expect(prepared.payload.subscriptions[0]?.customDays).toBe(14);
+    expect(prepared.payload.subscriptions[0]?.customDays).toBe(2);
+    expect(prepared.payload.subscriptions[0]?.customCycleUnit).toBe("week");
     expect(prepared.payload.subscriptions[0]?.reminderDays).toBe(-1);
     expect(prepared.payload.subscriptions[0]?.extra.import.sourceId).toBe("7:12");
     expect(prepared.payload.subscriptions[0]?.logo).toBeNull();

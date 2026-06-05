@@ -15,6 +15,8 @@ import { isCloudflareRuntime } from "./runtime";
 import {
   REPEAT_REMINDER_INTERVALS,
   REPEAT_REMINDER_WINDOWS,
+  CUSTOM_CYCLE_UNITS,
+  type CustomCycleUnit,
   type RepeatReminderInterval,
   type RepeatReminderWindow,
   type Subscription,
@@ -55,6 +57,12 @@ function normalizeRepeatReminderWindow(value: unknown): RepeatReminderWindow {
     : "72h";
 }
 
+function normalizeCustomCycleUnit(value: unknown): CustomCycleUnit {
+  return typeof value === "string" && CUSTOM_CYCLE_UNITS.includes(value as CustomCycleUnit)
+    ? value as CustomCycleUnit
+    : "day";
+}
+
 function normalizeSubscriptionRecord(row: unknown): unknown {
   if (!isRecord(row)) return row;
   // PocketBase SDK record 与 Worker API row 不完全同形；这里先收敛字段，再交给 shared schema。
@@ -75,7 +83,11 @@ function normalizeSubscriptionRecord(row: unknown): unknown {
     repeatReminderInterval: normalizeRepeatReminderInterval(row["repeatReminderInterval"]),
     repeatReminderWindow: normalizeRepeatReminderWindow(row["repeatReminderWindow"]),
   };
-  if (typeof row["customDays"] === "number") normalized["customDays"] = row["customDays"];
+  if (row["billingCycle"] === "custom") {
+    if (typeof row["customDays"] === "number") normalized["customDays"] = row["customDays"];
+    // PocketBase 旧行没有 customCycleUnit；custom 读取缺省按 day，固定周期的空字符串则不进入 shared enum。
+    normalized["customCycleUnit"] = normalizeCustomCycleUnit(row["customCycleUnit"]);
+  }
   if (Array.isArray(row["tags"])) normalized["tags"] = row["tags"];
 
   for (const key of ["logo", "paymentMethod", "trialEndDate", "website", "notes"] as const) {
@@ -123,10 +135,15 @@ export function fromApiSubscription(row: ApiSubscription | RecordModel): Subscri
     extra: parsedRow.extra,
   };
   if (parsedRow.billingCycle === "custom") {
-    // domain union 要求 custom 一定有 customDays；缺失时按 1 天兜底，避免表单回填不可编辑。
-    return { ...base, billingCycle: "custom", customDays: parsedRow.customDays ?? 1 };
+    // 旧 custom 记录没有单位字段；读边界统一按 day 解释，避免统计和自动推算把历史含义改成月/年。
+    return {
+      ...base,
+      billingCycle: "custom",
+      customDays: parsedRow.customDays ?? 1,
+      customCycleUnit: normalizeCustomCycleUnit(parsedRow.customCycleUnit),
+    };
   }
-  return { ...base, billingCycle: parsedRow.billingCycle, customDays: undefined };
+  return { ...base, billingCycle: parsedRow.billingCycle, customDays: undefined, customCycleUnit: undefined };
 }
 
 /**
@@ -144,6 +161,7 @@ export function toSubscriptionWritePayload(sub: SubscriptionDraft | Subscription
     billingCycle: sub.billingCycle,
     // null 表示服务端应清空可选字段；undefined 会在 PocketBase/Worker 两端产生不同 patch 语义。
     customDays: sub.customDays ?? null,
+    customCycleUnit: sub.customCycleUnit ?? null,
     category: sub.category,
     status: sub.status,
     paymentMethod: sub.paymentMethod ?? null,

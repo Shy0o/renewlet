@@ -65,6 +65,7 @@ const baseSubscription: Subscription = {
   currency: "USD",
   billingCycle: "monthly",
   customDays: undefined,
+  customCycleUnit: undefined,
   category: "developer-tools",
   status: "active",
   paymentMethod: "credit_card",
@@ -159,6 +160,21 @@ describe("SubscriptionDetailDialog", () => {
 
     expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(onEditSubscription).toHaveBeenCalledWith(baseSubscription);
+  });
+
+  it("renders concrete custom billing cycle labels", () => {
+    renderDetailDialog({
+      subscription: {
+        ...baseSubscription,
+        billingCycle: "custom",
+        customDays: 2,
+        customCycleUnit: "week",
+      },
+    });
+
+    const dialog = screen.getByRole("dialog", { name: "Fastmail" });
+    expect(within(dialog).getByText("每 2 周")).toBeInTheDocument();
+    expect(within(dialog).queryByText("自定义")).not.toBeInTheDocument();
   });
 
   it("uses a mobile drawer for small screens", () => {

@@ -53,6 +53,7 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { localizedLabel } from '@/i18n/locales';
 import { AddToCalendarDialog } from '@/components/add-to-calendar-dialog';
 import { SubscriptionLogo } from '@/components/subscription-logo';
+import { formatBillingCycleLabel } from '@/lib/subscription-billing';
 
 export type SubscriptionCardLookup = ReadonlyMap<string, ConfigItem>;
 
@@ -119,6 +120,7 @@ export function SubscriptionCard({
   const daysUntilRenewal = daysBetweenDateOnly(today, subscription.nextBillingDate);
   const daysUntilTrialEnd = subscription.trialEndDate ? daysBetweenDateOnly(today, subscription.trialEndDate) : null;
   const isOneTime = subscription.billingCycle === "one-time";
+  const billingCycleLabel = formatBillingCycleLabel(subscription, locale);
   // 卡片是用户最先看到的状态入口，必须用有效状态，避免旧 active/trial 过期数据同时显示“活跃”和“即将续费”。
   const effectiveStatus = getEffectiveSubscriptionStatus(subscription, today);
   const isExpired = effectiveStatus === "expired";
@@ -181,7 +183,7 @@ export function SubscriptionCard({
                 {formatCurrency(subscription.price, subscription.currency)}
               </p>
               <p className="text-xs text-muted-foreground">
-                {localizedLabel(CYCLE_LABELS[subscription.billingCycle], locale)}
+                {billingCycleLabel}
               </p>
             </div>
 

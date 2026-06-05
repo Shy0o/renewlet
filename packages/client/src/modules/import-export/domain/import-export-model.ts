@@ -1,5 +1,5 @@
 import type { ImportPayload, ImportSubscription } from "@/lib/api/schemas/import-export";
-import type { AppSettings, BillingCycle, Subscription } from "@/types/subscription";
+import type { AppSettings, BillingCycle, CustomCycleUnit, Subscription } from "@/types/subscription";
 import type { ConfigItem, CustomConfig } from "@/types/config";
 import { labels } from "@/i18n/locales";
 import type { DateOnly } from "@/lib/time/date-only";
@@ -137,6 +137,7 @@ export function subscriptionToImportSubscription(subscription: Subscription, sou
     currency: subscription.currency,
     billingCycle: subscription.billingCycle,
     customDays: subscription.billingCycle === "custom" ? subscription.customDays : null,
+    customCycleUnit: subscription.billingCycle === "custom" ? subscription.customCycleUnit : null,
     category: subscription.category,
     status: subscription.status,
     pinned: subscription.pinned,
@@ -169,7 +170,7 @@ export function subscriptionToExportRow(subscription: Subscription) {
     price: subscription.price,
     currency: subscription.currency,
     billingCycle: subscription.billingCycle,
-    ...(subscription.billingCycle === "custom" ? { customDays: subscription.customDays } : {}),
+    ...(subscription.billingCycle === "custom" ? { customDays: subscription.customDays, customCycleUnit: subscription.customCycleUnit } : {}),
     category: subscription.category,
     status: subscription.status,
     ...(subscription.paymentMethod ? { paymentMethod: subscription.paymentMethod } : {}),
@@ -250,14 +251,30 @@ export function normalizeWebsite(value: unknown, warnings: string[]): string | u
   return undefined;
 }
 
+export interface ImportBillingCycle {
+  billingCycle: BillingCycle;
+  customDays?: number;
+  customCycleUnit?: CustomCycleUnit;
+}
+
 /** toBillingCycleFromDays 把 Wallos 天数周期映射到 Renewlet 当前正式 billingCycle 契约。 */
-export function toBillingCycleFromDays(days: number): { billingCycle: BillingCycle; customDays?: number } {
+export function toBillingCycleFromDays(days: number): ImportBillingCycle {
   if (days === 7) return { billingCycle: "weekly" };
   if (days === 30) return { billingCycle: "monthly" };
   if (days === 90) return { billingCycle: "quarterly" };
   if (days === 180) return { billingCycle: "semi-annual" };
   if (days === 365) return { billingCycle: "annual" };
-  return { billingCycle: "custom", customDays: Math.max(1, Math.round(days)) };
+  return { billingCycle: "custom", customDays: Math.max(1, Math.round(days)), customCycleUnit: "day" };
+}
+
+export function toBillingCycleFromUnit(count: number, unit: CustomCycleUnit): ImportBillingCycle {
+  const normalizedCount = Math.max(1, Math.round(count));
+  if (unit === "week" && normalizedCount === 1) return { billingCycle: "weekly" };
+  if (unit === "month" && normalizedCount === 1) return { billingCycle: "monthly" };
+  if (unit === "month" && normalizedCount === 3) return { billingCycle: "quarterly" };
+  if (unit === "month" && normalizedCount === 6) return { billingCycle: "semi-annual" };
+  if (unit === "year" && normalizedCount === 1) return { billingCycle: "annual" };
+  return { billingCycle: "custom", customDays: normalizedCount, customCycleUnit: unit };
 }
 
 /** privateAssetIdFromLogo 只识别受控资产代理路径，外链 Logo 不参与 ZIP 资产导出。 */

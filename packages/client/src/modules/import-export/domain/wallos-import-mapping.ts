@@ -1,7 +1,7 @@
 import { importPayloadSchema, type ImportSubscription, type RenewletExportV1 } from "@/lib/api/schemas/import-export";
 import { getIntlCurrencySymbol, SUPPORTED_EXCHANGE_RATE_CURRENCIES } from "@/lib/currency-data";
 import type { CustomConfig } from "@/types/config";
-import { INHERIT_REMINDER_DAYS, MAX_REMINDER_DAYS, type AppSettings, type BillingCycle } from "@/types/subscription";
+import { INHERIT_REMINDER_DAYS, MAX_REMINDER_DAYS, type AppSettings } from "@/types/subscription";
 import type { DateOnly } from "@/lib/time/date-only";
 import {
   WALLOS_DEFAULT_CURRENCIES,
@@ -19,6 +19,8 @@ import {
   normalizeWebsite,
   stableHash,
   toBillingCycleFromDays,
+  toBillingCycleFromUnit,
+  type ImportBillingCycle,
   type ImportAssetRef,
   type PreparedImport,
   type WallosImportUser,
@@ -93,6 +95,7 @@ export function buildFromRenewletExport(
       currency: subscription.currency,
       billingCycle: subscription.billingCycle,
       customDays: subscription.billingCycle === "custom" ? subscription.customDays ?? 1 : null,
+      customCycleUnit: subscription.billingCycle === "custom" ? subscription.customCycleUnit ?? "day" : null,
       category: subscription.category,
       status: subscription.status,
       paymentMethod: subscription.paymentMethod ?? null,
@@ -318,7 +321,7 @@ function makeImportSubscription(input: {
   website?: string | undefined;
   notes?: string | undefined;
   status: "trial" | "active" | "expired" | "paused" | "cancelled";
-  billing: { billingCycle: BillingCycle; customDays?: number };
+  billing: ImportBillingCycle;
   reminderDays?: number | undefined;
   autoCalculateNextBillingDate?: boolean | undefined;
   logo?: string | undefined;
@@ -337,6 +340,7 @@ function makeImportSubscription(input: {
     currency: input.currency,
     billingCycle: input.billing.billingCycle,
     customDays: input.billing.billingCycle === "custom" ? input.billing.customDays ?? 1 : null,
+    customCycleUnit: input.billing.billingCycle === "custom" ? input.billing.customCycleUnit ?? "day" : null,
     category: input.category,
     status: input.status,
     pinned: false,
@@ -365,7 +369,7 @@ function makeAssetRef(subscriptionIndex: number, filename: string, source: Impor
     : { subscriptionIndex, filename, blob: source };
 }
 
-function wallosBilling(row: WallosTableRow, warnings: string[]): { billingCycle: BillingCycle; customDays?: number } {
+function wallosBilling(row: WallosTableRow, warnings: string[]): ImportBillingCycle {
   const cycle = Number(row["cycle"] ?? 3);
   const frequency = Math.max(1, Number(row["frequency"] ?? 1) || 1);
   // Wallos cycle=5 是买断/终身授权；Renewlet 用 one-time 表达计费模型，不再伪装成取消订阅。
@@ -374,14 +378,14 @@ function wallosBilling(row: WallosTableRow, warnings: string[]): { billingCycle:
     return { billingCycle: "one-time" };
   }
   if (cycle === 1) return toBillingCycleFromDays(frequency);
-  if (cycle === 2) return toBillingCycleFromDays(7 * frequency);
-  if (cycle === 3) return toBillingCycleFromDays(30 * frequency);
-  if (cycle === 4) return toBillingCycleFromDays(365 * frequency);
+  if (cycle === 2) return toBillingCycleFromUnit(frequency, "week");
+  if (cycle === 3) return toBillingCycleFromUnit(frequency, "month");
+  if (cycle === 4) return toBillingCycleFromUnit(frequency, "year");
   warnings.push(IMPORT_MESSAGE_CODES.unknownCycle);
   return { billingCycle: "monthly" };
 }
 
-function parseDisplayCycle(text: string, warnings: string[]): { billingCycle: BillingCycle; customDays?: number; oneTime?: boolean } {
+function parseDisplayCycle(text: string, warnings: string[]): ImportBillingCycle & { oneTime?: boolean } {
   const lower = text.toLowerCase();
   if (lower.includes("one-time") || lower.includes("one time")) {
     warnings.push(IMPORT_MESSAGE_CODES.oneTime);
@@ -390,9 +394,9 @@ function parseDisplayCycle(text: string, warnings: string[]): { billingCycle: Bi
   const every = /every\s+(\d+)/i.exec(text);
   const count = every ? Math.max(1, Number(every[1])) : 1;
   if (lower.includes("day")) return toBillingCycleFromDays(count);
-  if (lower.includes("week")) return toBillingCycleFromDays(7 * count);
-  if (lower.includes("year")) return toBillingCycleFromDays(365 * count);
-  return toBillingCycleFromDays(30 * count);
+  if (lower.includes("week")) return toBillingCycleFromUnit(count, "week");
+  if (lower.includes("year")) return toBillingCycleFromUnit(count, "year");
+  return toBillingCycleFromUnit(count, "month");
 }
 
 function wallosStatus(row: WallosTableRow): "active" | "paused" | "cancelled" {

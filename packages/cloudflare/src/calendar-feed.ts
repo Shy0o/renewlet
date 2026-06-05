@@ -386,7 +386,7 @@ function calendarEvent(
     subscription,
     labels: {
       amount: formatAmount(subscription.price),
-      billingCycle: billingCycleLabel(subscription.billingCycle, locale),
+      billingCycle: billingCycleLabel(subscription, locale),
       category: labels.categoryLabel(subscription.category),
       paymentMethod: labels.paymentMethodLabel(subscription.paymentMethod),
     },
@@ -401,10 +401,24 @@ function calendarEvent(
   });
 }
 
-function billingCycleLabel(cycle: ApiSubscription["billingCycle"], locale: ApiAppSettings["locale"]): string {
+function billingCycleLabel(subscription: ApiSubscription, locale: ApiAppSettings["locale"]): string {
+  if (subscription.billingCycle === "custom") {
+    const unit = isCustomCycleUnit(subscription.customCycleUnit) ? subscription.customCycleUnit : "day";
+    const unitKey = `calendarFeed.customCycleUnit.${unit}` as const;
+    const unitLabel = serverText(locale, unitKey);
+    return serverFormat(locale, "calendarFeed.billingCycle.customValue", {
+      count: subscription.customDays ?? 1,
+      unit: unitLabel === unitKey ? unit : unitLabel,
+    });
+  }
+  const cycle = subscription.billingCycle;
   const key = `calendarFeed.billingCycle.${cycle}` as const;
   const label = serverText(locale, key);
   return label === key ? cycle : label;
+}
+
+function isCustomCycleUnit(value: unknown): value is NonNullable<ApiSubscription["customCycleUnit"]> {
+  return value === "day" || value === "week" || value === "month" || value === "year";
 }
 
 function dateOnlyInZone(date: Date, timezone: string): string {

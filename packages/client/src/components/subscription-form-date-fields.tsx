@@ -33,6 +33,7 @@ export function SubscriptionFormDateFields({ id, formData, update, errors }: Sub
   const selectedNextBillingDate = formData.nextBillingDate ? dateOnlyToLocalDate(formData.nextBillingDate) : undefined;
   // 当非法到期日被清空后，打开到期日历应落在开始日所在月份，让下一个合法选择直接可见。
   const nextBillingDateCalendarMonth = selectedNextBillingDate ?? selectedStartDate;
+  const isNextBillingDateDisabled = formData.autoCalculate || formData.billingCycle === "one-time";
 
   return (
     <div className="grid gap-4 rounded-lg border border-border bg-secondary/30 p-4">
@@ -100,19 +101,22 @@ export function SubscriptionFormDateFields({ id, formData, update, errors }: Sub
           <Label id={nextBillingDateLabelId} htmlFor={nextBillingDateId}>
             {t("subscription.field.nextBillingDate")}
           </Label>
-          <Popover open={nextBillingDatePickerOpen} onOpenChange={setNextBillingDatePickerOpen}>
+          <Popover
+            open={isNextBillingDateDisabled ? false : nextBillingDatePickerOpen}
+            onOpenChange={setNextBillingDatePickerOpen}
+          >
             <PopoverTrigger asChild>
               <Button
                 id={nextBillingDateId}
                 variant="outline"
-                disabled={formData.autoCalculate}
+                disabled={isNextBillingDateDisabled}
                 aria-labelledby={`${nextBillingDateLabelId} ${nextBillingDateValueId}`}
                 aria-invalid={Boolean(errors.dates)}
                 aria-describedby={errors.dates ? id("dates-error") : undefined}
                 className={cn(
                   "w-full justify-start text-left font-normal border-border bg-secondary",
                   !formData.nextBillingDate && "text-muted-foreground",
-                  formData.autoCalculate && "opacity-60",
+                  isNextBillingDateDisabled && "opacity-60",
                   errors.dates && "border-destructive focus-visible:ring-destructive/40",
                 )}
               >

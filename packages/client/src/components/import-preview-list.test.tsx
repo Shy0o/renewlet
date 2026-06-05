@@ -29,6 +29,7 @@ const payload = {
       trialEndDate: undefined,
       billingCycle: "monthly",
       customDays: undefined,
+      customCycleUnit: undefined,
       reminderDays: 5,
       website: undefined,
       notes: undefined,

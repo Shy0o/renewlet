@@ -141,8 +141,12 @@ export function isRenewalDateBeforeStartDate(
 export function getSubscriptionDraftValidationError(formData: SubscriptionFormState): string | null {
   const locale = getApiLocale();
   if (!formData.name.trim()) return translate(locale, "subscription.validation.nameRequired");
-  if (!formData.startDate || !formData.nextBillingDate) return translate(locale, "subscription.validation.datesRequired");
-  if (isRenewalDateBeforeStartDate(formData)) return translate(locale, "subscription.validation.dateOrderInvalid");
+  if (!formData.startDate || (formData.billingCycle !== "one-time" && !formData.nextBillingDate)) {
+    return translate(locale, "subscription.validation.datesRequired");
+  }
+  if (formData.billingCycle !== "one-time" && isRenewalDateBeforeStartDate(formData)) {
+    return translate(locale, "subscription.validation.dateOrderInvalid");
+  }
   if (parseNonNegativeFiniteNumberInput(formData.price) === null) return translate(locale, "subscription.validation.amountInvalid");
   const reminderInput = formData.reminderType === "custom" ? formData.customReminderDays : formData.reminderDays;
   const reminderValue = formData.reminderType === "inherit"
@@ -166,7 +170,7 @@ export function getSubscriptionDraftValidationError(formData: SubscriptionFormSt
  * 将 UI 表单状态转换为可保存的订阅对象（不含 id）。
  *
  * 说明：
- * - 若 startDate/nextBillingDate 缺失则返回 null（由调用方决定如何处理）
+ * - 非一次性购买若 startDate/nextBillingDate 缺失则返回 null（由调用方决定如何处理）
  * - 该函数不关心“是否允许提交”（例如上传中、必填校验），只负责数据形态转换
  */
 export function toSubscriptionDraft(formData: SubscriptionFormState): SubscriptionDraft | null {
@@ -175,7 +179,8 @@ export function toSubscriptionDraft(formData: SubscriptionFormState): Subscripti
   const price = parseNonNegativeFiniteNumberInput(formData.price);
   const reminderDays = toReminderDays(formData);
   const customDays = formData.billingCycle === "custom" ? parsePositiveIntegerInput(formData.customDays) : undefined;
-  const { startDate, nextBillingDate } = formData;
+  const { startDate } = formData;
+  const nextBillingDate = formData.billingCycle === "one-time" ? startDate : formData.nextBillingDate;
   if (
     price === null ||
     reminderDays === null ||
@@ -212,11 +217,13 @@ export function toSubscriptionDraft(formData: SubscriptionFormState): Subscripti
       ...base,
       billingCycle: "custom",
       customDays: customDays ?? 1,
+      customCycleUnit: formData.customCycleUnit,
     };
   }
   return {
     ...base,
     billingCycle: formData.billingCycle,
     customDays: undefined,
+    customCycleUnit: undefined,
   };
 }

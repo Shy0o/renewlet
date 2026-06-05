@@ -242,6 +242,30 @@ describe("calendar feed worker handlers", () => {
     expect(unfoldedIcs).not.toContain("bank_transfer");
   });
 
+  it("describes custom cycle units in ICS details", async () => {
+    const env = await createCalendarFeedTestEnv({
+      locale: "zh-CN",
+      subscriptions: [
+        subscriptionRow("sub_custom_year", "Three Year Plan", "active", "custom", "2099-06-02", {
+          custom_days: 3,
+          custom_cycle_unit: "year",
+          price: 360,
+        }),
+      ],
+    });
+    const response = await createCalendarFeed(authorizedRequest("https://renewlet.example/api/app/calendar-feed", {
+      body: "{}",
+      headers: { "accept-language": "zh-CN" },
+      method: "POST",
+    }), env);
+    const created = await response.json() as { calendarFeed: { feedUrl: string } };
+
+    const ics = await (await calendarFeedIcs(new Request(created.calendarFeed.feedUrl), env)).text();
+    const unfoldedIcs = unfoldIcsText(ics);
+
+    expect(unfoldedIcs).toContain("周期：每 3 年");
+  });
+
   it("falls back to built-in labels when legacy custom config misses an entry", async () => {
     const customConfig = createCalendarFeedTestCustomConfig();
     customConfig.categories = [];
@@ -387,6 +411,7 @@ function subscriptionRow(id: string, name: string, status: string, billingCycle:
     currency: "USD",
     billing_cycle: billingCycle,
     custom_days: null,
+    custom_cycle_unit: null,
     category: "developer_tools",
     status,
     pinned: 0,

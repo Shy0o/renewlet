@@ -1,7 +1,7 @@
 // 订阅弹窗测试覆盖新增/编辑状态机、默认货币同步和 date-only 自动推算边界。
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { assertDateOnly } from "@/lib/time/date-only";
 import type { Subscription } from "@/types/subscription";
@@ -40,6 +40,12 @@ vi.mock("@/components/logo-picker", () => ({
   LogoPicker: () => null,
 }));
 
+beforeAll(() => {
+  Element.prototype.hasPointerCapture ??= vi.fn(() => false);
+  Element.prototype.setPointerCapture ??= vi.fn();
+  Element.prototype.releasePointerCapture ??= vi.fn();
+});
+
 function makeSubscription(overrides: Partial<Subscription> = {}): Subscription {
   return {
     id: "sub-1",
@@ -49,6 +55,7 @@ function makeSubscription(overrides: Partial<Subscription> = {}): Subscription {
     currency: "USD",
     billingCycle: "monthly",
     customDays: undefined,
+    customCycleUnit: undefined,
     category: "productivity",
     status: "active",
     paymentMethod: "alipay",
@@ -169,6 +176,85 @@ describe("SubscriptionDialog", () => {
     expect(screen.getByRole("combobox", { name: "到期提醒" })).toHaveTextContent("默认值从设置中获取（提前 5 天）");
   });
 
+  it("submits custom billing cycles with selectable units", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+
+    render(
+      <TooltipProvider delayDuration={0}>
+        <SubscriptionDialog
+          mode="edit"
+          open
+          onOpenChange={vi.fn()}
+          onSubmit={onSubmit}
+          subscription={makeSubscription({ autoCalculateNextBillingDate: true })}
+        />
+      </TooltipProvider>,
+    );
+
+    const billingCycleSelect = screen.getByRole("combobox", { name: "扣费周期" });
+    await user.click(billingCycleSelect);
+    await user.click(await screen.findByRole("option", { name: "自定义" }));
+
+    const inlineControl = screen.getByTestId("custom-cycle-inline-control");
+    expect(inlineControl).toHaveClass("min-w-0", "grid-cols-[auto_minmax(0,1fr)_5rem]");
+    await user.type(screen.getByLabelText("自定义周期"), "3");
+    await user.click(screen.getByRole("combobox", { name: "自定义周期单位" }));
+    await user.click(await screen.findByRole("option", { name: "年" }));
+
+    await user.click(screen.getByRole("button", { name: "保存修改" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      id: "sub-1",
+      billingCycle: "custom",
+      customDays: 3,
+      customCycleUnit: "year",
+      nextBillingDate: "2029-05-14",
+    }));
+  });
+
+  it("clears and disables the renewal date when switching to one-time purchase", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+
+    render(
+      <TooltipProvider delayDuration={0}>
+        <SubscriptionDialog
+          mode="edit"
+          open
+          onOpenChange={vi.fn()}
+          onSubmit={onSubmit}
+          subscription={makeSubscription({
+            billingCycle: "monthly",
+            startDate: assertDateOnly("2026-05-14"),
+            nextBillingDate: assertDateOnly("2027-06-25"),
+            autoCalculateNextBillingDate: false,
+          })}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: /2027年6月25日/ })).not.toBeDisabled();
+
+    const billingCycleSelect = screen.getByRole("combobox", { name: "扣费周期" });
+    await user.click(billingCycleSelect);
+    await user.click(await screen.findByRole("option", { name: "一次性购买" }));
+
+    const renewalDateButton = screen.getByRole("button", { name: /到期日期.*选择日期/ });
+    expect(renewalDateButton).toBeDisabled();
+    expect(screen.queryByText("2027年6月25日")).not.toBeInTheDocument();
+    expect(screen.getByText("一次性购买不会自动推算后续续费日。")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "保存修改" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      id: "sub-1",
+      billingCycle: "one-time",
+      nextBillingDate: "2026-05-14",
+      autoCalculateNextBillingDate: false,
+    }));
+  });
+
   it("keeps explicit reminder days when editing historical subscriptions", () => {
     render(
       <TooltipProvider delayDuration={0}>
@@ -211,6 +297,7 @@ describe("SubscriptionDialog", () => {
       currency: "USD",
       billingCycle: "monthly",
       customDays: undefined,
+      customCycleUnit: undefined,
       category: "productivity",
       status: "active",
       pinned: false,
@@ -447,6 +534,7 @@ describe("SubscriptionDialog", () => {
       currency: "USD",
       billingCycle: "monthly",
       customDays: undefined,
+      customCycleUnit: undefined,
       category: "productivity",
       status: "active",
       pinned: false,

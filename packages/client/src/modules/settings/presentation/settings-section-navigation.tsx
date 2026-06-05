@@ -1,5 +1,6 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Drawer } from "vaul";
 import { Menu, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -441,7 +442,10 @@ export function MobileSettingsPageHeader({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-export function useUnsavedChangesGuard(enabled: boolean, message: string, onConfirmLeave: () => void) {
+export function useUnsavedChangesGuard(enabled: boolean, onConfirmLeave: () => void) {
+  const navigate = useNavigate();
+  const [pendingUrl, setPendingUrl] = useState<URL | null>(null);
+
   useEffect(() => {
     if (!enabled) return undefined;
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -487,15 +491,36 @@ export function useUnsavedChangesGuard(enabled: boolean, message: string, onConf
         return;
       }
 
-      if (window.confirm(message)) {
-        onConfirmLeave();
-        return;
-      }
       event.preventDefault();
       event.stopPropagation();
+      setPendingUrl(nextUrl);
     };
 
+    // beforeunload 只能显示浏览器通用文案；站内 SPA 导航在这里转成 Renewlet 风格确认弹窗。
     document.addEventListener("click", handleClick, true);
     return () => document.removeEventListener("click", handleClick, true);
-  }, [enabled, message, onConfirmLeave]);
+  }, [enabled]);
+
+  useEffect(() => {
+    if (enabled) return;
+    setPendingUrl(null);
+  }, [enabled]);
+
+  const cancelLeave = useCallback(() => {
+    setPendingUrl(null);
+  }, []);
+
+  const confirmLeave = useCallback(() => {
+    if (!pendingUrl) return;
+    const nextPath = `${pendingUrl.pathname}${pendingUrl.search}${pendingUrl.hash}`;
+    setPendingUrl(null);
+    onConfirmLeave();
+    navigate(nextPath);
+  }, [navigate, onConfirmLeave, pendingUrl]);
+
+  return {
+    pendingLeave: pendingUrl !== null,
+    cancelLeave,
+    confirmLeave,
+  };
 }

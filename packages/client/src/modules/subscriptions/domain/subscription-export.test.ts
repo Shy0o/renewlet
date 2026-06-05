@@ -41,6 +41,22 @@ describe("subscription-export", () => {
     expect(csv).toContain('"默认值从设置中获取"');
     expect(csv).not.toContain('"-1"');
   });
+
+  it("renders concrete custom billing cycles in CSV", () => {
+    const csv = buildSubscriptionsCsv([makeSubscription({
+      billingCycle: "custom",
+      customDays: 3,
+      customCycleUnit: "year",
+    })], {
+      categoryLabelByValue: new Map([["productivity", "生产力"]]),
+      statusLabelByValue: new Map([["active", "活跃"]]),
+      locale: "zh-CN",
+      today: assertDateOnly("2026-01-01"),
+    });
+
+    expect(csv).toContain('"每 3 年"');
+    expect(csv).not.toContain('"自定义"');
+  });
 });
 
 function makeSubscription(overrides: Partial<Subscription> = {}): Subscription {
@@ -52,6 +68,7 @@ function makeSubscription(overrides: Partial<Subscription> = {}): Subscription {
     currency: "USD",
     billingCycle: "monthly",
     customDays: undefined,
+    customCycleUnit: undefined,
     category: "productivity",
     status: "active",
     pinned: false,

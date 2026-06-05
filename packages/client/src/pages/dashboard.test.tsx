@@ -134,6 +134,7 @@ function subscription(overrides: Partial<FixedCycleSubscription> = {}): FixedCyc
     currency: "USD",
     billingCycle: "monthly",
     customDays: undefined,
+    customCycleUnit: undefined,
     category: "productivity",
     status: "active",
     pinned: false,

@@ -1,6 +1,7 @@
 import type { AdminUser } from "@renewlet/shared/schemas/admin";
 import type { ApiAppSettings } from "@renewlet/shared/schemas/settings";
 import type { ApiSubscription } from "@renewlet/shared/schemas/subscriptions";
+import type { CustomCycleUnit } from "@renewlet/shared/runtime";
 
 /**
  * Env 描述 wrangler 绑定和 CI 注入的构建变量。
@@ -62,6 +63,7 @@ export interface SubscriptionRow {
   currency: string;
   billing_cycle: string;
   custom_days: number | null;
+  custom_cycle_unit: CustomCycleUnit | null;
   category: string;
   status: string;
   pinned: number;

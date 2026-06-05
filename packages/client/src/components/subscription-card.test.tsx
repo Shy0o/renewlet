@@ -13,9 +13,9 @@ const originalWindowOpen = window.open;
 const mediaUtilitiesCss = readFileSync(join(process.cwd(), "src/styles/media-utilities.css"), "utf8");
 
 type FixedBillingCycle = Exclude<Subscription["billingCycle"], "custom">;
-type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "customDays">> & (
-  | { billingCycle?: FixedBillingCycle; customDays?: undefined }
-  | { billingCycle: "custom"; customDays?: number }
+type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit">> & (
+  | { billingCycle?: FixedBillingCycle; customDays?: undefined; customCycleUnit?: undefined }
+  | { billingCycle: "custom"; customDays?: number; customCycleUnit?: Subscription["customCycleUnit"] }
 );
 type SubscriptionCardHandlers = {
   onEdit?: (id: string) => void;
@@ -98,6 +98,7 @@ const baseSubscription: Subscription = {
   currency: "USD",
   billingCycle: "monthly",
   customDays: undefined,
+  customCycleUnit: undefined,
   category: "developer-tools",
   status: "active",
   paymentMethod: undefined,
@@ -122,6 +123,7 @@ function createSubscription(overrides: SubscriptionOverrides = {}): Subscription
       ...overrides,
       billingCycle: "custom",
       customDays: overrides.customDays ?? 30,
+      customCycleUnit: overrides.customCycleUnit ?? "day",
     };
   }
 
@@ -130,6 +132,7 @@ function createSubscription(overrides: SubscriptionOverrides = {}): Subscription
     ...overrides,
     billingCycle: overrides.billingCycle ?? "monthly",
     customDays: undefined,
+    customCycleUnit: undefined,
   };
 }
 
@@ -567,6 +570,13 @@ describe("SubscriptionCard", () => {
     expect(screen.getByRole("dialog", { name: "添加到日历" })).toBeInTheDocument();
     expect(screen.getByText("事件日期")).toBeInTheDocument();
     expect(screen.getByText("2026年6月15日")).toBeInTheDocument();
+  });
+
+  it("renders concrete custom billing cycle labels", () => {
+    renderSubscriptionCard({ billingCycle: "custom", customDays: 3, customCycleUnit: "year" });
+
+    expect(screen.getByText("每 3 年")).toBeInTheDocument();
+    expect(screen.queryByText("自定义")).not.toBeInTheDocument();
   });
 
   it("renders overdue active subscriptions with the expired status treatment", () => {

@@ -12,10 +12,10 @@ import {
 } from "./subscription-filters";
 
 type FixedBillingCycle = Exclude<Subscription["billingCycle"], "custom">;
-type SubscriptionBaseFixture = Omit<Subscription, "billingCycle" | "customDays">;
-type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "customDays">> & (
-  | { billingCycle?: FixedBillingCycle; customDays?: undefined }
-  | { billingCycle: "custom"; customDays?: number }
+type SubscriptionBaseFixture = Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit">;
+type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit">> & (
+  | { billingCycle?: FixedBillingCycle; customDays?: undefined; customCycleUnit?: undefined }
+  | { billingCycle: "custom"; customDays?: number; customCycleUnit?: Subscription["customCycleUnit"] }
 );
 
 const convert = (amount: number, from: string, to: string) => {
@@ -55,6 +55,7 @@ function subscription(overrides: SubscriptionOverrides = {}): Subscription {
       ...overrides,
       billingCycle: "custom",
       customDays: overrides.customDays ?? 30,
+      customCycleUnit: overrides.customCycleUnit ?? "day",
     };
   }
 
@@ -63,6 +64,7 @@ function subscription(overrides: SubscriptionOverrides = {}): Subscription {
     ...overrides,
     billingCycle: overrides.billingCycle ?? "monthly",
     customDays: undefined,
+    customCycleUnit: undefined,
   };
 }
 

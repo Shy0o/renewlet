@@ -12,9 +12,13 @@ export type ThemeVariant = (typeof THEME_VARIANTS)[number];
 export const SUBSCRIPTION_STATUSES = ["trial", "active", "expired", "paused", "cancelled"] as const;
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 
-/** `one-time` 不参与续费提醒和月度折算；`custom` 是唯一允许 customDays 的周期。 */
+/** `one-time` 不参与续费提醒和月度折算；`custom` 由 customDays 数量和 customCycleUnit 单位共同定义。 */
 export const BILLING_CYCLES = ["weekly", "monthly", "quarterly", "semi-annual", "annual", "custom", "one-time"] as const;
 export type BillingCycle = (typeof BILLING_CYCLES)[number];
+
+/** 自定义扣费周期单位是跨 Go/PocketBase、D1 和前端日期算法的共同契约；旧 custom 数据缺省按 day 读取。 */
+export const CUSTOM_CYCLE_UNITS = ["day", "week", "month", "year"] as const;
+export type CustomCycleUnit = (typeof CUSTOM_CYCLE_UNITS)[number];
 
 /** 通知渠道枚举同时约束设置 payload、cron result 和历史面板筛选。 */
 export const NOTIFICATION_CHANNELS = ["telegram", "notifyx", "webhook", "wechat", "email", "bark"] as const;

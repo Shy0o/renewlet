@@ -138,6 +138,7 @@ function subscriptionDraft(overrides: Partial<FixedSubscriptionDraft> = {}): Fix
     currency: "USD",
     billingCycle: "monthly",
     customDays: undefined,
+    customCycleUnit: undefined,
     category: "productivity",
     status: "active",
     pinned: false,

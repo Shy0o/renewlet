@@ -96,7 +96,7 @@ func registerRecordHooks(app core.App) {
 }
 
 // normalizeSubscriptionRecord 校验并规范化订阅记录。
-// 注意： billingCycle/customDays 的关系必须与前端 discriminated union 保持一致。
+// 注意： billingCycle/customDays/customCycleUnit 的关系必须与前端 discriminated union 保持一致。
 func normalizeSubscriptionRecord(record *core.Record) error {
 	name := strings.TrimSpace(record.GetString("name"))
 	if name == "" {
@@ -123,15 +123,25 @@ func normalizeSubscriptionRecord(record *core.Record) error {
 
 	billingCycle := record.GetString("billingCycle")
 	customDays := record.GetInt("customDays")
+	customCycleUnit := strings.TrimSpace(record.GetString("customCycleUnit"))
 	if billingCycle == "custom" {
 		if customDays <= 0 {
 			return errors.New("CUSTOM_DAYS_REQUIRED")
 		}
+		if customCycleUnit == "" {
+			// 旧 custom 数据没有单位字段；持久层读写边界统一按 day 解释，避免历史自定义天数被误作月/年。
+			record.Set("customCycleUnit", "day")
+		} else if !isValidCustomCycleUnit(customCycleUnit) {
+			return errors.New("CUSTOM_CYCLE_UNIT_INVALID")
+		}
 	} else if customDays < 0 {
 		return errors.New("CUSTOM_DAYS_NEGATIVE")
 	} else if customDays > 0 {
-		// 非 custom 周期清零 customDays，避免历史值影响前端统计和通知计算。
+		// 非 custom 周期清零自定义字段，避免历史值影响前端统计和通知计算。
 		record.Set("customDays", 0)
+		record.Set("customCycleUnit", "")
+	} else if customCycleUnit != "" {
+		record.Set("customCycleUnit", "")
 	}
 	if billingCycle == "one-time" {
 		// one-time 是买断/终身授权，不应参与自动续费日期推算；API 和 Admin UI 写入都在持久层兜底关闭。
@@ -204,6 +214,10 @@ func normalizeSubscriptionRecord(record *core.Record) error {
 	record.Set("repeatReminderWindow", repeatWindow)
 
 	return nil
+}
+
+func isValidCustomCycleUnit(value string) bool {
+	return value == "day" || value == "week" || value == "month" || value == "year"
 }
 
 // normalizeSettingsRecord 校验 settings JSON 并写回规范化后的强类型结构。
