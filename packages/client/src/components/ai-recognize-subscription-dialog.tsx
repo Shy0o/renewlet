@@ -1,31 +1,34 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Check, CheckCircle2, Circle, FileSearch, Loader2 } from "lucide-react";
+import { AlertTriangle, FileSearch } from "lucide-react";
 import { AIDraftReviewPanel } from "@/components/ai-recognition/ai-draft-review-panel";
+import {
+  AIRecognitionCompactStepper,
+  AIRecognitionFooterActions,
+  AIRecognitionRunSettingsPanel,
+  AIRecognitionStepper,
+  NO_THINKING_CONTROL_ID,
+  type AIRecognitionStep,
+} from "@/components/ai-recognition/ai-recognition-dialog-layout";
 import { AIRecognitionInputTabs } from "@/components/ai-recognition/ai-recognition-input-tabs";
 import type { AIDraftListItem, AIRecognitionImageItem, AIRecognitionInputMode } from "@/components/ai-recognition/ai-recognition-dialog-types";
 import Link from "@/components/router-link";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ImportPreviewPanel } from "@/components/import-preview-panel";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { useI18n } from "@/i18n/I18nProvider";
-import type { MessageKey } from "@/i18n/messages";
 import { getDisplayErrorMessage } from "@/lib/display-error";
 import { todayDateOnlyInTimeZone } from "@/lib/time/date-only";
 import {
   AI_RECOGNITION_MAX_IMAGE_BYTES,
   AI_RECOGNITION_MAX_IMAGES,
-  AI_RECOGNITION_MAX_TEXT_CHARS,
   type AiRecognizedSubscriptionDraft,
-  type AiRecognitionProvider,
   type AiThinkingControl,
 } from "@/lib/api/schemas/ai-recognition";
 import { cn } from "@/lib/utils";
 import type { CustomConfig } from "@/types/config";
 import type { AppSettings } from "@/types/subscription";
 import {
-  type AIThinkingOption,
   getAIThinkingOptions,
   normalizeAIThinkingControl,
   thinkingControlFromOptionId,
@@ -46,15 +49,8 @@ interface AIRecognizeSubscriptionDialogProps {
   availableTags?: readonly string[];
 }
 
-const NO_THINKING_CONTROL_ID = "no-explicit-thinking";
 type AIRecognitionStage = "input" | "draft" | "preview";
 const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
-const AI_PROVIDER_LABEL_KEYS: Record<AiRecognitionProvider, MessageKey> = {
-  openai: "aiRecognition.provider.openai",
-  gemini: "aiRecognition.provider.gemini",
-  anthropic: "aiRecognition.provider.anthropic",
-  "openai-compatible": "aiRecognition.provider.openaiCompatible",
-};
 const AI_BLOCKING_IMPORT_WARNING_CODES = new Set<string>([
   IMPORT_MESSAGE_CODES.aiBillingCycleDefaulted,
   IMPORT_MESSAGE_CODES.aiCurrencyDefaulted,
@@ -71,6 +67,7 @@ export function AIRecognizeSubscriptionDialog({
   availableTags = [],
 }: AIRecognizeSubscriptionDialogProps) {
   const { t } = useI18n();
+  const isMobile = useMediaQuery("(max-width: 639px)");
   const textInputRef = useRef<HTMLTextAreaElement>(null);
   const imageItemsRef = useRef<AIRecognitionImageItem[]>([]);
   const imageIdRef = useRef(0);
@@ -131,6 +128,15 @@ export function AIRecognizeSubscriptionDialog({
   const inputStageVisible = stage === "input";
   const draftStageVisible = stage === "draft";
   const previewStageVisible = stage === "preview";
+  const steps: AIRecognitionStep[] = [
+    { label: t("aiRecognition.stepInput"), active: stage === "input", done: drafts.length > 0 && !draftsStale },
+    { label: t("aiRecognition.stepDraft"), active: stage === "draft", done: stage === "preview" },
+    { label: t("import.stepPreview"), active: stage === "preview", done: Boolean(preview && preview.summary.errors === 0) },
+    { label: t("import.stepApply"), active: Boolean(preview && preview.summary.errors === 0), done: false },
+  ];
+  const mobileActiveStepIndex = previewStageVisible && preview?.summary.errors === 0
+    ? 3
+    : draftStageVisible ? 1 : previewStageVisible ? 2 : 0;
 
   useEffect(() => {
     imageItemsRef.current = images;
@@ -313,51 +319,46 @@ export function AIRecognizeSubscriptionDialog({
     setSelectedDraftId((currentSelected) => (currentSelected === id ? fallback : currentSelected));
   }
 
-  return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent
-        layout="frame"
-        className={cn(
-          "h5-import-dialog-panel overflow-hidden border-border bg-card p-0 sm:max-w-6xl",
-          workflowExpanded ? "h5-dialog-frame" : "h5-ai-recognition-input-dialog-frame",
-        )}
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          textInputRef.current?.focus();
-        }}
-      >
-        <DialogHeader className="shrink-0 border-b border-border bg-card px-4 py-4 pr-12 sm:px-6 sm:pr-14">
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary/50 text-muted-foreground">
-                <FileSearch className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 text-left">
-                <DialogTitle className="text-lg">{t("aiRecognition.dialogTitle")}</DialogTitle>
-                <DialogDescription className="mt-1 max-w-3xl text-left leading-5">{t("aiRecognition.dialogDescription")}</DialogDescription>
-              </div>
-            </div>
-            <AIRecognitionStepper
-              steps={[
-                { label: t("aiRecognition.stepInput"), active: stage === "input", done: drafts.length > 0 && !draftsStale },
-                { label: t("aiRecognition.stepDraft"), active: stage === "draft", done: stage === "preview" },
-                { label: t("import.stepPreview"), active: stage === "preview", done: Boolean(preview && preview.summary.errors === 0) },
-                { label: t("import.stepApply"), active: Boolean(preview && preview.summary.errors === 0), done: false },
-              ]}
-              ariaLabel={t("aiRecognition.dialogTitle")}
-            />
-          </div>
-        </DialogHeader>
+  const inputTabs = (
+    <AIRecognitionInputTabs
+      mode={inputMode}
+      onModeChange={handleInputModeChange}
+      text={text}
+      onTextChange={handleTextChange}
+      textInputRef={textInputRef}
+      images={images}
+      disabled={recognizing}
+      onAddImages={addImages}
+      onRemoveImage={removeImage}
+      layout={isMobile ? "mobile-compact" : "default"}
+    />
+  );
+  const runSettingsPanel = (
+    <AIRecognitionRunSettingsPanel
+      provider={aiSettings.provider}
+      model={aiSettings.model}
+      mode={inputMode}
+      textLength={text.length}
+      imageCount={images.length}
+      thinkingOptions={thinkingOptions}
+      selectedThinkingId={selectedThinkingId}
+      disabled={recognizing}
+      layout={isMobile ? "mobile-bar" : "default"}
+      onThinkingChange={handleThinkingChange}
+    />
+  );
 
-        <div
-          data-testid="ai-recognition-dialog-body"
-          className={cn(
-            "min-h-0 px-4 py-4 sm:px-6",
-            inputStageVisible || draftStageVisible
-              ? "flex flex-col gap-4 overflow-hidden"
-              : "space-y-4 overflow-y-auto",
-          )}
-        >
+  const body = (
+    <div
+      data-testid="ai-recognition-dialog-body"
+      className={cn(
+        "min-h-0",
+        isMobile ? "px-3 py-2" : "px-4 py-4 sm:px-6",
+        inputStageVisible || draftStageVisible
+          ? cn("flex flex-col overflow-hidden", isMobile ? "gap-2" : "gap-4")
+          : cn("overflow-y-auto", isMobile ? "space-y-3" : "space-y-4"),
+      )}
+    >
           {settingsBlocker ? (
             <div className="flex flex-col gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-foreground sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 gap-2">
@@ -373,29 +374,26 @@ export function AIRecognizeSubscriptionDialog({
           ) : null}
 
           {inputStageVisible ? (
-            <section className="grid min-h-0 flex-1 gap-4 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-stretch lg:overflow-hidden" aria-label={t("aiRecognition.stepInput")}>
-              <AIRecognitionInputTabs
-                mode={inputMode}
-                onModeChange={handleInputModeChange}
-                text={text}
-                onTextChange={handleTextChange}
-                textInputRef={textInputRef}
-                images={images}
-                disabled={recognizing}
-                onAddImages={addImages}
-                onRemoveImage={removeImage}
-              />
-              <AIRecognitionRunSettingsPanel
-                provider={aiSettings.provider}
-                model={aiSettings.model}
-                mode={inputMode}
-                textLength={text.length}
-                imageCount={images.length}
-                thinkingOptions={thinkingOptions}
-                selectedThinkingId={selectedThinkingId}
-                disabled={recognizing}
-                onThinkingChange={handleThinkingChange}
-              />
+            <section
+              className={cn(
+                "grid min-h-0 flex-1",
+                isMobile
+                  ? "grid-rows-[auto_minmax(0,1fr)] gap-2 overflow-hidden"
+                  : "gap-4 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-stretch lg:overflow-hidden",
+              )}
+              aria-label={t("aiRecognition.stepInput")}
+            >
+              {isMobile ? (
+                <>
+                  {runSettingsPanel}
+                  {inputTabs}
+                </>
+              ) : (
+                <>
+                  {inputTabs}
+                  {runSettingsPanel}
+                </>
+              )}
             </section>
           ) : null}
 
@@ -457,177 +455,125 @@ export function AIRecognizeSubscriptionDialog({
               />
             </>
           ) : null}
-        </div>
+    </div>
+  );
 
-        <DialogFooter className="shrink-0 border-t border-border bg-card px-4 py-4 sm:px-6">
-          <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>{t("common.cancel")}</Button>
-          {inputStageVisible && drafts.length > 0 && !draftsStale ? (
-            <Button
-              type="button"
-              variant="outline"
-              className="gap-2 border-border"
-              disabled={recognizing}
-              onClick={handleBackToDraft}
-            >
-              {t("aiRecognition.backToDraft")}
-            </Button>
-          ) : null}
-          {inputStageVisible ? (
-            <Button
-              type="button"
-              className="gap-2 bg-primary text-primary-foreground hover:bg-primary-glow"
-              disabled={!canGenerate}
-              onClick={() => void handleRecognize()}
-            >
-              {recognizing ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSearch className="h-4 w-4" />}
-              {recognizing ? t("aiRecognition.recognizing") : t(drafts.length > 0 ? "aiRecognition.regenerateDrafts" : "aiRecognition.generateDrafts")}
-            </Button>
-          ) : draftStageVisible ? (
+  const desktopFooter = (
+    <DialogFooter className="shrink-0 border-t border-border bg-card px-4 py-4 sm:px-6">
+      <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>{t("common.cancel")}</Button>
+      <AIRecognitionFooterActions
+        inputStageVisible={inputStageVisible}
+        draftStageVisible={draftStageVisible}
+        previewStageVisible={previewStageVisible}
+        draftsCount={drafts.length}
+        draftsStale={draftsStale}
+        recognizing={recognizing}
+        canGenerate={canGenerate}
+        previewingDrafts={previewingDrafts}
+        hasDraftBlockingIssues={hasDraftBlockingIssues}
+        preview={preview}
+        applying={applying}
+        hasBlockingImportWarnings={hasBlockingImportWarnings}
+        onBackToDraft={handleBackToDraft}
+        onRecognize={() => void handleRecognize()}
+        onBackToInput={handleBackToInput}
+        onBuildPreview={() => void handleBuildPreview()}
+        onApply={() => void handleApply()}
+      />
+    </DialogFooter>
+  );
+
+  const mobileFooter = (
+    <div
+      data-testid="ai-recognition-mobile-footer"
+      className="flex shrink-0 gap-2 border-t border-border bg-card px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
+    >
+      <AIRecognitionFooterActions
+        inputStageVisible={inputStageVisible}
+        draftStageVisible={draftStageVisible}
+        previewStageVisible={previewStageVisible}
+        draftsCount={drafts.length}
+        draftsStale={draftsStale}
+        recognizing={recognizing}
+        canGenerate={canGenerate}
+        previewingDrafts={previewingDrafts}
+        hasDraftBlockingIssues={hasDraftBlockingIssues}
+        preview={preview}
+        applying={applying}
+        hasBlockingImportWarnings={hasBlockingImportWarnings}
+        mobile
+        onBackToDraft={handleBackToDraft}
+        onRecognize={() => void handleRecognize()}
+        onBackToInput={handleBackToInput}
+        onBuildPreview={() => void handleBuildPreview()}
+        onApply={() => void handleApply()}
+      />
+    </div>
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        layout="frame"
+        closeLabel={t("common.close")}
+        className={cn(
+          "overflow-hidden border-border bg-card p-0",
+          isMobile
+            ? "h5-ai-recognition-workbench-frame"
+            : cn(
+              "h5-import-dialog-panel sm:max-w-6xl",
+              workflowExpanded ? "h5-dialog-frame" : "h5-ai-recognition-input-dialog-frame",
+            ),
+        )}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          // H5 首屏需要先露出输入模式和上传入口；自动聚焦会立刻弹键盘并挤掉工作区。
+          if (isMobile) return;
+          textInputRef.current?.focus();
+        }}
+      >
+        <DialogHeader
+          className={cn(
+            "shrink-0 border-b border-border bg-card pr-12",
+            isMobile ? "px-4 py-3 text-left" : "px-4 py-4 sm:px-6 sm:pr-14",
+          )}
+        >
+          {isMobile ? (
             <>
-              <Button type="button" variant="outline" className="border-border" disabled={previewingDrafts || recognizing} onClick={handleBackToInput}>
-                {t("aiRecognition.backToInput")}
-              </Button>
-              <Button
-                type="button"
-                className="gap-2"
-                onClick={() => void handleBuildPreview()}
-                disabled={previewingDrafts || recognizing || drafts.length === 0 || draftsStale || hasDraftBlockingIssues}
-              >
-                {previewingDrafts ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                {t("aiRecognition.previewDrafts")}
-              </Button>
-            </>
-          ) : preview && previewStageVisible ? (
-            <>
-              <Button type="button" variant="outline" className="border-border" disabled={applying} onClick={handleBackToDraft}>
-                {t("aiRecognition.backToDraft")}
-              </Button>
-              <Button type="button" onClick={() => void handleApply()} disabled={preview.summary.errors > 0 || hasBlockingImportWarnings || applying}>
-                {applying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-                {t("aiRecognition.confirmImport")}
-              </Button>
+              <DialogTitle className="text-base leading-6">{t("aiRecognition.dialogTitle")}</DialogTitle>
+              <DialogDescription className="sr-only">{t("aiRecognition.dialogDescription")}</DialogDescription>
             </>
           ) : (
-            <Button
-              type="button"
-              className="gap-2"
-              onClick={() => void handleBuildPreview()}
-              disabled={previewingDrafts || recognizing || drafts.length === 0 || hasDraftBlockingIssues}
-            >
-              {previewingDrafts ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              {t("aiRecognition.previewDrafts")}
-            </Button>
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary/50 text-muted-foreground">
+                  <FileSearch className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 text-left">
+                  <DialogTitle className="text-lg">{t("aiRecognition.dialogTitle")}</DialogTitle>
+                  <DialogDescription className="mt-1 max-w-3xl text-left leading-5">{t("aiRecognition.dialogDescription")}</DialogDescription>
+                </div>
+              </div>
+              <AIRecognitionStepper
+                steps={steps}
+                ariaLabel={t("aiRecognition.dialogTitle")}
+              />
+            </div>
           )}
-        </DialogFooter>
+        </DialogHeader>
+
+        {isMobile ? (
+          <AIRecognitionCompactStepper
+            steps={steps}
+            activeIndex={mobileActiveStepIndex}
+            ariaLabel={t("aiRecognition.dialogTitle")}
+          />
+        ) : null}
+
+        {body}
+        {isMobile ? mobileFooter : desktopFooter}
       </DialogContent>
     </Dialog>
-  );
-}
-
-function AIRecognitionStepper({
-  steps,
-  ariaLabel,
-}: {
-  steps: Array<{ label: string; active: boolean; done: boolean }>;
-  ariaLabel: string;
-}) {
-  return (
-    <ol className="flex min-w-0 items-center gap-0 overflow-x-auto text-xs text-muted-foreground lg:justify-end" aria-label={ariaLabel}>
-      {steps.map((step, index) => (
-        <li key={step.label} className="flex min-w-0 items-center">
-          <span className={cn(
-            "inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1",
-            step.active && "text-foreground",
-          )}>
-            <span className={cn(
-              "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px]",
-              step.done
-                ? "border-primary/40 bg-primary/10 text-primary"
-                : step.active
-                  ? "border-foreground/40 bg-background text-foreground"
-                  : "border-border bg-secondary/40 text-muted-foreground",
-            )}>
-              {step.done ? <Check className="h-3 w-3" /> : step.active ? <Circle className="h-2 w-2 fill-current" /> : index + 1}
-            </span>
-            <span className="truncate">{step.label}</span>
-          </span>
-          {index < steps.length - 1 ? <span className="mx-1 h-px w-6 shrink-0 bg-border" /> : null}
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function AIRecognitionRunSettingsPanel({
-  provider,
-  model,
-  mode,
-  textLength,
-  imageCount,
-  thinkingOptions,
-  selectedThinkingId,
-  disabled,
-  onThinkingChange,
-}: {
-  provider: AiRecognitionProvider;
-  model: string;
-  mode: AIRecognitionInputMode;
-  textLength: number;
-  imageCount: number;
-  thinkingOptions: AIThinkingOption[];
-  selectedThinkingId: string;
-  disabled: boolean;
-  onThinkingChange: (value: string) => void;
-}) {
-  const { t } = useI18n();
-  const inputSummary = mode === "text"
-    ? `${textLength}/${AI_RECOGNITION_MAX_TEXT_CHARS}`
-    : t("aiRecognition.imageCount", { count: imageCount, max: AI_RECOGNITION_MAX_IMAGES });
-
-  return (
-    <aside className="rounded-lg border border-border bg-background p-3" aria-label={t("aiRecognition.settingsTitle")}>
-      <div className="border-b border-border pb-3">
-        <h3 className="text-sm font-semibold text-foreground">{t("aiRecognition.settingsTitle")}</h3>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{t("aiRecognition.thinkingRunHelp")}</p>
-      </div>
-
-      <dl className="grid gap-2 border-b border-border py-3 text-xs">
-        <SummaryLine label={t("aiRecognition.provider")} value={t(AI_PROVIDER_LABEL_KEYS[provider])} />
-        <SummaryLine label={t("aiRecognition.model")} value={model || t("aiRecognition.draftUnknownValue")} />
-        <SummaryLine label={t("aiRecognition.stepInput")} value={inputSummary} />
-      </dl>
-
-      <div className="grid gap-2 pt-3">
-        <Label htmlFor="ai-recognition-thinking" className="text-xs font-medium text-muted-foreground">
-          {t("aiRecognition.thinking")}
-        </Label>
-        <Select value={selectedThinkingId} disabled={disabled} onValueChange={onThinkingChange}>
-          <SelectTrigger id="ai-recognition-thinking" className="h-9 border-border bg-secondary/40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NO_THINKING_CONTROL_ID}>{t("aiRecognition.thinking.noExplicitControl")}</SelectItem>
-            {thinkingOptions.map((option) => (
-              <SelectItem key={option.id} value={option.id}>{t(option.labelKey)}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="text-xs leading-5 text-muted-foreground">
-          {thinkingOptions.length > 0
-            ? t("aiRecognition.thinkingHelp")
-            : t(provider === "openai-compatible" ? "aiRecognition.thinkingUnsupportedCompatible" : "aiRecognition.thinkingUnsupportedModel")}
-        </p>
-      </div>
-    </aside>
-  );
-}
-
-function SummaryLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid grid-cols-[5rem_minmax(0,1fr)] items-start gap-2">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 truncate text-right font-medium text-foreground" title={value}>{value}</dd>
-    </div>
   );
 }
 
