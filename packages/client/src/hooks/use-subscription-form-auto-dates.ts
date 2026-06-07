@@ -5,6 +5,18 @@ import type { DateOnly } from "@/lib/time/date-only";
 import type { SubscriptionFormState } from "@/types/subscription-form";
 
 type SubscriptionFormAutoDatePatch = Pick<Partial<SubscriptionFormState>, "autoCalculate" | "nextBillingDate">;
+type SubscriptionFormAutoDateFields = Pick<
+  SubscriptionFormState,
+  | "autoCalculate"
+  | "billingCycle"
+  | "customCycleUnit"
+  | "customDays"
+  | "nextBillingDate"
+  | "oneTimeMode"
+  | "oneTimeTermCount"
+  | "oneTimeTermUnit"
+  | "startDate"
+>;
 
 export function useSubscriptionFormAutoDates(
   formData: SubscriptionFormState,
@@ -12,29 +24,51 @@ export function useSubscriptionFormAutoDates(
   billingReferenceDate: DateOnly,
   onAutoDatePatch?: (patch: SubscriptionFormAutoDatePatch) => void,
 ): void {
+  const {
+    autoCalculate,
+    billingCycle,
+    customCycleUnit,
+    customDays,
+    nextBillingDate,
+    oneTimeMode,
+    oneTimeTermCount,
+    oneTimeTermUnit,
+    startDate,
+  } = formData;
+
   useEffect(() => {
-    const patch = getSubscriptionFormAutoDatePatch(formData, billingReferenceDate);
+    const patch = getSubscriptionFormAutoDatePatch({
+      autoCalculate,
+      billingCycle,
+      customCycleUnit,
+      customDays,
+      nextBillingDate,
+      oneTimeMode,
+      oneTimeTermCount,
+      oneTimeTermUnit,
+      startDate,
+    }, billingReferenceDate);
     if (!patch) return;
     setFormData((prev) => ({ ...prev, ...patch }));
     onAutoDatePatch?.(patch);
   }, [
+    autoCalculate,
     billingReferenceDate,
-    formData.startDate,
-    formData.billingCycle,
-    formData.customDays,
-    formData.customCycleUnit,
-    formData.oneTimeMode,
-    formData.oneTimeTermCount,
-    formData.oneTimeTermUnit,
-    formData.autoCalculate,
-    formData.nextBillingDate,
+    billingCycle,
+    customCycleUnit,
+    customDays,
+    nextBillingDate,
     onAutoDatePatch,
+    oneTimeMode,
+    oneTimeTermCount,
+    oneTimeTermUnit,
     setFormData,
+    startDate,
   ]);
 }
 
 export function getSubscriptionFormAutoDatePatch(
-  formData: SubscriptionFormState,
+  formData: SubscriptionFormAutoDateFields,
   billingReferenceDate: DateOnly,
 ): SubscriptionFormAutoDatePatch | null {
   if (formData.billingCycle === "one-time") {
@@ -58,7 +92,7 @@ export function getSubscriptionFormAutoDatePatch(
 }
 
 function compactAutoDatePatch(
-  formData: SubscriptionFormState,
+  formData: SubscriptionFormAutoDateFields,
   patch: SubscriptionFormAutoDatePatch,
 ): SubscriptionFormAutoDatePatch | null {
   const compacted: SubscriptionFormAutoDatePatch = {};
