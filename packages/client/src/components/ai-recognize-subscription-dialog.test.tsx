@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VirtualItem } from "@tanstack/react-virtual";
 import type { AiRecognizedSubscriptionDraft, AiRecognizeResponse } from "@/lib/api/schemas/ai-recognition";
 import type { ImportPreviewResponse } from "@/lib/api/schemas/import-export";
@@ -210,6 +210,23 @@ function renderDialog(settings: AppSettings = configuredSettings()) {
   );
 }
 
+function mockMobile(matches = true) {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: query === "(max-width: 639px)" ? matches : false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
+
 function clipboardDataWithItems(items: Array<{ file: File; kind?: string; type?: string }>): DataTransfer {
   return {
     items: items.map(({ file, kind = "file", type = file.type }) => ({
@@ -254,6 +271,10 @@ describe("AIRecognizeSubscriptionDialog", () => {
     });
   });
 
+  afterEach(() => {
+    Reflect.deleteProperty(window, "matchMedia");
+  });
+
   it("输入阶段不渲染草稿列表和导入预览", () => {
     renderDialog();
 
@@ -271,6 +292,59 @@ describe("AIRecognizeSubscriptionDialog", () => {
     expect(body).not.toHaveClass("overflow-y-auto");
     expect(screen.queryByTestId("ai-draft-virtualized-list")).not.toBeInTheDocument();
     expect(screen.queryByTestId("import-preview-panel")).not.toBeInTheDocument();
+  });
+
+  it("H5 输入阶段使用近全屏工作台并固定紧凑头尾", () => {
+    mockMobile();
+    renderDialog();
+
+    const dialog = screen.getByRole("dialog");
+    const stepper = screen.getByTestId("ai-recognition-mobile-stepper");
+    const footer = screen.getByTestId("ai-recognition-mobile-footer");
+    const textarea = screen.getByPlaceholderText("粘贴记事本、备忘录或从 Excel 复制出的订阅列表...");
+
+    expect(dialog).toHaveClass("h5-ai-recognition-workbench-frame");
+    expect(dialog).not.toHaveClass("h5-ai-recognition-drawer");
+    expect(within(dialog).getByRole("button", { name: "关闭" })).toBeInTheDocument();
+    expect(stepper).toHaveTextContent("1/4");
+    expect(stepper).toHaveTextContent("输入");
+    expect(footer).toHaveClass("border-t", "pb-[calc(0.5rem+env(safe-area-inset-bottom))]");
+    expect(within(footer).getByRole("button", { name: "生成订阅草稿" })).toHaveClass("h-11", "flex-1");
+    expect(textarea).not.toHaveFocus();
+    expect(screen.queryByRole("button", { name: "取消" })).not.toBeInTheDocument();
+  });
+
+  it("H5 输入阶段使用紧凑设置面板并保留内部滚动主人", () => {
+    mockMobile();
+    renderDialog();
+
+    const body = screen.getByTestId("ai-recognition-dialog-body");
+    const runSettingsPanel = screen.getByTestId("ai-recognition-run-settings-panel");
+    const inputTabs = screen.getByTestId("ai-recognition-input-tabs");
+    const textPanel = screen.getByTestId("ai-recognition-text-panel");
+    const textarea = screen.getByPlaceholderText("粘贴记事本、备忘录或从 Excel 复制出的订阅列表...");
+
+    expect(body).toHaveClass("overflow-hidden");
+    expect(runSettingsPanel).toHaveAttribute("data-layout", "mobile-bar");
+    expect(inputTabs).toHaveAttribute("data-layout", "mobile-compact");
+    expect(textPanel).toHaveClass("grid-rows-[minmax(0,1fr)_auto]");
+    expect(textarea).toHaveClass("h-full", "min-h-0", "resize-none");
+  });
+
+  it("H5 图片输入首屏保留大号上传入口并在有图后切到紧凑添加行", async () => {
+    const user = userEvent.setup();
+    const image = new File(["one"], "one.png", { type: "image/png" });
+    mockMobile();
+    renderDialog();
+
+    await user.click(screen.getByRole("tab", { name: "图片" }));
+    const uploadButton = screen.getByTestId("ai-recognition-image-upload-button");
+    expect(uploadButton).toHaveClass("min-h-[12rem]", "w-full");
+    expect(screen.getByTestId("ai-recognition-image-scrollport")).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
+
+    await user.upload(screen.getByLabelText("添加订阅图片"), image);
+    expect(screen.getByTestId("ai-recognition-image-upload-button")).toHaveClass("h-12", "w-full");
+    expect(screen.getByRole("button", { name: "预览图片 one.png" })).toBeInTheDocument();
   });
 
   it("图片输入区只展示一次标题和说明", async () => {
@@ -424,6 +498,32 @@ describe("AIRecognizeSubscriptionDialog", () => {
     expect(body).not.toHaveClass("overflow-y-auto");
     expect(screen.getByTestId("ai-draft-list-scrollport")).toHaveClass("overflow-y-auto");
     expect(screen.getByTestId("ai-draft-editor-scrollport")).toHaveClass("lg:overflow-y-auto");
+  });
+
+  it("H5 草稿和预览阶段只保留必要返回动作和主动作", async () => {
+    const user = userEvent.setup();
+    mockMobile();
+    mocks.recognizeSubscriptions.mockResolvedValue(makeResponse([makeDraft()]));
+    renderDialog();
+
+    await user.type(screen.getByPlaceholderText("粘贴记事本、备忘录或从 Excel 复制出的订阅列表..."), "apple 50刀 1年");
+    await user.click(screen.getByRole("button", { name: "生成订阅草稿" }));
+
+    await screen.findByText("Apple Music");
+    const footer = screen.getByTestId("ai-recognition-mobile-footer");
+    expect(screen.getByTestId("ai-recognition-mobile-stepper")).toHaveTextContent("2/4");
+    expect(screen.getByTestId("ai-recognition-mobile-stepper")).toHaveTextContent("草稿");
+    expect(within(footer).getByRole("button", { name: "返回输入" })).toHaveClass("h-11", "flex-1");
+    expect(within(footer).getByRole("button", { name: "生成导入预览" })).toHaveClass("h-11", "flex-1");
+
+    await user.click(within(footer).getByRole("button", { name: "生成导入预览" }));
+
+    expect(await screen.findByTestId("import-preview-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("ai-recognition-mobile-stepper")).toHaveTextContent("4/4");
+    expect(screen.getByTestId("ai-recognition-mobile-stepper")).toHaveTextContent("执行");
+    expect(within(footer).getByRole("button", { name: "返回草稿" })).toHaveClass("h-11", "flex-1");
+    expect(within(footer).getByRole("button", { name: "确认添加" })).toHaveClass("h-11", "flex-1");
+    expect(screen.queryByRole("button", { name: "取消" })).not.toBeInTheDocument();
   });
 
   it("草稿缺少日期时在草稿阶段拦截导入预览", async () => {

@@ -54,6 +54,18 @@
     min-height: 0;
   }
 
+  /* H5 AI 识别承载键盘、上传、草稿和 sticky footer；Grid 高度链必须吃 visual viewport 而不是普通 100vh。 */
+  .h5-ai-recognition-workbench-frame {
+    display: grid;
+    gap: 0;
+    width: calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right));
+    max-width: 32rem;
+    height: calc(var(--app-viewport-height) - 0.5rem - env(safe-area-inset-top));
+    max-height: calc(var(--app-viewport-height) - 0.5rem - env(safe-area-inset-top));
+    min-height: 0;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+  }
+
   /* 订阅弹窗用 Grid 而非 Flex：header 固定、表单轨道可压缩，footer 不再靠魔法高度猜位置。 */
   .h5-subscription-dialog-panel {
     display: grid;
@@ -281,11 +293,16 @@
   @media (max-width: 767px) {
     /* visual viewport 顶部偏移来自运行时，专治 iOS 键盘/地址栏把 fixed Dialog 顶错位。 */
     .h5-dialog-frame,
-    .h5-ai-recognition-input-dialog-frame {
+    .h5-ai-recognition-input-dialog-frame,
+    .h5-ai-recognition-workbench-frame {
       top: calc(var(--app-visual-viewport-offset-top) + 1rem + env(safe-area-inset-top));
       bottom: auto;
       margin-top: 0;
       margin-bottom: 0;
+    }
+
+    .h5-ai-recognition-workbench-frame {
+      top: calc(var(--app-visual-viewport-offset-top) + 0.25rem + env(safe-area-inset-top));
     }
 
     /* 65 夹在父 Dialog(50) 和 mobile sheet(70) 中间，遮罩只截 sheet 外点击，不盖住真正内容。 */
