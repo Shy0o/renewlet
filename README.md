@@ -55,7 +55,7 @@ Idle memory usage is around 20-30MiB in local testing, making it comfortable for
 
 Click the button and follow the Cloudflare wizard for the easiest deployment path.
 
-If you want to create Cloudflare resources yourself or deploy with GitHub Actions, see [Cloudflare Workers manual deploy](docs/cloudflare-workers-deploy.md).
+If the page says `Failed to get repository contents`, Cloudflare is usually being rate-limited while reading the public GitHub repository. Avoid repeated retries; try again later, or use [Cloudflare Workers manual deploy](docs/cloudflare-workers-deploy.md).
 
 ## Quick Deploy
 
