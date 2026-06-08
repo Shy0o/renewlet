@@ -10,8 +10,11 @@ import type { SystemDeployment, SystemVersionResponse } from "@/lib/api/schemas/
 import type { MessageKey } from "@/i18n/messages";
 
 interface SystemUpdateDialogProps {
+  badgeClassName?: string | undefined;
+  contentAlign?: "center" | "end" | "start";
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  triggerClassName?: string | undefined;
 }
 
 const deploymentLabelKeys: Record<SystemDeployment, MessageKey> = {
@@ -40,7 +43,13 @@ export const systemRestartBrowser = {
  * Cloudflare/source 运行面只展示版本信息和不支持原因，不提供执行入口。
  * 前端只消费 deployment/updateMode/updateSupported，不能再从 buildType 反推部署能力。
  */
-export function SystemUpdateDialog({ open, onOpenChange }: SystemUpdateDialogProps) {
+export function SystemUpdateDialog({
+  badgeClassName,
+  contentAlign = "end",
+  open,
+  onOpenChange,
+  triggerClassName,
+}: SystemUpdateDialogProps) {
   const { t } = useI18n();
   const versionQuery = useSystemVersion(true, open);
   const updateMutation = useSystemUpdate();
@@ -131,14 +140,14 @@ export function SystemUpdateDialog({ open, onOpenChange }: SystemUpdateDialogPro
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className={cn("inline-flex max-w-full rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", triggerClassName)}
           aria-label={t("system.openUpdateDialog")}
         >
-          <SystemVersionBadge />
+          <SystemVersionBadge className={badgeClassName} />
         </button>
       </PopoverTrigger>
       <PopoverContent
-        align="end"
+        align={contentAlign}
         sideOffset={10}
         mobileTitle={t("system.currentVersion")}
         mobileCloseLabel={t("common.close")}
@@ -252,7 +261,7 @@ export function SystemUpdateDialog({ open, onOpenChange }: SystemUpdateDialogPro
   );
 }
 
-export function SystemVersionBadge() {
+export function SystemVersionBadge({ className }: { className?: string | undefined } = {}) {
   const { t } = useI18n();
   const versionQuery = useSystemVersion(true, false);
   const version = versionQuery.data;
@@ -265,6 +274,7 @@ export function SystemVersionBadge() {
         version?.hasUpdate
           ? "border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200 dark:border-amber-800/50 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50"
           : "border-border bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground",
+        className,
       )}
     >
       <span className="truncate">{label}</span>

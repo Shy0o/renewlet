@@ -22,7 +22,7 @@ function HeaderSkeleton({ showAddAction = false }: { showAddAction?: boolean }) 
             <SkeletonBox className="h-10 w-10 shrink-0 rounded-xl" />
             <div className="grid min-w-0 gap-1">
               <SkeletonBox className="h-6 w-28" />
-              <SkeletonBox className="hidden h-3 w-32 min-[380px]:block" />
+              <SkeletonBox className="h-6 w-[5.75rem] rounded-lg min-[380px]:w-32 sm:h-7" />
             </div>
           </div>
           <nav className="hidden items-center gap-1 lg:flex">
