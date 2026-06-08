@@ -53,6 +53,10 @@ import { useAccountIdentity } from "./use-account-email";
 import { useNotificationTest } from "./use-notification-test";
 import { usePasswordChange, type PasswordChangeController } from "./use-password-change";
 import {
+  usePublicStatusPageSettingsController,
+  type SettingsPublicStatusPageController,
+} from "./use-public-status-page-settings-controller";
+import {
   useNotificationHistory,
   type NotificationHistoryResponse,
   type NotificationHistoryStatusFilter,
@@ -209,6 +213,7 @@ export interface SettingsFormController {
   handleTestConnection: (channel: NotificationChannel) => void | Promise<void>;
   notificationHistory: SettingsNotificationHistoryController;
   calendarFeed: SettingsCalendarFeedController;
+  publicStatusPage: SettingsPublicStatusPageController;
   password: PasswordChangeController;
   passwordResetEnabled: boolean;
 }
@@ -262,6 +267,7 @@ export function useSettingsFormController(): SettingsFormController {
     () => countSubscriptionsByCategory(subscriptionsQuery.data ?? []),
     [subscriptionsQuery.data],
   );
+  const publicStatusPage = usePublicStatusPageSettingsController(subscriptionsQuery.data);
 
   const settingsDirty = useMemo(
     () => !areJsonSnapshotsEqual(settings, savedSettings),
@@ -732,6 +738,7 @@ export function useSettingsFormController(): SettingsFormController {
       regenerate: handleRegenerateCalendarFeed,
       revoke: handleRevokeCalendarFeed,
     },
+    publicStatusPage,
     password,
     passwordResetEnabled,
   };

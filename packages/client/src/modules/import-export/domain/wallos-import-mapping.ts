@@ -1,7 +1,7 @@
 import { importPayloadSchema, type ImportSubscription, type RenewletExportV1 } from "@/lib/api/schemas/import-export";
 import { getIntlCurrencySymbol, SUPPORTED_EXCHANGE_RATE_CURRENCIES } from "@/lib/currency-data";
 import type { CustomConfig } from "@/types/config";
-import { INHERIT_REMINDER_DAYS, MAX_REMINDER_DAYS, type AppSettings, type BillingCycle } from "@/types/subscription";
+import { DISABLED_REMINDER_DAYS, INHERIT_REMINDER_DAYS, MAX_REMINDER_DAYS, type AppSettings } from "@/types/subscription";
 import type { DateOnly } from "@/lib/time/date-only";
 import {
   WALLOS_DEFAULT_CURRENCIES,
@@ -19,6 +19,8 @@ import {
   normalizeWebsite,
   stableHash,
   toBillingCycleFromDays,
+  toBillingCycleFromUnit,
+  type ImportBillingCycle,
   type ImportAssetRef,
   type PreparedImport,
   type WallosImportUser,
@@ -72,6 +74,24 @@ interface BuildContext extends ImportBuildBaseContext {
   logoFiles: Map<string, ImportAssetSource>;
 }
 
+const MAX_IMPORT_NOTES_LENGTH = 5000;
+const WALLOS_AUDIT_FIELDS = [
+  "id",
+  "user_id",
+  "cycle",
+  "frequency",
+  "auto_renew",
+  "inactive",
+  "notify",
+  "notify_days_before",
+  "cancellation_date",
+  "replacement_subscription_id",
+  "currency_id",
+  "category_id",
+  "payment_method_id",
+  "payer_user_id",
+] as const;
+
 export function buildFromRenewletExport(
   data: RenewletExportV1,
   context: ImportBuildBaseContext,
@@ -93,11 +113,15 @@ export function buildFromRenewletExport(
       currency: subscription.currency,
       billingCycle: subscription.billingCycle,
       customDays: subscription.billingCycle === "custom" ? subscription.customDays ?? 1 : null,
+      customCycleUnit: subscription.billingCycle === "custom" ? subscription.customCycleUnit ?? "day" : null,
       category: subscription.category,
       status: subscription.status,
+      pinned: subscription.pinned,
+      publicHidden: subscription.publicHidden,
       paymentMethod: subscription.paymentMethod ?? null,
       startDate: subscription.startDate,
       nextBillingDate: subscription.nextBillingDate,
+      autoRenew: subscription.billingCycle === "one-time" ? false : subscription.autoRenew,
       autoCalculateNextBillingDate: subscription.autoCalculateNextBillingDate,
       trialEndDate: subscription.trialEndDate ?? null,
       website: subscription.website ?? null,
@@ -296,7 +320,9 @@ function mapWallosRow(
     status: wallosStatus(row),
     billing,
     reminderDays: wallosReminderDays(row, localWarnings),
-    autoCalculateNextBillingDate: Number(row["auto_renew"] ?? 1) === 1 && Number(row["cycle"] ?? 3) !== 5,
+    // Wallos auto_renew 是真实续订语义；字段缺失时遵循 Renewlet 默认关闭，不从 cycle 推断 consent。
+    autoRenew: row["auto_renew"] !== undefined && Number(row["auto_renew"]) === 1 && Number(row["cycle"] ?? 3) !== 5,
+    autoCalculateNextBillingDate: Number(row["cycle"] ?? 3) !== 5,
     sourceId: `${String(row["user_id"] ?? "1")}:${String(row["id"] ?? stableHash(JSON.stringify(row)))}`,
     confidence: row["id"] === undefined ? "low" : "high",
     oneTime,
@@ -318,8 +344,9 @@ function makeImportSubscription(input: {
   website?: string | undefined;
   notes?: string | undefined;
   status: "trial" | "active" | "expired" | "paused" | "cancelled";
-  billing: { billingCycle: BillingCycle; customDays?: number };
+  billing: ImportBillingCycle;
   reminderDays?: number | undefined;
+  autoRenew?: boolean | undefined;
   autoCalculateNextBillingDate?: boolean | undefined;
   logo?: string | undefined;
   sourceId: string;
@@ -328,8 +355,7 @@ function makeImportSubscription(input: {
   wallos: unknown;
   warnings: string[];
 }): ImportSubscription {
-  const wallosExtra: Record<string, unknown> = isRecord(input.wallos) ? { ...input.wallos } : { raw: input.wallos };
-  if (input.oneTime) wallosExtra["oneTime"] = true;
+  const wallosExtra = buildWallosImportAudit(input.wallos, Boolean(input.oneTime));
   return {
     name: input.name,
     logo: input.logo ?? null,
@@ -337,16 +363,19 @@ function makeImportSubscription(input: {
     currency: input.currency,
     billingCycle: input.billing.billingCycle,
     customDays: input.billing.billingCycle === "custom" ? input.billing.customDays ?? 1 : null,
+    customCycleUnit: input.billing.billingCycle === "custom" ? input.billing.customCycleUnit ?? "day" : null,
     category: input.category,
     status: input.status,
     pinned: false,
+    publicHidden: false,
     paymentMethod: input.paymentMethod ?? null,
     startDate: input.startDate as DateOnly,
     nextBillingDate: input.nextBillingDate as DateOnly,
+    autoRenew: input.oneTime ? false : input.autoRenew ?? false,
     autoCalculateNextBillingDate: input.oneTime ? false : input.autoCalculateNextBillingDate ?? true,
     trialEndDate: null,
     website: input.website ?? null,
-    notes: input.notes || null,
+    notes: truncateImportNotes(input.notes),
     tags: [],
     reminderDays: input.reminderDays ?? 3,
     repeatReminderEnabled: false,
@@ -359,13 +388,31 @@ function makeImportSubscription(input: {
   };
 }
 
+function buildWallosImportAudit(value: unknown, oneTime: boolean): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  if (isRecord(value)) {
+    // Wallos 行可能含超长 notes/logo/url；extra 只保留稳定排障字段，避免 Cloudflare D1 写入和 Go schema 预览校验漂移。
+    for (const field of WALLOS_AUDIT_FIELDS) {
+      if (value[field] !== undefined) result[field] = value[field];
+    }
+  }
+  if (oneTime) result["oneTime"] = true;
+  return result;
+}
+
+function truncateImportNotes(value: string | undefined): string | null {
+  const text = value?.trim();
+  if (!text) return null;
+  return text.length > MAX_IMPORT_NOTES_LENGTH ? text.slice(0, MAX_IMPORT_NOTES_LENGTH) : text;
+}
+
 function makeAssetRef(subscriptionIndex: number, filename: string, source: ImportAssetSource): ImportAssetRef {
   return typeof source === "string"
     ? { subscriptionIndex, filename, zipEntryName: source }
     : { subscriptionIndex, filename, blob: source };
 }
 
-function wallosBilling(row: WallosTableRow, warnings: string[]): { billingCycle: BillingCycle; customDays?: number } {
+function wallosBilling(row: WallosTableRow, warnings: string[]): ImportBillingCycle {
   const cycle = Number(row["cycle"] ?? 3);
   const frequency = Math.max(1, Number(row["frequency"] ?? 1) || 1);
   // Wallos cycle=5 是买断/终身授权；Renewlet 用 one-time 表达计费模型，不再伪装成取消订阅。
@@ -374,14 +421,14 @@ function wallosBilling(row: WallosTableRow, warnings: string[]): { billingCycle:
     return { billingCycle: "one-time" };
   }
   if (cycle === 1) return toBillingCycleFromDays(frequency);
-  if (cycle === 2) return toBillingCycleFromDays(7 * frequency);
-  if (cycle === 3) return toBillingCycleFromDays(30 * frequency);
-  if (cycle === 4) return toBillingCycleFromDays(365 * frequency);
+  if (cycle === 2) return toBillingCycleFromUnit(frequency, "week");
+  if (cycle === 3) return toBillingCycleFromUnit(frequency, "month");
+  if (cycle === 4) return toBillingCycleFromUnit(frequency, "year");
   warnings.push(IMPORT_MESSAGE_CODES.unknownCycle);
   return { billingCycle: "monthly" };
 }
 
-function parseDisplayCycle(text: string, warnings: string[]): { billingCycle: BillingCycle; customDays?: number; oneTime?: boolean } {
+function parseDisplayCycle(text: string, warnings: string[]): ImportBillingCycle & { oneTime?: boolean } {
   const lower = text.toLowerCase();
   if (lower.includes("one-time") || lower.includes("one time")) {
     warnings.push(IMPORT_MESSAGE_CODES.oneTime);
@@ -390,9 +437,9 @@ function parseDisplayCycle(text: string, warnings: string[]): { billingCycle: Bi
   const every = /every\s+(\d+)/i.exec(text);
   const count = every ? Math.max(1, Number(every[1])) : 1;
   if (lower.includes("day")) return toBillingCycleFromDays(count);
-  if (lower.includes("week")) return toBillingCycleFromDays(7 * count);
-  if (lower.includes("year")) return toBillingCycleFromDays(365 * count);
-  return toBillingCycleFromDays(30 * count);
+  if (lower.includes("week")) return toBillingCycleFromUnit(count, "week");
+  if (lower.includes("year")) return toBillingCycleFromUnit(count, "year");
+  return toBillingCycleFromUnit(count, "month");
 }
 
 function wallosStatus(row: WallosTableRow): "active" | "paused" | "cancelled" {
@@ -404,7 +451,8 @@ function wallosStatus(row: WallosTableRow): "active" | "paused" | "cancelled" {
 function wallosReminderDays(row: WallosTableRow, warnings: string[]): number {
   if (Number(row["notify"] ?? 0) !== 1) {
     warnings.push(IMPORT_MESSAGE_CODES.notifyDisabled);
-    return 3;
+    // Wallos cron 明确只查询 notify=1；notify=0 不是“默认天数缺失”，而是单订阅不参与通知。
+    return DISABLED_REMINDER_DAYS;
   }
   const days = Number(row["notify_days_before"] ?? 3);
   if (days === INHERIT_REMINDER_DAYS) return INHERIT_REMINDER_DAYS;

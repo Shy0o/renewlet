@@ -1,6 +1,8 @@
 import { importPayloadSchema, type ImportPayload } from "@/lib/api/schemas/import-export";
 import {
   BILLING_CYCLES,
+  CUSTOM_CYCLE_UNITS,
+  DISABLED_REMINDER_DAYS,
   INHERIT_REMINDER_DAYS,
   MAX_REMINDER_DAYS,
   REPEAT_REMINDER_INTERVALS,
@@ -8,6 +10,7 @@ import {
   SUBSCRIPTION_STATUSES,
   isValidDateOnly,
   type BillingCycle,
+  type CustomCycleUnit,
   type RepeatReminderInterval,
   type RepeatReminderWindow,
   type SubscriptionStatus,
@@ -31,6 +34,7 @@ import type { ImportAssetSource, ImportBuildBaseContext } from "./wallos-import-
 type ImportSubscription = ImportPayload["subscriptions"][number];
 
 const BILLING_CYCLE_SET = new Set<string>(BILLING_CYCLES);
+const CUSTOM_CYCLE_UNIT_SET = new Set<string>(CUSTOM_CYCLE_UNITS);
 const STATUS_SET = new Set<string>(SUBSCRIPTION_STATUSES);
 const REPEAT_REMINDER_INTERVAL_SET = new Set<string>(REPEAT_REMINDER_INTERVALS);
 const REPEAT_REMINDER_WINDOW_SET = new Set<string>(REPEAT_REMINDER_WINDOWS);
@@ -96,12 +100,15 @@ function buildLegacySubscription(
     currency: normalizeCurrency(row["currency"], localWarnings),
     billingCycle,
     customDays: billingCycle === "custom" ? normalizeCustomDays(row["customDays"], localWarnings) : null,
+    customCycleUnit: billingCycle === "custom" ? normalizeCustomCycleUnit(row["customCycleUnit"]) : null,
     category: normalizeCategory(row["category"]),
     status: normalizeStatus(row["status"], localWarnings),
     pinned: false,
+    publicHidden: false,
     paymentMethod: normalizeOptionalText(row["paymentMethod"]),
     startDate,
     nextBillingDate,
+    autoRenew: billingCycle === "one-time" ? false : normalizeBoolean(row["autoRenew"], false),
     autoCalculateNextBillingDate: billingCycle === "one-time" ? false : normalizeBoolean(row["autoCalculateNextBillingDate"], true),
     trialEndDate: normalizeNullableDateOnly(row["trialEndDate"], localWarnings),
     website,
@@ -275,13 +282,18 @@ function normalizeCustomDays(value: unknown, warnings: string[]): number {
   return 1;
 }
 
+function normalizeCustomCycleUnit(value: unknown): CustomCycleUnit {
+  const text = typeof value === "string" ? value.trim() : "";
+  return CUSTOM_CYCLE_UNIT_SET.has(text) ? text as CustomCycleUnit : "day";
+}
+
 function normalizeReminderDays(value: unknown, warnings: string[]): number {
   const numberValue = typeof value === "number" ? value : Number(value);
   if (!Number.isInteger(numberValue)) {
     warnings.push(importMessage(IMPORT_MESSAGE_CODES.renewletLegacyReminderDaysDefaulted, INHERIT_REMINDER_DAYS));
     return INHERIT_REMINDER_DAYS;
   }
-  const clamped = Math.max(INHERIT_REMINDER_DAYS, Math.min(MAX_REMINDER_DAYS, numberValue));
+  const clamped = Math.max(DISABLED_REMINDER_DAYS, Math.min(MAX_REMINDER_DAYS, numberValue));
   if (clamped !== numberValue) {
     warnings.push(importMessage(IMPORT_MESSAGE_CODES.renewletLegacyReminderDaysDefaulted, clamped));
   }

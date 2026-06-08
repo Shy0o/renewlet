@@ -129,6 +129,7 @@ describe("subscription-form", () => {
       price: "19.99",
       billingCycle: "custom",
       customDays: "45",
+      customCycleUnit: "year",
       reminderType: "custom",
       customReminderDays: "0",
       startDate: assertDateOnly("2026-01-01"),
@@ -138,6 +139,7 @@ describe("subscription-form", () => {
     expect(toSubscriptionDraft(valid)).toMatchObject({
       price: 19.99,
       customDays: 45,
+      customCycleUnit: "year",
       reminderDays: 0,
       autoCalculateNextBillingDate: true,
     });
@@ -157,6 +159,36 @@ describe("subscription-form", () => {
     expect(form.reminderType).toBe("inherit");
     expect(toSubscriptionDraft(form)).toMatchObject({
       reminderDays: -1,
+    });
+  });
+
+  it("keeps auto renewal disabled by default but preserves explicit user opt-in", () => {
+    const base = createSubscriptionFormState({
+      name: "Manual Renewal",
+      price: "10",
+      startDate: assertDateOnly("2026-01-01"),
+      nextBillingDate: assertDateOnly("2026-02-01"),
+    });
+
+    expect(base.autoRenew).toBe(false);
+    expect(toSubscriptionDraft(base)).toMatchObject({ autoRenew: false });
+    expect(toSubscriptionDraft({ ...base, autoRenew: true })).toMatchObject({ autoRenew: true });
+  });
+
+  it("saves disabled reminders and turns off repeat reminders in drafts", () => {
+    const form = createSubscriptionFormState({
+      name: "Quiet Reminder",
+      price: "10",
+      startDate: assertDateOnly("2026-01-01"),
+      nextBillingDate: assertDateOnly("2026-02-01"),
+      reminderType: "disabled",
+      reminderDays: "-2",
+      repeatReminderEnabled: true,
+    });
+
+    expect(toSubscriptionDraft(form)).toMatchObject({
+      reminderDays: -2,
+      repeatReminderEnabled: false,
     });
   });
 
@@ -180,14 +212,62 @@ describe("subscription-form", () => {
       autoCalculate: true,
       customDays: "30",
       startDate: assertDateOnly("2026-05-14"),
-      nextBillingDate: assertDateOnly("2026-05-14"),
+      nextBillingDate: undefined,
+      reminderType: "inherit",
+      reminderDays: "-1",
+      repeatReminderEnabled: true,
     });
 
+    expect(form.oneTimeMode).toBe("buyout");
+    expect(getSubscriptionDraftValidationError(form)).toBeNull();
     expect(toSubscriptionDraft(form)).toMatchObject({
       billingCycle: "one-time",
+      nextBillingDate: "2026-05-14",
       customDays: undefined,
+      customCycleUnit: undefined,
+      oneTimeTermCount: undefined,
+      oneTimeTermUnit: undefined,
+      autoCalculateNextBillingDate: false,
+      reminderDays: -2,
+      repeatReminderEnabled: false,
+    });
+  });
+
+  it("saves one-time fixed terms with an auto-calculated expiry date", () => {
+    const form = createSubscriptionFormState({
+      name: "Discounted membership",
+      price: "120",
+      billingCycle: "one-time",
+      oneTimeMode: "term",
+      oneTimeTermCount: "6",
+      oneTimeTermUnit: "month",
+      autoCalculate: true,
+      startDate: assertDateOnly("2026-05-14"),
+      nextBillingDate: undefined,
+    });
+
+    expect(getSubscriptionDraftValidationError(form)).toBeNull();
+    expect(toSubscriptionDraft(form)).toMatchObject({
+      billingCycle: "one-time",
+      nextBillingDate: "2026-11-14",
+      oneTimeTermCount: 6,
+      oneTimeTermUnit: "month",
       autoCalculateNextBillingDate: false,
     });
+  });
+
+  it("requires a positive service duration for one-time fixed terms", () => {
+    const form = createSubscriptionFormState({
+      name: "Broken membership",
+      price: "120",
+      billingCycle: "one-time",
+      oneTimeMode: "term",
+      oneTimeTermCount: "0",
+      startDate: assertDateOnly("2026-05-14"),
+    });
+
+    expect(getSubscriptionDraftValidationError(form)).toBe("服务时长必须是 1 到 3650 之间的整数");
+    expect(toSubscriptionDraft(form)).toBeNull();
   });
 
   it("keeps repeat reminder presets in the draft", () => {

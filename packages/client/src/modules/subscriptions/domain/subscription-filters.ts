@@ -15,6 +15,7 @@ export interface SubscriptionFilterState {
   searchQuery: string;
   categoryFilter: Category | "all";
   statusFilter: SubscriptionStatus | "all";
+  renewalFilter: SubscriptionRenewalFilter;
   selectedTags: string[];
 }
 
@@ -36,6 +37,9 @@ export const SUBSCRIPTION_SORT_OPTIONS = [
 
 /** 订阅列表排序选项。 */
 export type SubscriptionSortOption = (typeof SUBSCRIPTION_SORT_OPTIONS)[number];
+
+export const SUBSCRIPTION_RENEWAL_FILTERS = ["all", "auto", "manual", "one-time"] as const;
+export type SubscriptionRenewalFilter = (typeof SUBSCRIPTION_RENEWAL_FILTERS)[number];
 
 export interface SubscriptionSortContext {
   sortOption: SubscriptionSortOption;
@@ -83,6 +87,16 @@ export function filterSubscriptions(
       return false;
     }
 
+    if (filters.renewalFilter === "one-time" && subscription.billingCycle !== "one-time") {
+      return false;
+    }
+    if (filters.renewalFilter === "auto" && (subscription.billingCycle === "one-time" || !subscription.autoRenew)) {
+      return false;
+    }
+    if (filters.renewalFilter === "manual" && (subscription.billingCycle === "one-time" || subscription.autoRenew)) {
+      return false;
+    }
+
     // 标签筛选使用 OR 语义：选中任一标签即可命中，符合“快速缩小范围”的交互直觉。
     if (
       filters.selectedTags.length > 0 &&
@@ -105,7 +119,14 @@ function calculateMonthlyCost(
   convert: (amount: number, from: string, to: string) => number,
 ): number {
   const amountInDefault = convert(subscription.price, subscription.currency, defaultCurrency);
-  return toMonthlyAmount(amountInDefault, subscription.billingCycle, subscription.customDays);
+  return toMonthlyAmount(
+    amountInDefault,
+    subscription.billingCycle,
+    subscription.customDays,
+    subscription.customCycleUnit,
+    subscription.oneTimeTermCount,
+    subscription.oneTimeTermUnit,
+  );
 }
 
 function comparePinnedFirst(left: Subscription, right: Subscription): number {
@@ -171,6 +192,7 @@ export function hasActiveSubscriptionFilters(filters: SubscriptionFilterState): 
     filters.searchQuery ||
       filters.categoryFilter !== "all" ||
       filters.statusFilter !== "all" ||
+      filters.renewalFilter !== "all" ||
       filters.selectedTags.length > 0,
   );
 }

@@ -16,6 +16,7 @@ const domains = [
   "subscription",
   "auth",
   "settings",
+  "public-status",
   "notification",
   "labels",
   "admin",

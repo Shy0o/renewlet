@@ -11,12 +11,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
+
+var settingsCurrencyRe = regexp.MustCompile(`^[A-Z]{3}$`)
 
 // currentUserSettings 读取当前用户设置，并合并请求级临时 patch。
 // 注意： 该函数服务于通知测试/手动运行；不要在这里持久化 patch。
@@ -87,7 +90,11 @@ func sanitizeSettings(settings appSettings) appSettings {
 	if settings.ExchangeRateProvider != "floatrates" && settings.ExchangeRateProvider != "exchange-api" {
 		settings.ExchangeRateProvider = "floatrates"
 	}
+	if settings.PublicStatusCurrency != "inherit" && !settingsCurrencyRe.MatchString(settings.PublicStatusCurrency) {
+		settings.PublicStatusCurrency = "inherit"
+	}
 	settings.BuiltInIconSources = sanitizeBuiltInIconSources(settings.BuiltInIconSources)
+	settings.AIRecognition = sanitizeAIRecognitionSettings(settings.AIRecognition)
 	if _, err := time.LoadLocation(settings.Timezone); err != nil {
 		settings.Timezone = "UTC"
 	}

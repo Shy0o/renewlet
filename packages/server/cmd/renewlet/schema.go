@@ -75,7 +75,10 @@ func ensureSchema(app core.App) error {
 	if err := ensureCalendarFeedsCollection(app, users); err != nil {
 		return err
 	}
-	if err := backfillAutodates(app, "subscriptions", "settings", "custom_configs", "assets", "notification_jobs", "calendar_feeds"); err != nil {
+	if err := ensurePublicStatusPagesCollection(app, users); err != nil {
+		return err
+	}
+	if err := backfillAutodates(app, "subscriptions", "settings", "custom_configs", "assets", "notification_jobs", "calendar_feeds", "public_status_pages"); err != nil {
 		return err
 	}
 	if err := deleteLegacyHashOnlyCalendarFeeds(app); err != nil {
@@ -203,6 +206,14 @@ func backfillAutodates(app core.App, names ...string) error {
 	return nil
 }
 
+func backfillSubscriptionAutoRenew(app core.App) error {
+	// autoRenew 默认关闭；迁移只修正 one-time 约束，不把历史缺省周期订阅解释成自动续订授权。
+	_, err := app.DB().NewQuery(
+		"UPDATE `subscriptions` SET `autoRenew` = 0 WHERE `billingCycle` = 'one-time'",
+	).Execute()
+	return err
+}
+
 func cleanupInvalidSubscriptionLogos(app core.App) error {
 	for offset := 0; ; offset += subscriptionCleanupPageSize {
 		rows, err := app.FindRecordsByFilter("subscriptions", "id != ''", "created", subscriptionCleanupPageSize, offset)
@@ -252,6 +263,7 @@ func ensureSubscriptionsCollection(app core.App, users *core.Collection) error {
 		ownerRules(c)
 		minZero := 0.0
 		maxPrice := float64(maxSubscriptionPrice)
+		maxReminder := float64(maxReminderDays)
 		replaceLegacyLogoURLField := false
 		if existingLogo := c.Fields.GetByName("logo"); existingLogo != nil && existingLogo.Type() == core.FieldTypeURL {
 			replaceLegacyLogoURLField = true
@@ -264,19 +276,24 @@ func ensureSubscriptionsCollection(app core.App, users *core.Collection) error {
 			&core.TextField{Name: "currency", Required: true, Max: 8, Pattern: `^[A-Z]{3}$`},
 			&core.SelectField{Name: "billingCycle", Required: true, Values: []string{"weekly", "monthly", "quarterly", "semi-annual", "annual", "custom", "one-time"}},
 			&core.NumberField{Name: "customDays", OnlyInt: true, Min: &minZero},
+			&core.SelectField{Name: "customCycleUnit", Values: []string{"day", "week", "month", "year"}},
+			&core.NumberField{Name: "oneTimeTermCount", OnlyInt: true, Min: &minZero, Max: &maxReminder},
+			&core.SelectField{Name: "oneTimeTermUnit", Values: []string{"day", "week", "month", "year"}},
 			&core.TextField{Name: "category", Required: true, Max: 80},
 			&core.SelectField{Name: "status", Required: true, Values: []string{"trial", "active", "expired", "paused", "cancelled"}},
 			&core.BoolField{Name: "pinned"},
+			&core.BoolField{Name: "publicHidden"},
 			&core.TextField{Name: "paymentMethod", Max: 80},
 			&core.TextField{Name: "startDate", Required: true, Max: 10, Pattern: `^\d{4}-\d{2}-\d{2}$`},
 			&core.TextField{Name: "nextBillingDate", Required: true, Max: 10, Pattern: `^\d{4}-\d{2}-\d{2}$`},
+			&core.BoolField{Name: "autoRenew"},
 			&core.BoolField{Name: "autoCalculateNextBillingDate"},
 			&core.TextField{Name: "trialEndDate", Max: 10, Pattern: `^$|^\d{4}-\d{2}-\d{2}$`},
 			&core.URLField{Name: "website"},
 			&core.TextField{Name: "notes", Max: 5000},
 			&core.JSONField{Name: "tags", MaxSize: maxSubscriptionTagsFieldSize},
 			&core.JSONField{Name: "extra", MaxSize: 65536},
-			&core.NumberField{Name: "reminderDays", OnlyInt: true, Min: types.Pointer(float64(inheritReminderDays)), Max: types.Pointer(float64(maxReminderDays))},
+			&core.NumberField{Name: "reminderDays", OnlyInt: true, Min: types.Pointer(float64(disabledReminderDays)), Max: types.Pointer(float64(maxReminderDays))},
 			&core.BoolField{Name: "repeatReminderEnabled"},
 			&core.SelectField{Name: "repeatReminderInterval", Values: []string{"1h", "3h", "6h", "12h", "24h"}},
 			&core.SelectField{Name: "repeatReminderWindow", Values: []string{"24h", "48h", "72h", "full"}},
@@ -418,6 +435,28 @@ func ensureCalendarFeedsCollection(app core.App, users *core.Collection) error {
 		c.AddIndex("idx_calendar_feeds_user_all_unique", true, "user", "scope = 'all'")
 		c.AddIndex("idx_calendar_feeds_token_unique", true, "token", "")
 		c.AddIndex("idx_calendar_feeds_user_subscription_unique", true, "user, subscriptionId", "scope = 'subscription'")
+		return nil
+	})
+}
+
+func ensurePublicStatusPagesCollection(app core.App, users *core.Collection) error {
+	return ensureCollection(app, "public_status_pages", func(c *core.Collection) error {
+		ownerRules(c)
+		if err := upsertField(c, userRelation(users)); err != nil {
+			return err
+		}
+		// token 是公开状态页的 bearer secret；只回显完整 URL，避免前端把 token 当普通设置导入导出。
+		if err := upsertField(c, &core.TextField{Name: "token", Required: true, Max: 128, Pattern: `^[A-Za-z0-9_-]{43}$`}); err != nil {
+			return err
+		}
+		if err := upsertField(c, &core.BoolField{Name: "showPrices"}); err != nil {
+			return err
+		}
+		if err := ensureAutodates(c); err != nil {
+			return err
+		}
+		c.AddIndex("idx_public_status_pages_user_unique", true, "user", "")
+		c.AddIndex("idx_public_status_pages_token_unique", true, "token", "")
 		return nil
 	})
 }

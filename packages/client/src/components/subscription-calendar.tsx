@@ -1,8 +1,8 @@
 /**
- * 续费日历月视图入口（subscription-calendar.tsx）。
+ * 续费/到期日历月视图入口（subscription-calendar.tsx）。
  *
  * 架构位置：这里持有当前月份、选中订阅和单日列表状态，负责把订阅
- * 将 DateOnly 分组为日历网格；详情弹窗拆到 subscription-calendar-dialogs.tsx。
+ * 将 DateOnly 分组为日历网格；详情视图复用通用 SubscriptionDetailDialog。
  *
  * 注意： nextBillingDate 已经是 DateOnly，分组时不能重新用 Date 解析，
  * 否则浏览器时区会导致续费日期跨日。
@@ -10,7 +10,6 @@
 
 import { useState, useMemo } from 'react';
 import type { Subscription } from '@/types/subscription';
-import { CYCLE_LABELS } from '@/types/subscription';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import { useExchangeRates } from '@/hooks/use-exchange-rates';
@@ -35,7 +34,9 @@ import { dateToDateOnly, isSameMonthDateOnly, todayDateOnlyInTimeZone } from '@/
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useI18n } from '@/i18n/I18nProvider';
-import { DaySubscriptionsDialog, SubscriptionDetailDialog } from './subscription-calendar-dialogs';
+import { formatBillingCycleLabel, isOneTimeBuyout } from '@/lib/subscription-billing';
+import { SubscriptionDetailDialog } from '@/components/subscription-detail-dialog';
+import { DaySubscriptionsDialog } from './subscription-calendar-dialogs';
 import type { CalendarDaySubscriptions } from './subscription-calendar-dialogs';
 import { isEffectivelyActiveSubscription } from '@/modules/subscriptions/domain/subscription-status';
 
@@ -57,9 +58,9 @@ const WEEKDAY_REFERENCE_DATES = [
 ] as const;
 
 
-/** 续费日历组件。 */
+/** 续费/到期日历组件。 */
 export const SubscriptionCalendar = ({ subscriptions, onEditSubscription }: SubscriptionCalendarProps) => {
-  const { t, label, formatDateTime, formatCurrency } = useI18n();
+  const { t, locale, formatDateTime, formatCurrency } = useI18n();
   const isMobileCalendar = useMediaQuery("(max-width: 639px)");
   // 默认货币来自 Settings（持久化到 SQLite），用于日历底部“预计支出”的换算口径。
   const { data: settings } = useSettings();
@@ -90,8 +91,8 @@ export const SubscriptionCalendar = ({ subscriptions, onEditSubscription }: Subs
     const map = new Map<string, Subscription[]>();
     
     subscriptions
-      // 日历只展示有效活跃订阅的未来扣费安排，避免旧过期记录继续占用日历格和月度预计支出。
-      .filter(sub => isEffectivelyActiveSubscription(sub, today) && sub.billingCycle !== "one-time")
+      // 日历展示真实扣费日和固定服务期到期日；one-time 买断没有下一次事件，不能把购买日塞进日历。
+      .filter(sub => isEffectivelyActiveSubscription(sub, today) && !isOneTimeBuyout(sub))
       .forEach(sub => {
         const dateKey = sub.nextBillingDate;
         const existing = map.get(dateKey) || [];
@@ -102,7 +103,7 @@ export const SubscriptionCalendar = ({ subscriptions, onEditSubscription }: Subs
   }, [subscriptions, today]);
 
   /**
-   * 日历底部汇总：本月续费订阅数量 + 预计支出（换算到 defaultCurrency）。
+   * 日历底部汇总：本月续费/到期事件数量 + 预计支出（换算到 defaultCurrency）。
    *
    * 说明：
    * - 预计支出按“本月发生续费”的订阅做一次性扣费汇总（不做月度折算）
@@ -350,7 +351,7 @@ export const SubscriptionCalendar = ({ subscriptions, onEditSubscription }: Subs
 
         {isMobileCalendar ? (
           <>
-            {/* 移动端月历概览：只展示续费指示，完整信息放到下方列表。 */}
+            {/* 移动端月历概览：只展示事件指示，完整信息放到下方列表。 */}
             <div className="grid min-w-0 grid-cols-7 gap-1">
               {calendarDays.map((day) => {
                 const dateKey = format(day, 'yyyy-MM-dd');
@@ -455,7 +456,7 @@ export const SubscriptionCalendar = ({ subscriptions, onEditSubscription }: Subs
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-sm font-medium text-foreground">{sub.name}</p>
                                 <p className="mt-0.5 text-xs text-muted-foreground">
-                                  {label(CYCLE_LABELS[sub.billingCycle])}
+                                  {formatBillingCycleLabel(sub, locale)}
                                 </p>
                               </div>
                               <p className="max-w-[45%] shrink-0 truncate text-right text-sm font-semibold text-foreground">
@@ -573,8 +574,8 @@ export const SubscriptionCalendar = ({ subscriptions, onEditSubscription }: Subs
         open={detailOpen}
         onOpenChange={setDetailOpen}
         subscription={selectedSubscription}
-        onEditSubscription={onEditSubscription}
         today={today}
+        {...(onEditSubscription ? { onEditSubscription } : {})}
       />
 
       <DaySubscriptionsDialog

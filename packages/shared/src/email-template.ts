@@ -25,7 +25,7 @@ export interface NotificationEmailSettings {
 
 /** 通知邮件中的单条提醒；Go 与 Worker 都用它生成同语义 HTML+Text 邮件。 */
 export interface NotificationEmailItem {
-  type: "renewal" | "trial" | "expired" | string;
+  type: "renewal" | "trial" | "expired" | "expiry" | string;
   subscriptionId?: string;
   name: string;
   logoUrl?: string;
@@ -88,9 +88,11 @@ export interface EmailCopy {
   footer: string;
   truncated: string;
   upcomingRenewals: string;
+  upcomingExpiries: string;
   trialEnding: string;
   expired: string;
   billingDate: string;
+  expiryDate: string;
   trialEnds: string;
   expiredSince: string;
   updateNextBillingDate: string;
@@ -214,9 +216,11 @@ function loadEmailCopy(locale: Locale): EmailCopy {
     footer: text("email.footer"),
     truncated: text("email.truncated"),
     upcomingRenewals: text("email.upcomingRenewals"),
+    upcomingExpiries: text("email.upcomingExpiries"),
     trialEnding: text("email.trialEnding"),
     expired: text("email.expired"),
     billingDate: text("email.billingDate"),
+    expiryDate: text("email.expiryDate"),
     trialEnds: text("email.trialEnds"),
     expiredSince: text("email.expiredSince"),
     updateNextBillingDate: text("email.updateNextBillingDate"),
@@ -230,13 +234,13 @@ function loadEmailCopy(locale: Locale): EmailCopy {
 }
 
 function buildEmailTemplateGroups(items: NotificationEmailItem[], copy: EmailCopy, theme: EmailTheme): EmailTemplateGroup[] {
-  const grouped: Record<string, NotificationEmailItem[]> = { renewal: [], trial: [], expired: [] };
+  const grouped: Record<string, NotificationEmailItem[]> = { renewal: [], expiry: [], trial: [], expired: [] };
   for (const item of items) {
     // 邮件不会渲染 logo URL；外链图片会让邮件客户端暴露私有资产或第三方请求痕迹。
     const itemType = grouped[item.type] ? item.type : "renewal";
     grouped[itemType]?.push(item);
   }
-  return (["renewal", "trial", "expired"] as const)
+  return (["renewal", "expiry", "trial", "expired"] as const)
     .map((itemType) => {
       const rawItems = grouped[itemType] ?? [];
       return {
@@ -324,7 +328,7 @@ function validEmailCustomColor(color: NotificationEmailSettings["themeCustomColo
 }
 
 function emailItemAccent(itemType: string, theme: EmailTheme): string {
-  if (itemType === "trial") return theme.warning;
+  if (itemType === "trial" || itemType === "expiry") return theme.warning;
   if (itemType === "expired") return theme.danger;
   return theme.success;
 }
@@ -343,12 +347,14 @@ function firstNonEmptyLine(input: string): string {
 }
 
 function emailGroupLabel(itemType: string, copy: EmailCopy): string {
+  if (itemType === "expiry") return copy.upcomingExpiries;
   if (itemType === "trial") return copy.trialEnding;
   if (itemType === "expired") return copy.expired;
   return copy.upcomingRenewals;
 }
 
 function emailItemDateLabel(itemType: string, copy: EmailCopy): string {
+  if (itemType === "expiry") return copy.expiryDate;
   if (itemType === "trial") return copy.trialEnds;
   if (itemType === "expired") return copy.expiredSince;
   return copy.billingDate;

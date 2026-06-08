@@ -2,13 +2,14 @@
   "name": "@renewlet/shared",
   "private": true,
   "license": "MIT",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "exports": {
     "./schemas/account": "./src/schemas/account.ts",
     "./schemas/admin": "./src/schemas/admin.ts",
     "./schemas/app": "./src/schemas/app.ts",
     "./schemas/auth": "./src/schemas/auth.ts",
+    "./schemas/ai-recognition": "./src/schemas/ai-recognition.ts",
     "./schemas/calendar-feed": "./src/schemas/calendar-feed.ts",
     "./schemas/common": "./src/schemas/common.ts",
     "./schemas/custom-config": "./src/schemas/custom-config.ts",
@@ -16,9 +17,13 @@
     "./schemas/import-export": "./src/schemas/import-export.ts",
     "./schemas/media": "./src/schemas/media.ts",
     "./schemas/notifications": "./src/schemas/notifications.ts",
+    "./schemas/public-status": "./src/schemas/public-status.ts",
     "./schemas/settings": "./src/schemas/settings.ts",
     "./schemas/subscriptions": "./src/schemas/subscriptions.ts",
     "./schemas/uploads": "./src/schemas/uploads.ts",
+    "./ai-recognition-notes": "./src/ai-recognition-notes.ts",
+    "./ai-provider-endpoints": "./src/ai-provider-endpoints.ts",
+    "./ai-recognition-prompt": "./src/ai-recognition-prompt.ts",
     "./built-in-icons": "./src/built-in-icons.ts",
     "./favicon-domains": "./src/favicon-domains.ts",
     "./media-resolver": "./src/media-resolver.ts",
@@ -26,6 +31,7 @@
     "./media-resolver-fixtures": "./src/media-resolver-fixtures.ts",
     "./email-template": "./src/email-template.ts",
     "./ics": "./src/ics.ts",
+    "./subscription-renewal": "./src/subscription-renewal.ts",
     "./settings-defaults": "./src/settings-defaults.ts",
     "./runtime": "./src/runtime.ts"
   },
@@ -34,6 +40,7 @@
     "typecheck": "tsc --noEmit --project tsconfig.json"
   },
   "dependencies": {
+    "@js-temporal/polyfill": "^0.5.1",
     "ical-generator": "10.2.0",
     "zod": "^4.4.3"
   },

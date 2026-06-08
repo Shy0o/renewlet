@@ -54,12 +54,17 @@ type importSubscription struct {
 	Currency                     string                 `json:"currency"`
 	BillingCycle                 string                 `json:"billingCycle"`
 	CustomDays                   *int                   `json:"customDays,omitempty"`
+	CustomCycleUnit              *string                `json:"customCycleUnit,omitempty"`
+	OneTimeTermCount             *int                   `json:"oneTimeTermCount,omitempty"`
+	OneTimeTermUnit              *string                `json:"oneTimeTermUnit,omitempty"`
 	Category                     string                 `json:"category"`
 	Status                       string                 `json:"status"`
 	Pinned                       bool                   `json:"pinned"`
+	PublicHidden                 bool                   `json:"publicHidden"`
 	PaymentMethod                *string                `json:"paymentMethod,omitempty"`
 	StartDate                    string                 `json:"startDate"`
 	NextBillingDate              string                 `json:"nextBillingDate"`
+	AutoRenew                    bool                   `json:"autoRenew"`
 	AutoCalculateNextBillingDate bool                   `json:"autoCalculateNextBillingDate"`
 	TrialEndDate                 *string                `json:"trialEndDate,omitempty"`
 	Website                      *string                `json:"website,omitempty"`
@@ -162,7 +167,7 @@ func validateImportPayload(payload importPayload, conflictMode string, skipIndex
 	if conflictMode != "replace" && conflictMode != "skip" {
 		return errors.New("IMPORT_CONFLICT_MODE_INVALID")
 	}
-	if payload.Source != "renewlet" && payload.Source != "wallos" {
+	if payload.Source != "renewlet" && payload.Source != "wallos" && payload.Source != "ai" {
 		return errors.New("IMPORT_SOURCE_INVALID")
 	}
 	if len(payload.Subscriptions) > maxSubscriptions {
@@ -357,12 +362,29 @@ func setImportSubscriptionRecord(record *core.Record, userID string, subscriptio
 	} else {
 		record.Set("customDays", 0)
 	}
+	if subscription.CustomCycleUnit != nil {
+		record.Set("customCycleUnit", *subscription.CustomCycleUnit)
+	} else {
+		record.Set("customCycleUnit", "")
+	}
+	if subscription.OneTimeTermCount != nil {
+		record.Set("oneTimeTermCount", *subscription.OneTimeTermCount)
+	} else {
+		record.Set("oneTimeTermCount", 0)
+	}
+	if subscription.OneTimeTermUnit != nil {
+		record.Set("oneTimeTermUnit", *subscription.OneTimeTermUnit)
+	} else {
+		record.Set("oneTimeTermUnit", "")
+	}
 	record.Set("category", subscription.Category)
 	record.Set("status", subscription.Status)
 	record.Set("pinned", subscription.Pinned)
+	record.Set("publicHidden", subscription.PublicHidden)
 	record.Set("paymentMethod", optionalString(subscription.PaymentMethod))
 	record.Set("startDate", subscription.StartDate)
 	record.Set("nextBillingDate", subscription.NextBillingDate)
+	record.Set("autoRenew", subscription.BillingCycle != "one-time" && subscription.AutoRenew)
 	record.Set("autoCalculateNextBillingDate", subscription.AutoCalculateNextBillingDate)
 	record.Set("trialEndDate", optionalString(subscription.TrialEndDate))
 	record.Set("website", optionalString(subscription.Website))
@@ -496,7 +518,7 @@ func importKeyFromExtra(extra map[string]interface{}) (importKey, error) {
 	confidence, _ := raw["confidence"].(string)
 	source = strings.TrimSpace(source)
 	sourceID = strings.TrimSpace(sourceID)
-	if source != "renewlet" && source != "wallos" {
+	if source != "renewlet" && source != "wallos" && source != "ai" {
 		return importKey{}, errors.New("IMPORT_SOURCE_INVALID")
 	}
 	if sourceID == "" || len([]rune(sourceID)) > 256 {

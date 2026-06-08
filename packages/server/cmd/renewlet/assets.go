@@ -35,6 +35,11 @@ func handleAssetRead(app core.App, e *core.RequestEvent) error {
 		return e.NotFoundError(serverText(locale, "asset.missing"), nil)
 	}
 
+	return writeAssetRecord(app, e, record, "private, max-age=31536000, immutable", false)
+}
+
+func writeAssetRecord(app core.App, e *core.RequestEvent, record *core.Record, cacheControl string, noIndex bool) error {
+	locale := requestLocale(e.Request)
 	filename := record.GetString("file")
 	if filename == "" {
 		return e.NotFoundError(serverText(locale, "asset.fileMissing"), nil)
@@ -63,8 +68,11 @@ func handleAssetRead(app core.App, e *core.RequestEvent) error {
 
 	headers := e.Response.Header()
 	headers.Set("Content-Type", contentType)
-	headers.Set("Cache-Control", "private, max-age=31536000, immutable")
+	headers.Set("Cache-Control", cacheControl)
 	headers.Set("X-Content-Type-Options", "nosniff")
+	if noIndex {
+		headers.Set("X-Robots-Tag", "noindex, nofollow")
+	}
 	if strings.EqualFold(strings.TrimSpace(strings.Split(contentType, ";")[0]), "image/svg+xml") {
 		// SVG 是可执行载体，单独加沙箱 CSP，允许内联样式但禁止脚本/外部对象。
 		headers.Set("Content-Security-Policy", "default-src 'none'; script-src 'none'; object-src 'none'; base-uri 'none'; style-src 'unsafe-inline'; sandbox")

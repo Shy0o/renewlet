@@ -20,6 +20,7 @@ describe("buildNotificationEmail", () => {
       hasPayload: true,
       items: [
         item("renewal", "Renewal", 18, "CNY", "2026-05-17", 3),
+        item("expiry", "Fixed Term", 30, "CNY", "2026-05-18", 4),
         item("trial", "Trial", 9.9, "USD", "2026-05-15", 1),
         item("expired", "Expired", 12, "EUR", "2026-05-01", 7),
       ],
@@ -32,6 +33,8 @@ describe("buildNotificationEmail", () => {
     expect(email.html).toContain('<html lang="zh-CN">');
     expect(email.html).toContain("今日提醒");
     expect(email.html).toContain("即将续费");
+    expect(email.html).toContain("即将到期");
+    expect(email.html).toContain("到期日期");
     expect(email.html).toContain("试用结束");
     expect(email.html).toContain("已过期");
     expect(email.html).toContain("18 CNY");
@@ -115,7 +118,7 @@ function testMessage(): NotificationEmailMessage {
   };
 }
 
-function item(type: "renewal" | "trial" | "expired", name: string, price: number, currency: string, targetDate: string, reminderDays: number) {
+function item(type: "renewal" | "trial" | "expired" | "expiry", name: string, price: number, currency: string, targetDate: string, reminderDays: number) {
   return {
     type,
     subscriptionId: type,

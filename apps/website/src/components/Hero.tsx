@@ -34,7 +34,7 @@ export function Hero({ locale, onDeployClick }: HeroProps) {
       <GridPattern className="absolute inset-0 -z-10 h-full w-full stroke-white/5 [mask-image:radial-gradient(75%_50%_at_top_center,white,transparent)]" />
       <div className="py-24 sm:py-32 lg:pb-40">
         <div className="mx-auto max-w-7xl px-6 lg:px-8">
-          <div className={`relative mx-auto text-center ${isChinese ? 'max-w-6xl' : 'max-w-3xl'}`}>
+          <div className={`relative mx-auto text-center ${isChinese ? 'max-w-6xl' : 'max-w-[46rem]'}`}>
             <motion.p
               animate={{ opacity: 1, y: 0 }}
               className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-emerald-300/80"
@@ -53,7 +53,7 @@ export function Hero({ locale, onDeployClick }: HeroProps) {
             </motion.h1>
             <motion.p
               animate={{ opacity: 1, y: 0 }}
-              className="mt-6 text-lg font-medium text-zinc-400 md:text-xl md:leading-8"
+              className={`mx-auto mt-6 font-medium text-zinc-400 ${isChinese ? 'max-w-5xl text-lg md:text-xl md:leading-8' : 'max-w-[40rem] text-base leading-7 md:text-lg md:leading-8'}`}
               initial={{ opacity: 0, y: 10 }}
               transition={{ duration: 0.6, delay: 0.4 }}
             >

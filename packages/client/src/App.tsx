@@ -30,6 +30,7 @@ const Setup = lazy(() => import("@/pages/setup"));
 const Login = lazy(() => import("@/pages/login"));
 const Privacy = lazy(() => import("@/pages/privacy"));
 const Terms = lazy(() => import("@/pages/terms"));
+const PublicStatus = lazy(() => import("@/pages/public-status"));
 const AdminUsers = lazy(() => import("@/pages/admin/users"));
 const ForgotPassword = lazy(() => import("@/pages/forgot-password"));
 const ResetPassword = lazy(() => import("@/pages/reset-password"));
@@ -65,6 +66,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/status/:token" element={<PublicStatus />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/index.html" element={<Navigate to="/" replace />} />

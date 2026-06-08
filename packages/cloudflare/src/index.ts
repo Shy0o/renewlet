@@ -23,10 +23,21 @@ import {
   readSubscriptionCalendarFeed,
 } from "./calendar-feed";
 import { readCustomConfig, readSettings, updateCustomConfig, updateSettings } from "./settings";
-import { createSubscription, deleteSubscription, readSubscriptions, updateSubscription } from "./subscriptions";
+import { createSubscription, deleteSubscription, readSubscriptions, renewSubscription, updateSubscription } from "./subscriptions";
 import { applyImport, previewImport } from "./import-export";
+import { recognizeSubscriptions, recognizeSubscriptionsStream, testAIRecognitionConnection } from "./ai-recognition";
+import { listAIModels } from "./ai-models";
 import { mediaCandidates } from "./search";
 import { notificationHistory, notificationRun, notificationTest, runScheduledNotifications } from "./notifications";
+import { renewAutoSubscriptionsForAllUsers } from "./subscription-renewal";
+import {
+  createPublicStatusPage,
+  deletePublicStatusPage,
+  readPublicStatus,
+  readPublicStatusAsset,
+  readPublicStatusPage,
+  updatePublicStatusPage,
+} from "./public-status";
 import { systemRestart, systemUpdate, systemVersion } from "./system";
 import { errorResponse, methodNotAllowed, pathSegments, requestLocale, toResponse } from "./http";
 import { serverText } from "./server-i18n";
@@ -47,9 +58,11 @@ const worker: ExportedHandler<Env> = {
     }
   },
 
-  async scheduled(_controller, env, ctx) {
-    // Cron 只负责触发；每个用户的幂等窗口在 notification_jobs 唯一键里兑现。
-    ctx.waitUntil(runScheduledNotifications(env));
+  async scheduled(_controller, env) {
+    // Cron 先推进自动续订再生成通知；否则后台续订项会用旧日期进入本轮提醒内容。
+    await renewAutoSubscriptionsForAllUsers(env);
+    // Cron 顶层失败必须交回平台记录；本地调试通过 `--test-scheduled` 的 `/__scheduled` 绕过 Wrangler Static Assets bug。
+    await runScheduledNotifications(env);
   },
 };
 
@@ -72,13 +85,26 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     GET: () => setupStatus(request, env),
     POST: () => createInitialAdmin(request, env),
   });
+  if (url.pathname.startsWith("/api/public/")) return routePublic(request, env, url);
   if (url.pathname.startsWith("/api/app/")) return routeApp(request, env, url);
   return errorResponse(404, serverText(locale, "common.notFound"), "NOT_FOUND");
 }
 
+async function routePublic(request: Request, env: Env, url: URL): Promise<Response> {
+  const segments = pathSegments(url, "/api/public");
+  const [head, pageToken, third, assetId] = segments;
+  if (head === "status" && pageToken && !third) {
+    return routeMethods(request, { GET: () => readPublicStatus(request, env, pageToken) });
+  }
+  if (head === "status" && pageToken && third === "assets" && assetId) {
+    return routeMethods(request, { GET: () => readPublicStatusAsset(request, env, pageToken, assetId) });
+  }
+  return errorResponse(404, serverText(requestLocale(request), "common.notFound"), "NOT_FOUND");
+}
+
 async function routeApp(request: Request, env: Env, url: URL): Promise<Response> {
   const segments = pathSegments(url);
-  const [head, second, third] = segments;
+  const [head, second, third, fourth, fifth] = segments;
 
   // Worker 只实现 Renewlet 产品 API，不模拟 PocketBase REST；路由表越显式，运行面漂移越早暴露。
   if (head === "auth" && second === "login") return routeMethods(request, { POST: () => login(request, env) });
@@ -132,6 +158,9 @@ async function routeApp(request: Request, env: Env, url: URL): Promise<Response>
       DELETE: () => deleteSubscriptionCalendarFeed(request, env, second),
     });
   }
+  if (head === "subscriptions" && second && third === "renew") {
+    return routeMethods(request, { POST: () => renewSubscription(request, env, second) });
+  }
   if (head === "subscriptions" && second) return routeMethods(request, {
     PATCH: () => updateSubscription(request, env, second),
     DELETE: () => deleteSubscription(request, env, second),
@@ -139,6 +168,18 @@ async function routeApp(request: Request, env: Env, url: URL): Promise<Response>
 
   if (head === "import" && second === "preview") return routeMethods(request, { POST: () => previewImport(request, env) });
   if (head === "import" && second === "apply") return routeMethods(request, { POST: () => applyImport(request, env) });
+  if (head === "ai" && second === "subscriptions" && third === "recognize" && fourth === "stream" && !fifth) {
+    return routeMethods(request, { POST: () => recognizeSubscriptionsStream(request, env) });
+  }
+  if (head === "ai" && second === "subscriptions" && third === "recognize" && !fourth) {
+    return routeMethods(request, { POST: () => recognizeSubscriptions(request, env) });
+  }
+  if (head === "ai" && second === "subscriptions" && third === "test") {
+    return routeMethods(request, { POST: () => testAIRecognitionConnection(request, env) });
+  }
+  if (head === "ai" && second === "models" && third === "list") {
+    return routeMethods(request, { POST: () => listAIModels(request, env) });
+  }
 
   if (head === "assets" && !second) return routeMethods(request, {
     GET: () => listUploadedAssets(request, env),
@@ -150,6 +191,13 @@ async function routeApp(request: Request, env: Env, url: URL): Promise<Response>
     GET: () => readCalendarFeed(request, env),
     POST: () => createCalendarFeed(request, env),
     DELETE: () => deleteCalendarFeed(request, env),
+  });
+
+  if (head === "public-status-page" && !second) return routeMethods(request, {
+    GET: () => readPublicStatusPage(request, env),
+    POST: () => createPublicStatusPage(request, env),
+    PATCH: () => updatePublicStatusPage(request, env),
+    DELETE: () => deletePublicStatusPage(request, env),
   });
 
   if (head === "notifications" && second === "history") return routeMethods(request, { GET: () => notificationHistory(request, env) });

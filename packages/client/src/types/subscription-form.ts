@@ -9,6 +9,7 @@
 import type {
   BillingCycle,
   Category,
+  CustomCycleUnit,
   PaymentMethod,
   RepeatReminderInterval,
   RepeatReminderWindow,
@@ -18,11 +19,13 @@ import type { DateOnly } from "@/lib/time/date-only";
 
 /**
  * 订阅表单提醒类型：
+ * - disabled：保存为 -2，不进入应用通知和重复提醒
  * - preset：使用预设提醒天数（下拉选项）
  * - custom：使用自定义提醒天数（输入框）
  * - inherit：保存为 -1，通知计算时读取设置页全局提醒提前时间
  */
-export type SubscriptionFormReminderType = "inherit" | "preset" | "custom";
+export type SubscriptionFormReminderType = "disabled" | "inherit" | "preset" | "custom";
+export type OneTimePurchaseMode = "term" | "buyout";
 
 /**
  * 订阅表单的本地状态（UI 输入专用）。
@@ -39,15 +42,21 @@ export type SubscriptionFormState = {
   currency: string;
   billingCycle: BillingCycle;
   customDays: string;
+  customCycleUnit: CustomCycleUnit;
+  oneTimeMode: OneTimePurchaseMode;
+  oneTimeTermCount: string;
+  oneTimeTermUnit: CustomCycleUnit;
   category: Category;
   status: SubscriptionStatus;
+  publicHidden: boolean;
   paymentMethod: PaymentMethod | "";
   /** date-only 在表单内保持字符串，只有日历控件边界才临时转 Date。 */
   startDate: DateOnly | undefined;
   nextBillingDate: DateOnly | undefined;
+  autoRenew: boolean;
   autoCalculate: boolean;
   reminderType: SubscriptionFormReminderType;
-  /** `-1` 是 UI 对“继承全局提醒”的哨兵值，提交层会转回订阅存储契约。 */
+  /** `-2/-1` 是 UI 对“不提醒/继承全局提醒”的哨兵值，提交层会转回订阅存储契约。 */
   reminderDays: string;
   customReminderDays: string;
   repeatReminderEnabled: boolean;
@@ -68,11 +77,17 @@ export function createSubscriptionFormState(
     currency: "CNY",
     billingCycle: "monthly",
     customDays: "",
+    customCycleUnit: "day",
+    oneTimeMode: "buyout",
+    oneTimeTermCount: "1",
+    oneTimeTermUnit: "month",
     category: "productivity",
     status: "active",
+    publicHidden: false,
     paymentMethod: "",
     startDate: undefined,
     nextBillingDate: undefined,
+    autoRenew: false,
     autoCalculate: true,
     reminderType: "inherit",
     reminderDays: "-1",

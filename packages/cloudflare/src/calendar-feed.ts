@@ -5,7 +5,7 @@ import {
   subscriptionCalendarFeedCreateResponseSchema,
 } from "@renewlet/shared/schemas/calendar-feed";
 import { buildRenewalCalendarEvent, buildRenewalCalendarIcs, type RenewalCalendarEvent } from "@renewlet/shared/ics";
-import { effectiveReminderDays, isValidDateOnly } from "@renewlet/shared/runtime";
+import { effectiveReminderDays, isDisabledReminderDays, isValidDateOnly } from "@renewlet/shared/runtime";
 import { customConfigSchema, type ApiCustomConfig } from "@renewlet/shared/schemas/custom-config";
 import type { ApiAppSettings } from "@renewlet/shared/schemas/settings";
 import type { ApiSubscription } from "@renewlet/shared/schemas/subscriptions";
@@ -69,6 +69,7 @@ export async function readSubscriptionCalendarFeed(request: Request, env: Env, s
   await ensureCalendarFeedSchema(env, locale);
   const subscription = await getSubscription(env, auth.user.id, subscriptionId);
   if (!subscription) throw new HttpError(404, serverText(locale, "subscription.notFound"), "NOT_FOUND");
+  if (isOneTimeBuyout(toApiSubscription(subscription))) throw new HttpError(404, serverText(locale, "subscription.notFound"), "NOT_FOUND");
   const row = await getCalendarFeed(env, auth.user.id, "subscription", subscriptionId);
   return json(calendarFeedStatusResponseSchema.parse({ calendarFeed: calendarFeedStatus(row, request) }));
 }
@@ -81,6 +82,7 @@ export async function createSubscriptionCalendarFeed(request: Request, env: Env,
   await ensureCalendarFeedSchema(env, locale);
   const subscription = await getSubscription(env, auth.user.id, subscriptionId);
   if (!subscription) throw new HttpError(404, serverText(locale, "subscription.notFound"), "NOT_FOUND");
+  if (isOneTimeBuyout(toApiSubscription(subscription))) throw new HttpError(404, serverText(locale, "subscription.notFound"), "NOT_FOUND");
   const existing = await getCalendarFeed(env, auth.user.id, "subscription", subscriptionId);
   const row = existing ?? await insertCalendarFeed(env, {
     scope: "subscription",
@@ -360,7 +362,7 @@ function calendarEvents(
   const today = dateOnlyInZone(new Date(), settings.timezone);
   return subscriptions
     .filter((subscription) => (
-      subscription.billingCycle !== "one-time"
+      !isOneTimeBuyout(subscription)
       && (subscription.status === "active" || subscription.status === "trial")
       && isValidDateOnly(subscription.nextBillingDate)
       && subscription.nextBillingDate >= today
@@ -373,7 +375,12 @@ function subscriptionCalendarEvents(
   settings: ApiAppSettings,
   labels: CalendarFeedLabelResolver,
 ): RenewalCalendarEvent[] {
+  if (isOneTimeBuyout(subscription)) return [];
   return isValidDateOnly(subscription.nextBillingDate) ? [calendarEvent(subscription, settings, labels)] : [];
+}
+
+function isOneTimeBuyout(subscription: ApiSubscription): boolean {
+  return subscription.billingCycle === "one-time" && !subscription.oneTimeTermCount;
 }
 
 function calendarEvent(
@@ -382,15 +389,19 @@ function calendarEvent(
   labels: CalendarFeedLabelResolver,
 ): RenewalCalendarEvent {
   const locale = settings.locale;
+  const reminderDays = isDisabledReminderDays(subscription.reminderDays)
+    ? undefined
+    : effectiveReminderDays(subscription.reminderDays, settings.notificationReminderDays);
   return buildRenewalCalendarEvent({
     subscription,
     labels: {
       amount: formatAmount(subscription.price),
-      billingCycle: billingCycleLabel(subscription.billingCycle, locale),
+      billingCycle: billingCycleLabel(subscription, locale),
       category: labels.categoryLabel(subscription.category),
       paymentMethod: labels.paymentMethodLabel(subscription.paymentMethod),
     },
-    reminderDays: effectiveReminderDays(subscription.reminderDays, settings.notificationReminderDays),
+    // “不提醒”不隐藏日历事件，只让 ICS 省略 VALARM，外部日历仍能展示账期。
+    reminderDays,
     text: {
       amount: ({ amount, currency }) => serverFormat(locale, "calendarFeed.description.amount", { amount, currency }),
       billingCycle: (cycle) => serverFormat(locale, "calendarFeed.description.billingCycle", { cycle }),
@@ -401,10 +412,24 @@ function calendarEvent(
   });
 }
 
-function billingCycleLabel(cycle: ApiSubscription["billingCycle"], locale: ApiAppSettings["locale"]): string {
+function billingCycleLabel(subscription: ApiSubscription, locale: ApiAppSettings["locale"]): string {
+  if (subscription.billingCycle === "custom") {
+    const unit = isCustomCycleUnit(subscription.customCycleUnit) ? subscription.customCycleUnit : "day";
+    const unitKey = `calendarFeed.customCycleUnit.${unit}` as const;
+    const unitLabel = serverText(locale, unitKey);
+    return serverFormat(locale, "calendarFeed.billingCycle.customValue", {
+      count: subscription.customDays ?? 1,
+      unit: unitLabel === unitKey ? unit : unitLabel,
+    });
+  }
+  const cycle = subscription.billingCycle;
   const key = `calendarFeed.billingCycle.${cycle}` as const;
   const label = serverText(locale, key);
   return label === key ? cycle : label;
+}
+
+function isCustomCycleUnit(value: unknown): value is NonNullable<ApiSubscription["customCycleUnit"]> {
+  return value === "day" || value === "week" || value === "month" || value === "year";
 }
 
 function dateOnlyInZone(date: Date, timezone: string): string {

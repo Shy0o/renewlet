@@ -37,12 +37,17 @@ func TestEnsureSchemaCreatesContractFieldsAndIndexes(t *testing.T) {
 		"currency":                     core.FieldTypeText,
 		"billingCycle":                 core.FieldTypeSelect,
 		"customDays":                   core.FieldTypeNumber,
+		"customCycleUnit":              core.FieldTypeSelect,
+		"oneTimeTermCount":             core.FieldTypeNumber,
+		"oneTimeTermUnit":              core.FieldTypeSelect,
 		"category":                     core.FieldTypeText,
 		"status":                       core.FieldTypeSelect,
 		"pinned":                       core.FieldTypeBool,
+		"publicHidden":                 core.FieldTypeBool,
 		"paymentMethod":                core.FieldTypeText,
 		"startDate":                    core.FieldTypeText,
 		"nextBillingDate":              core.FieldTypeText,
+		"autoRenew":                    core.FieldTypeBool,
 		"autoCalculateNextBillingDate": core.FieldTypeBool,
 		"trialEndDate":                 core.FieldTypeText,
 		"website":                      core.FieldTypeURL,
@@ -79,8 +84,11 @@ func TestEnsureSchemaCreatesContractFieldsAndIndexes(t *testing.T) {
 		"updated":      core.FieldTypeAutodate,
 	})
 	assertNumberField(t, app, "subscriptions", "price", false, 0, maxSubscriptionPrice)
-	assertNumberField(t, app, "subscriptions", "reminderDays", false, inheritReminderDays, maxReminderDays)
+	assertNumberField(t, app, "subscriptions", "reminderDays", false, disabledReminderDays, maxReminderDays)
 	assertSelectFieldValues(t, app, "subscriptions", "billingCycle", "weekly", "monthly", "quarterly", "semi-annual", "annual", "custom", "one-time")
+	assertSelectFieldValues(t, app, "subscriptions", "customCycleUnit", "day", "week", "month", "year")
+	assertNumberField(t, app, "subscriptions", "oneTimeTermCount", false, 0, maxReminderDays)
+	assertSelectFieldValues(t, app, "subscriptions", "oneTimeTermUnit", "day", "week", "month", "year")
 	assertSelectFieldValues(t, app, "subscriptions", "status", "trial", "active", "expired", "paused", "cancelled")
 	assertJSONFieldMaxSize(t, app, "subscriptions", "tags", maxSubscriptionTagsFieldSize)
 	assertFileFieldMimeTypes(t, app, "assets", "file", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon")
@@ -105,6 +113,13 @@ func TestEnsureSchemaCreatesContractFieldsAndIndexes(t *testing.T) {
 		"created":        core.FieldTypeAutodate,
 		"updated":        core.FieldTypeAutodate,
 	})
+	assertFields(t, app, "public_status_pages", map[string]string{
+		"user":       core.FieldTypeRelation,
+		"token":      core.FieldTypeText,
+		"showPrices": core.FieldTypeBool,
+		"created":    core.FieldTypeAutodate,
+		"updated":    core.FieldTypeAutodate,
+	})
 
 	assertIndex(t, app, "subscriptions", "idx_subscriptions_user")
 	assertIndex(t, app, "settings", "idx_settings_user_unique")
@@ -113,6 +128,8 @@ func TestEnsureSchemaCreatesContractFieldsAndIndexes(t *testing.T) {
 	assertIndex(t, app, "calendar_feeds", "idx_calendar_feeds_user_all_unique")
 	assertIndex(t, app, "calendar_feeds", "idx_calendar_feeds_token_unique")
 	assertIndex(t, app, "calendar_feeds", "idx_calendar_feeds_user_subscription_unique")
+	assertIndex(t, app, "public_status_pages", "idx_public_status_pages_user_unique")
+	assertIndex(t, app, "public_status_pages", "idx_public_status_pages_token_unique")
 }
 
 func TestEnsureSchemaSelfHealsExistingCollectionsWithoutAutodates(t *testing.T) {
@@ -156,6 +173,76 @@ func TestEnsureSchemaSelfHealsExistingCollectionsWithoutAutodates(t *testing.T) 
 		"created": core.FieldTypeAutodate,
 		"updated": core.FieldTypeAutodate,
 	})
+}
+
+func TestBackfillSubscriptionAutoRenewOnlyForcesOneTimeFalse(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	users, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := core.NewRecord(users)
+	user.SetEmail("schema-autorenew@example.com")
+	user.SetPassword("password123")
+	user.SetVerified(true)
+	if err := app.Save(user); err != nil {
+		t.Fatal(err)
+	}
+	subscriptions, err := app.FindCollectionByNameOrId("subscriptions")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	insert := func(name string, cycle string, autoRenew bool) string {
+		t.Helper()
+		record := core.NewRecord(subscriptions)
+		record.Set("user", user.Id)
+		record.Set("name", name)
+		record.Set("price", 1)
+		record.Set("currency", "USD")
+		record.Set("billingCycle", cycle)
+		record.Set("category", "productivity")
+		record.Set("status", "active")
+		record.Set("startDate", "2026-05-14")
+		record.Set("nextBillingDate", "2026-06-14")
+		record.Set("autoRenew", autoRenew)
+		record.Set("autoCalculateNextBillingDate", true)
+		record.Set("tags", []string{})
+		record.Set("extra", emptyJSONPayload{})
+		record.Set("reminderDays", 3)
+		record.Set("repeatReminderEnabled", false)
+		record.Set("repeatReminderInterval", defaultRepeatReminderInterval)
+		record.Set("repeatReminderWindow", defaultRepeatReminderWindow)
+		if err := app.SaveNoValidate(record); err != nil {
+			t.Fatal(err)
+		}
+		return record.Id
+	}
+
+	manualID := insert("Manual", "monthly", false)
+	autoID := insert("Auto", "monthly", true)
+	oneTimeID := insert("One Time", "one-time", true)
+
+	if err := backfillSubscriptionAutoRenew(app); err != nil {
+		t.Fatal(err)
+	}
+
+	assertAutoRenew := func(id string, want bool) {
+		t.Helper()
+		record, err := app.FindRecordById("subscriptions", id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := record.GetBool("autoRenew"); got != want {
+			t.Fatalf("autoRenew for %s = %v, want %v", id, got, want)
+		}
+	}
+	assertAutoRenew(manualID, false)
+	assertAutoRenew(autoID, true)
+	assertAutoRenew(oneTimeID, false)
 }
 
 func TestEnsureSchemaSelfHealsSubscriptionLogoURLFieldToText(t *testing.T) {
@@ -250,6 +337,7 @@ func TestEnsureSchemaCleansInvalidSubscriptionLogosButKeepsHttpLinks(t *testing.
 		record.Set("status", "active")
 		record.Set("startDate", "2026-05-14")
 		record.Set("nextBillingDate", "2026-06-14")
+		record.Set("autoRenew", true)
 		record.Set("autoCalculateNextBillingDate", true)
 		record.Set("tags", []string{})
 		record.Set("extra", emptyJSONPayload{})

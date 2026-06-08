@@ -1,5 +1,5 @@
-import type { ImportPayload, ImportSubscription } from "@/lib/api/schemas/import-export";
-import type { AppSettings, BillingCycle, Subscription } from "@/types/subscription";
+import type { ImportPayload, ImportSubscription, RenewletExportV1 } from "@/lib/api/schemas/import-export";
+import type { AppSettings, BillingCycle, CustomCycleUnit, Subscription } from "@/types/subscription";
 import type { ConfigItem, CustomConfig } from "@/types/config";
 import { labels } from "@/i18n/locales";
 import type { DateOnly } from "@/lib/time/date-only";
@@ -82,6 +82,12 @@ export const IMPORT_MESSAGE_CODES = {
   wallosTableTooLarge: "IMPORT_ERROR_WALLOS_TABLE_TOO_LARGE",
   workerParseFailed: "IMPORT_ERROR_WORKER_PARSE_FAILED",
   workerUnsupported: "IMPORT_ERROR_WORKER_UNSUPPORTED",
+  aiBillingCycleDefaulted: "IMPORT_WARNING_AI_BILLING_CYCLE_DEFAULTED",
+  aiCurrencyDefaulted: "IMPORT_WARNING_AI_CURRENCY_DEFAULTED",
+  aiCustomCycleDefaulted: "IMPORT_WARNING_AI_CUSTOM_CYCLE_DEFAULTED",
+  aiDateDefaulted: "IMPORT_WARNING_AI_DATE_DEFAULTED",
+  aiPriceDefaulted: "IMPORT_WARNING_AI_PRICE_DEFAULTED",
+  aiWebsiteSuggested: "IMPORT_WARNING_AI_WEBSITE_SUGGESTED",
 } as const;
 
 /** importMessage 用 `|` 串联 code 参数，便于服务端/前端在数组里传递可本地化 warning。 */
@@ -108,7 +114,10 @@ const SECRET_SETTING_KEYS = new Set<keyof AppSettings>([
   "recipientEmail",
   "barkServerUrl",
   "barkDeviceKey",
+  "serverchanSendKey",
 ]);
+
+type RenewletExportSubscription = RenewletExportV1["data"]["subscriptions"][number];
 
 /**
  * sanitizeSettingsForExport 移除默认不应进入备份的通知和账号 secret。
@@ -117,7 +126,15 @@ const SECRET_SETTING_KEYS = new Set<keyof AppSettings>([
  */
 export function sanitizeSettingsForExport(settings: AppSettings, includeSecrets: boolean): Partial<AppSettings> {
   const entries = Object.entries(settings).filter(([key]) => includeSecrets || !SECRET_SETTING_KEYS.has(key as keyof AppSettings));
-  return Object.fromEntries(entries) as Partial<AppSettings>;
+  const sanitized = Object.fromEntries(entries) as Partial<AppSettings>;
+  if (!includeSecrets && sanitized.aiRecognition) {
+    sanitized.aiRecognition = {
+      ...sanitized.aiRecognition,
+      baseUrl: "",
+      apiKey: "",
+    };
+  }
+  return sanitized;
 }
 
 /**
@@ -137,12 +154,17 @@ export function subscriptionToImportSubscription(subscription: Subscription, sou
     currency: subscription.currency,
     billingCycle: subscription.billingCycle,
     customDays: subscription.billingCycle === "custom" ? subscription.customDays : null,
+    customCycleUnit: subscription.billingCycle === "custom" ? subscription.customCycleUnit : null,
+    oneTimeTermCount: subscription.billingCycle === "one-time" ? subscription.oneTimeTermCount ?? null : null,
+    oneTimeTermUnit: subscription.billingCycle === "one-time" ? subscription.oneTimeTermUnit ?? null : null,
     category: subscription.category,
     status: subscription.status,
     pinned: subscription.pinned,
+    publicHidden: subscription.publicHidden,
     paymentMethod: subscription.paymentMethod ?? null,
     startDate: subscription.startDate,
     nextBillingDate: subscription.nextBillingDate,
+    autoRenew: subscription.billingCycle === "one-time" ? false : subscription.autoRenew,
     autoCalculateNextBillingDate: subscription.autoCalculateNextBillingDate,
     trialEndDate: subscription.trialEndDate ?? null,
     website: subscription.website ?? null,
@@ -161,7 +183,7 @@ export function subscriptionToImportSubscription(subscription: Subscription, sou
  *
  * 这里保留原始 status/extra，和 CSV 的“有效状态”报表口径分开，保证备份可用于未来迁移。
  */
-export function subscriptionToExportRow(subscription: Subscription) {
+export function subscriptionToExportRow(subscription: Subscription): RenewletExportSubscription {
   return {
     id: subscription.id,
     name: subscription.name,
@@ -169,12 +191,18 @@ export function subscriptionToExportRow(subscription: Subscription) {
     price: subscription.price,
     currency: subscription.currency,
     billingCycle: subscription.billingCycle,
-    ...(subscription.billingCycle === "custom" ? { customDays: subscription.customDays } : {}),
+    ...(subscription.billingCycle === "custom" ? { customDays: subscription.customDays, customCycleUnit: subscription.customCycleUnit } : {}),
+    ...(subscription.billingCycle === "one-time" && subscription.oneTimeTermCount && subscription.oneTimeTermUnit
+      ? { oneTimeTermCount: subscription.oneTimeTermCount, oneTimeTermUnit: subscription.oneTimeTermUnit }
+      : {}),
     category: subscription.category,
     status: subscription.status,
+    pinned: subscription.pinned,
+    publicHidden: subscription.publicHidden,
     ...(subscription.paymentMethod ? { paymentMethod: subscription.paymentMethod } : {}),
     startDate: subscription.startDate,
     nextBillingDate: subscription.nextBillingDate,
+    autoRenew: subscription.billingCycle === "one-time" ? false : subscription.autoRenew,
     autoCalculateNextBillingDate: subscription.autoCalculateNextBillingDate,
     ...(subscription.trialEndDate ? { trialEndDate: subscription.trialEndDate } : {}),
     ...(subscription.website ? { website: subscription.website } : {}),
@@ -250,14 +278,30 @@ export function normalizeWebsite(value: unknown, warnings: string[]): string | u
   return undefined;
 }
 
+export interface ImportBillingCycle {
+  billingCycle: BillingCycle;
+  customDays?: number;
+  customCycleUnit?: CustomCycleUnit;
+}
+
 /** toBillingCycleFromDays 把 Wallos 天数周期映射到 Renewlet 当前正式 billingCycle 契约。 */
-export function toBillingCycleFromDays(days: number): { billingCycle: BillingCycle; customDays?: number } {
+export function toBillingCycleFromDays(days: number): ImportBillingCycle {
   if (days === 7) return { billingCycle: "weekly" };
   if (days === 30) return { billingCycle: "monthly" };
   if (days === 90) return { billingCycle: "quarterly" };
   if (days === 180) return { billingCycle: "semi-annual" };
   if (days === 365) return { billingCycle: "annual" };
-  return { billingCycle: "custom", customDays: Math.max(1, Math.round(days)) };
+  return { billingCycle: "custom", customDays: Math.max(1, Math.round(days)), customCycleUnit: "day" };
+}
+
+export function toBillingCycleFromUnit(count: number, unit: CustomCycleUnit): ImportBillingCycle {
+  const normalizedCount = Math.max(1, Math.round(count));
+  if (unit === "week" && normalizedCount === 1) return { billingCycle: "weekly" };
+  if (unit === "month" && normalizedCount === 1) return { billingCycle: "monthly" };
+  if (unit === "month" && normalizedCount === 3) return { billingCycle: "quarterly" };
+  if (unit === "month" && normalizedCount === 6) return { billingCycle: "semi-annual" };
+  if (unit === "year" && normalizedCount === 1) return { billingCycle: "annual" };
+  return { billingCycle: "custom", customDays: normalizedCount, customCycleUnit: unit };
 }
 
 /** privateAssetIdFromLogo 只识别受控资产代理路径，外链 Logo 不参与 ZIP 资产导出。 */

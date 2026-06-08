@@ -6,22 +6,25 @@ type FeatureGridProps = {
 }
 
 const cardClassNames = [
-  'order-1 col-span-full md:col-span-3 lg:col-span-5 xl:col-span-4',
-  'order-2 col-span-full md:col-span-3 lg:col-span-7 xl:col-span-4',
-  'order-3 col-span-full md:order-4 md:col-span-3 lg:col-span-5 xl:order-3 xl:col-span-4',
-  'order-4 col-span-full md:order-5 xl:order-4 xl:col-span-7',
-  'order-5 col-span-full md:order-3 md:col-span-3 lg:col-span-7 xl:order-5 xl:col-span-5',
+  'col-span-full md:col-span-3 lg:col-span-4',
+  'col-span-full md:col-span-3 lg:col-span-4',
+  'col-span-full md:col-span-3 lg:col-span-4',
+  'col-span-full md:col-span-3 lg:col-span-4',
+  'col-span-full md:col-span-3 lg:col-span-4',
+  'col-span-full md:col-span-3 lg:col-span-4',
 ]
 
 function SectionHeading({ locale }: FeatureGridProps) {
+  const isChinese = locale === 'zh'
+
   return (
-    <div className="grid max-w-xl items-start justify-between gap-5">
-      <div className="text-[2rem]/[1.07] font-bold tracking-tight md:text-5xl/[1.07]">
+    <div className={`grid items-start justify-between gap-5 ${isChinese ? 'max-w-xl' : 'max-w-[42rem]'}`}>
+      <div className="text-[2rem]/[1.07] font-bold tracking-tight [text-wrap:balance] md:text-5xl/[1.07]">
         <span className="bg-gradient-to-br from-white to-zinc-500 bg-clip-text text-transparent">
           {text(copy.featuresHeading.title, locale)}
         </span>
       </div>
-      <div className="text-lg text-zinc-400/80">
+      <div className={`text-zinc-400/80 ${isChinese ? 'text-lg' : 'max-w-[38rem] text-base leading-7 md:text-lg md:leading-8'}`}>
         {text(copy.featuresHeading.body, locale)}{' '}
         <span className="text-zinc-200">{text(copy.featuresHeading.highlight, locale)}</span>
       </div>
@@ -39,6 +42,7 @@ function FeatureCardView({
   locale: Locale
 }) {
   const Icon = card.icon
+  const isChinese = locale === 'zh'
 
   // 480px 卡片固定拆成 292px 视觉区和 188px 文案区，避免中英文描述高度不齐时破坏整组节奏。
   return (
@@ -56,7 +60,9 @@ function FeatureCardView({
         </div>
         <div className="relative flex h-[188px] shrink-0 flex-col border-t border-white/10 p-5 md:p-6">
           <h3 className="text-xl font-semibold text-zinc-100">{text(card.title, locale)}</h3>
-          <p className="mt-3 line-clamp-3 text-sm leading-6 text-zinc-400">{text(card.body, locale)}</p>
+          <p className={`mt-3 line-clamp-3 text-sm text-zinc-400 ${isChinese ? 'leading-6' : 'max-w-[31rem] leading-[1.7]'}`}>
+            {text(card.body, locale)}
+          </p>
         </div>
       </div>
     </article>

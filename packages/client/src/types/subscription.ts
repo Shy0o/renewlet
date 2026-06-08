@@ -8,6 +8,7 @@
  */
 import type { CustomThemeColor, ThemeMode, ThemeVariant } from './theme';
 import type { BuiltInIconSourceSettings } from "@renewlet/shared/built-in-icons";
+import type { AiRecognitionSettings } from "@renewlet/shared/schemas/ai-recognition";
 import { labelsFromCatalog } from "@/i18n/label-messages";
 import { getInitialLocale, labels, type Locale, type LocalizedLabels } from '@/i18n/locales';
 import { SUPPORTED_EXCHANGE_RATE_CURRENCIES, getIntlCurrencyOptionLabel } from '@/lib/currency-data';
@@ -16,12 +17,15 @@ import type { DateOnly } from '@/lib/time/date-only';
 import type { LocalTime } from '@/lib/time/local-time';
 import { createDefaultAppSettings } from "@renewlet/shared/settings-defaults";
 import {
+  CUSTOM_CYCLE_UNITS as SHARED_CUSTOM_CYCLE_UNITS,
   DEFAULT_NOTIFICATION_REMINDER_DAYS,
+  DISABLED_REMINDER_DAYS,
   INHERIT_REMINDER_DAYS,
   MAX_REMINDER_DAYS,
+  type CustomCycleUnit as SharedCustomCycleUnit,
 } from "@renewlet/shared/runtime";
 
-export { DEFAULT_NOTIFICATION_REMINDER_DAYS, INHERIT_REMINDER_DAYS, MAX_REMINDER_DAYS };
+export { DEFAULT_NOTIFICATION_REMINDER_DAYS, DISABLED_REMINDER_DAYS, INHERIT_REMINDER_DAYS, MAX_REMINDER_DAYS };
 
 export const SUBSCRIPTION_STATUSES = ['trial', 'active', 'expired', 'paused', 'cancelled'] as const;
 /** 订阅状态（影响展示、统计与提醒逻辑）。 */
@@ -30,6 +34,10 @@ export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 export const BILLING_CYCLES = ['weekly', 'monthly', 'quarterly', 'semi-annual', 'annual', 'custom', 'one-time'] as const;
 /** 扣费周期（用于计算月度/年度支出与续费日期；one-time 表示买断/一次性购买）。 */
 export type BillingCycle = (typeof BILLING_CYCLES)[number];
+
+export const CUSTOM_CYCLE_UNITS = SHARED_CUSTOM_CYCLE_UNITS;
+/** 自定义扣费周期单位；仅 billingCycle=custom 时有效，旧记录缺省按 day 解释。 */
+export type CustomCycleUnit = SharedCustomCycleUnit;
 
 export const CATEGORIES = [
   'productivity',
@@ -113,7 +121,7 @@ export type BuiltInPaymentMethod = (typeof PAYMENT_METHODS)[number];
  */
 export type PaymentMethod = BuiltInPaymentMethod | (string & {});
 
-export const NOTIFICATION_CHANNELS = ['telegram', 'notifyx', 'webhook', 'wechat', 'email', 'bark'] as const;
+export const NOTIFICATION_CHANNELS = ['telegram', 'notifyx', 'webhook', 'wechat', 'email', 'bark', 'serverchan'] as const;
 /** 通知渠道（用于配置页选择 + 后续通知任务）。 */
 export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
 
@@ -150,10 +158,14 @@ interface SubscriptionBase {
   status: SubscriptionStatus;
   /** 是否置顶显示；列表排序会先按置顶分组，再应用用户选择的排序条件。 */
   pinned: boolean;
+  /** publicHidden=false 是公开展示页启用后的默认可见语义；隐藏必须由用户逐条显式选择。 */
+  publicHidden: boolean;
   /** 支付方式（可选）。 */
   paymentMethod: PaymentMethod | undefined;
   /** 下次扣费日期（用于提醒与日历）。 */
   nextBillingDate: DateOnly;
+  /** 到期后是否由后台自动推进下一期；one-time 写入层必须强制为 false。 */
+  autoRenew: boolean;
   /** 是否自动根据开始日期和扣费周期计算下次扣费日期。 */
   autoCalculateNextBillingDate: boolean;
   /** 开始日期。 */
@@ -166,7 +178,7 @@ interface SubscriptionBase {
   notes: string | undefined;
   /** 标签。 */
   tags: string[];
-  /** 提前多少天提醒；-1 表示继承设置页的全局提醒提前时间。 */
+  /** 提前多少天提醒；-2 表示不提醒，-1 表示继承设置页的全局提醒提前时间。 */
   reminderDays: number;
   /** 是否为该订阅启用重复提醒。 */
   repeatReminderEnabled: boolean;
@@ -179,19 +191,35 @@ interface SubscriptionBase {
 }
 
 export interface CustomCycleSubscription extends SubscriptionBase {
-  /** 自定义周期必须携带自定义天数；统计折算和自动续费日期计算都依赖这个不变量。 */
+  /** 自定义周期必须携带数量和单位；统计折算和自动续费日期计算都依赖这个不变量。 */
   billingCycle: "custom";
   customDays: number;
+  customCycleUnit: CustomCycleUnit;
+  oneTimeTermCount?: undefined;
+  oneTimeTermUnit?: undefined;
 }
 
-export interface FixedCycleSubscription extends SubscriptionBase {
-  /** 固定周期不携带自定义天数，避免历史 customDays 脏值影响金额折算。 */
-  billingCycle: Exclude<BillingCycle, "custom">;
+export interface RecurringCycleSubscription extends SubscriptionBase {
+  /** 固定周期不携带自定义数量/单位，避免历史 custom 脏值影响金额折算。 */
+  billingCycle: Exclude<BillingCycle, "custom" | "one-time">;
   customDays: undefined;
+  customCycleUnit: undefined;
+  oneTimeTermCount?: undefined;
+  oneTimeTermUnit?: undefined;
 }
 
-export type Subscription = CustomCycleSubscription | FixedCycleSubscription;
-export type SubscriptionDraft = Omit<CustomCycleSubscription, "id"> | Omit<FixedCycleSubscription, "id">;
+export interface OneTimeSubscription extends SubscriptionBase {
+  /** one-time 无服务期表示买断；有服务期时按整段权益期做月均摊销和到期提醒。 */
+  billingCycle: "one-time";
+  customDays: undefined;
+  customCycleUnit: undefined;
+  oneTimeTermCount?: number | undefined;
+  oneTimeTermUnit?: CustomCycleUnit | undefined;
+}
+
+export type FixedCycleSubscription = RecurringCycleSubscription | OneTimeSubscription;
+export type Subscription = CustomCycleSubscription | RecurringCycleSubscription | OneTimeSubscription;
+export type SubscriptionDraft = Omit<CustomCycleSubscription, "id"> | Omit<RecurringCycleSubscription, "id"> | Omit<OneTimeSubscription, "id">;
 
 export interface SubscriptionStats {
   /** 按月折算的总支出（基于订阅周期换算）。 */
@@ -205,6 +233,8 @@ export interface SubscriptionStats {
   /** 试用即将结束的订阅数量（时间窗口由 UI 逻辑决定）。 */
   trialEndingSoon: number;
 }
+
+export type PublicStatusCurrency = "inherit" | (string & {});
 
 export interface AppSettings {
   // 管理员展示信息
@@ -224,10 +254,14 @@ export interface AppSettings {
   showExpired: boolean;
   /** 默认货币（用于统计/展示换算）。 */
   defaultCurrency: string;
+  /** 公开页金额汇总货币；inherit 表示跟随 defaultCurrency。 */
+  publicStatusCurrency: PublicStatusCurrency;
   /** 首选汇率来源；另一个远端来源仍作为兜底。 */
   exchangeRateProvider: ExchangeRateProvider;
   /** 内置 Logo/Icon 来源配置；影响搜索候选和导入自动匹配。 */
   builtInIconSources: BuiltInIconSourceSettings;
+  /** AI 识别订阅导入使用的第三方模型配置。 */
+  aiRecognition: AiRecognitionSettings;
   
   // 预算
   /** 月度预算（用于统计页预算占比）。 */
@@ -296,6 +330,8 @@ export interface AppSettings {
   barkDeviceKey: string;
   /** Bark 是否静音推送。 */
   barkSilentPush: boolean;
+  /** Server酱 SendKey。 */
+  serverchanSendKey: string;
 }
 
 export const CATEGORY_LABELS: Record<BuiltInCategory, LocalizedLabels> = {
@@ -349,6 +385,7 @@ export const CHANNEL_LABELS: Record<NotificationChannel, LocalizedLabels> = {
   wechat: labelsFromCatalog("channel.wechat"),
   email: labelsFromCatalog("channel.email"),
   bark: labelsFromCatalog("channel.bark"),
+  serverchan: labelsFromCatalog("channel.serverchan"),
 };
 
 export const PAYMENT_METHOD_LABELS: Record<BuiltInPaymentMethod, LocalizedLabels> = {

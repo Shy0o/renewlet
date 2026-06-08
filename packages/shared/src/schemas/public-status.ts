@@ -1,0 +1,139 @@
+import { z } from "zod";
+import {
+  BILLING_CYCLES,
+  CUSTOM_CYCLE_UNITS,
+  SUBSCRIPTION_STATUSES,
+  isValidDateOnly,
+} from "../runtime";
+
+const publicStatusTokenSchema = z.string().trim().regex(/^[A-Za-z0-9_-]{43}$/);
+
+export const publicStatusPageSchema = z.object({
+  enabled: z.boolean(),
+  createdAt: z.string().optional(),
+  pageUrl: z.string().trim().url().max(4096).optional(),
+  showPrices: z.boolean(),
+  updatedAt: z.string().optional(),
+}).strict();
+
+export const publicStatusPageResponseSchema = z.object({
+  publicStatusPage: publicStatusPageSchema,
+}).strict();
+
+export const publicStatusPageCreateRequestSchema = z.object({}).strict();
+
+export const publicStatusPageCreateResponseSchema = z.object({
+  publicStatusPage: z.object({
+    enabled: z.literal(true),
+    createdAt: z.string().trim().min(1),
+    pageUrl: z.string().trim().url().max(4096),
+    showPrices: z.boolean(),
+    updatedAt: z.string().trim().min(1),
+  }).strict(),
+}).strict();
+
+export const publicStatusPageUpdateRequestSchema = z.object({
+  showPrices: z.boolean(),
+}).strict();
+
+export const publicStatusPageDeleteResponseSchema = z.object({
+  ok: z.literal(true),
+}).strict();
+
+const publicStatusLogoSchema = z.string().trim().max(4096).refine((value) => {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return value.startsWith("/api/public/status/");
+  }
+}, "Invalid public logo URL");
+
+const publicStatusSubscriptionSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  logo: publicStatusLogoSchema.optional(),
+  category: z.object({
+    value: z.string().trim().min(1).max(80),
+    label: z.string().trim().min(1).max(120),
+    color: z.string().trim().max(80).optional(),
+  }).strict(),
+  status: z.enum(SUBSCRIPTION_STATUSES),
+  startDate: z.string().refine(isValidDateOnly),
+  nextBillingDate: z.string().refine(isValidDateOnly),
+  updatedAt: z.string().trim().min(1),
+  price: z.number().finite().nonnegative().max(1_000_000_000).optional(),
+  currency: z.string().trim().regex(/^[A-Z]{3}$/).optional(),
+  billingCycle: z.enum(BILLING_CYCLES).optional(),
+  customDays: z.number().int().positive().optional(),
+  customCycleUnit: z.enum(CUSTOM_CYCLE_UNITS).optional(),
+  oneTimeTermCount: z.number().int().positive().max(3650).optional(),
+  oneTimeTermUnit: z.enum(CUSTOM_CYCLE_UNITS).optional(),
+}).strict().refine((value) => (value.price === undefined) === (value.currency === undefined), {
+  path: ["price"],
+  message: "Price and currency must be included together",
+}).refine((value) => value.price === undefined || value.billingCycle !== undefined, {
+  path: ["billingCycle"],
+  message: "Billing cycle is required when price is exposed",
+});
+
+export const publicStatusResponseSchema = z.object({
+  page: z.object({
+    title: z.literal("Renewlet"),
+    showPrices: z.boolean(),
+    currency: z.string().trim().regex(/^[A-Z]{3}$/).optional(),
+    generatedAt: z.string().trim().min(1),
+    truncated: z.boolean(),
+  }).strict(),
+  subscriptions: z.array(publicStatusSubscriptionSchema).max(500),
+}).strict().superRefine((value, context) => {
+  if (value.page.showPrices && !value.page.currency) {
+    context.addIssue({
+      code: "custom",
+      path: ["page", "currency"],
+      message: "Currency is required when prices are exposed",
+    });
+  }
+  if (!value.page.showPrices && value.page.currency !== undefined) {
+    context.addIssue({
+      code: "custom",
+      path: ["page", "currency"],
+      message: "Currency must be hidden when prices are not exposed",
+    });
+  }
+  value.subscriptions.forEach((subscription, index) => {
+    const amountFields = [
+      subscription.price,
+      subscription.currency,
+      subscription.billingCycle,
+      subscription.customDays,
+      subscription.customCycleUnit,
+      subscription.oneTimeTermCount,
+      subscription.oneTimeTermUnit,
+    ];
+    const hasAnyAmountProjection = amountFields.some((field) => field !== undefined);
+    const hasRequiredAmountProjection = subscription.price !== undefined
+      && subscription.currency !== undefined
+      && subscription.billingCycle !== undefined;
+    if (value.page.showPrices && !hasRequiredAmountProjection) {
+      context.addIssue({
+        code: "custom",
+        path: ["subscriptions", index, "price"],
+        message: "Price projection is required when prices are exposed",
+      });
+    }
+    if (!value.page.showPrices && hasAnyAmountProjection) {
+      context.addIssue({
+        code: "custom",
+        path: ["subscriptions", index, "price"],
+        message: "Price projection must be hidden when prices are not exposed",
+      });
+    }
+  });
+});
+
+export type PublicStatusPage = z.infer<typeof publicStatusPageSchema>;
+export type PublicStatusPageResponse = z.infer<typeof publicStatusPageResponseSchema>;
+export type PublicStatusPageCreateResponse = z.infer<typeof publicStatusPageCreateResponseSchema>;
+export type PublicStatusPageUpdateRequest = z.infer<typeof publicStatusPageUpdateRequestSchema>;
+export type PublicStatusResponse = z.infer<typeof publicStatusResponseSchema>;
+export type PublicStatusToken = z.infer<typeof publicStatusTokenSchema>;

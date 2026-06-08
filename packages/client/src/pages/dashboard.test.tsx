@@ -1,9 +1,10 @@
 // Dashboard 页面测试保护首页 hook 装配和统计入口，避免页面层绕过 domain 模型直接计算金额。
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { assertDateOnly } from "@/lib/time/date-only";
 import { DEFAULT_CUSTOM_CONFIG } from "@/types/config";
-import type { FixedCycleSubscription, Subscription } from "@/types/subscription";
+import type { RecurringCycleSubscription, Subscription } from "@/types/subscription";
 import Dashboard from "./dashboard";
 
 const mocks = vi.hoisted(() => ({
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   handleDeleteSubscription: vi.fn(),
   handleEditDialogOpenChange: vi.fn(),
   handleEditSubscription: vi.fn(),
+  handleTogglePublicHiddenSubscription: vi.fn(),
   handleSaveSubscription: vi.fn(),
   ratesLoading: false,
   useSettings: vi.fn(),
@@ -32,11 +34,35 @@ vi.mock("@/components/loading-skeleton", () => ({
 }));
 
 vi.mock("@/components/subscription-card", () => ({
-  SubscriptionCard: ({ subscription, inheritedReminderDays }: { subscription: Subscription; inheritedReminderDays: number }) => (
+  SubscriptionCard: ({
+    subscription,
+    inheritedReminderDays,
+    onTogglePublicHidden,
+    onViewDetails,
+  }: {
+    subscription: Subscription;
+    inheritedReminderDays: number;
+    onTogglePublicHidden?: (id: string) => void;
+    onViewDetails?: (id: string) => void;
+  }) => (
     <article data-testid="subscription-card">
       {subscription.name}
       <span data-testid="subscription-card-reminder">{inheritedReminderDays}</span>
+      <button type="button" onClick={() => onViewDetails?.(subscription.id)}>
+        查看 {subscription.name} 的详情
+      </button>
+      <button type="button" onClick={() => onTogglePublicHidden?.(subscription.id)}>
+        公开切换 {subscription.name}
+      </button>
     </article>
+  ),
+}));
+
+vi.mock("@/components/subscription-detail-dialog", () => ({
+  SubscriptionDetailDialog: ({ open, subscription }: { open: boolean; subscription: Subscription | null }) => (
+    <div data-testid="subscription-detail-dialog">
+      {open && subscription ? <span>{subscription.name} 详情</span> : null}
+    </div>
   ),
 }));
 
@@ -101,11 +127,12 @@ vi.mock("@/modules/subscriptions/application/use-subscription-crud", () => ({
     handleDeleteSubscription: mocks.handleDeleteSubscription,
     handleEditDialogOpenChange: mocks.handleEditDialogOpenChange,
     handleEditSubscription: mocks.handleEditSubscription,
+    handleTogglePublicHiddenSubscription: mocks.handleTogglePublicHiddenSubscription,
     handleSaveSubscription: mocks.handleSaveSubscription,
   }),
 }));
 
-function subscription(overrides: Partial<FixedCycleSubscription> = {}): FixedCycleSubscription {
+function subscription(overrides: Partial<RecurringCycleSubscription> = {}): RecurringCycleSubscription {
   return {
     id: "codex-pro",
     name: "Codex Pro",
@@ -114,12 +141,17 @@ function subscription(overrides: Partial<FixedCycleSubscription> = {}): FixedCyc
     currency: "USD",
     billingCycle: "monthly",
     customDays: undefined,
+    customCycleUnit: undefined,
+    oneTimeTermCount: undefined,
+    oneTimeTermUnit: undefined,
     category: "productivity",
     status: "active",
     pinned: false,
+    publicHidden: false,
     paymentMethod: undefined,
     startDate: assertDateOnly("2026-04-18"),
     nextBillingDate: assertDateOnly("2026-05-18"),
+    autoRenew: false,
     autoCalculateNextBillingDate: true,
     trialEndDate: undefined,
     website: undefined,
@@ -166,6 +198,26 @@ describe("Dashboard page loading state", () => {
     expect(screen.getByTestId("subscription-card-reminder")).toHaveTextContent("5");
     expect(screen.getByTestId("spending-chart")).toHaveTextContent("1:CNY:Asia/Shanghai:exchange-api");
     expect(screen.getByText("汇率加载中...")).toBeInTheDocument();
+  });
+
+  it("opens subscription details from a recent subscription card", async () => {
+    const user = userEvent.setup();
+
+    render(<Dashboard />);
+
+    await user.click(screen.getByRole("button", { name: "查看 Codex Pro 的详情" }));
+
+    expect(screen.getByText("Codex Pro 详情")).toBeInTheDocument();
+  });
+
+  it("wires public visibility toggles from recent subscription cards", async () => {
+    const user = userEvent.setup();
+
+    render(<Dashboard />);
+
+    await user.click(screen.getByRole("button", { name: "公开切换 Codex Pro" }));
+
+    expect(mocks.handleTogglePublicHiddenSubscription).toHaveBeenCalledWith("codex-pro");
   });
 
   it.each([

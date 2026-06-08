@@ -4,14 +4,15 @@ import type { ReactNode } from "react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { assertDateOnly } from "@/lib/time/date-only";
-import type { Subscription } from "@/types/subscription";
+import { DEFAULT_SETTINGS, type Subscription } from "@/types/subscription";
 import Subscriptions from "./subscriptions";
 
-type FixedBillingCycle = Exclude<Subscription["billingCycle"], "custom">;
-type SubscriptionBaseFixture = Omit<Subscription, "billingCycle" | "customDays">;
-type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "customDays">> & (
-  | { billingCycle?: FixedBillingCycle; customDays?: undefined }
-  | { billingCycle: "custom"; customDays?: number }
+type RecurringBillingCycle = Exclude<Subscription["billingCycle"], "custom" | "one-time">;
+type SubscriptionBaseFixture = Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit" | "oneTimeTermCount" | "oneTimeTermUnit">;
+type SubscriptionOverrides = Partial<SubscriptionBaseFixture> & (
+  | { billingCycle?: RecurringBillingCycle; customDays?: undefined; customCycleUnit?: undefined; oneTimeTermCount?: undefined; oneTimeTermUnit?: undefined }
+  | { billingCycle: "one-time"; customDays?: undefined; customCycleUnit?: undefined; oneTimeTermCount?: number; oneTimeTermUnit?: Subscription["oneTimeTermUnit"] }
+  | { billingCycle: "custom"; customDays?: number; customCycleUnit?: Subscription["customCycleUnit"]; oneTimeTermCount?: undefined; oneTimeTermUnit?: undefined }
 );
 
 const mocks = vi.hoisted(() => ({
@@ -22,11 +23,13 @@ const mocks = vi.hoisted(() => ({
   handleDeleteSubscription: vi.fn(),
   handleEditSubscription: vi.fn(),
   handleTogglePinnedSubscription: vi.fn(),
+  handleTogglePublicHiddenSubscription: vi.fn(),
   handleSaveSubscription: vi.fn(),
   handleEditDialogOpenChange: vi.fn(),
   exportToJSON: vi.fn(),
   exportToJSONWithSecrets: vi.fn(),
   exportToCSV: vi.fn(),
+  renderHeaderActions: false,
 }));
 
 vi.mock("@/hooks/use-subscriptions", () => ({
@@ -92,6 +95,7 @@ vi.mock("@/modules/subscriptions/application/use-subscription-crud", () => ({
     handleDeleteSubscription: mocks.handleDeleteSubscription,
     handleEditSubscription: mocks.handleEditSubscription,
     handleTogglePinnedSubscription: mocks.handleTogglePinnedSubscription,
+    handleTogglePublicHiddenSubscription: mocks.handleTogglePublicHiddenSubscription,
     handleSaveSubscription: mocks.handleSaveSubscription,
     handleEditDialogOpenChange: mocks.handleEditDialogOpenChange,
   }),
@@ -110,7 +114,19 @@ vi.mock("@/components/import-data-dialog", () => ({
 }));
 
 vi.mock("@/components/header", () => ({
-  Header: () => <header data-testid="header" />,
+  Header: ({ subscriptionActions }: { subscriptionActions?: ReactNode }) => (
+    <header data-testid="header">
+      {mocks.renderHeaderActions ? subscriptionActions : null}
+    </header>
+  ),
+}));
+
+vi.mock("@/components/ai-recognize-subscription-dialog", () => ({
+  AIRecognizeSubscriptionDialog: ({ open }: { open: boolean }) => (
+    <div role="dialog" aria-label="AI 识别订阅" data-testid="ai-recognition-dialog">
+      {String(open)}
+    </div>
+  ),
 }));
 
 vi.mock("@/components/subscription-card", () => ({
@@ -118,18 +134,51 @@ vi.mock("@/components/subscription-card", () => ({
     subscription,
     inheritedReminderDays,
     onTogglePinned,
+    onTogglePublicHidden,
+    onViewDetails,
   }: {
     subscription: Subscription;
     inheritedReminderDays: number;
     onTogglePinned?: (id: string) => void;
+    onTogglePublicHidden?: (id: string) => void;
+    onViewDetails?: (id: string) => void;
   }) => (
     <article data-testid="subscription-card">
       {subscription.name}
       <span data-testid="subscription-card-reminder">{inheritedReminderDays}</span>
+      <button type="button" onClick={() => onViewDetails?.(subscription.id)}>
+        查看 {subscription.name} 的详情
+      </button>
       <button type="button" onClick={() => onTogglePinned?.(subscription.id)}>
         置顶 {subscription.name}
       </button>
+      <button type="button" onClick={() => onTogglePublicHidden?.(subscription.id)}>
+        公开切换 {subscription.name}
+      </button>
     </article>
+  ),
+}));
+
+vi.mock("@/components/subscription-detail-dialog", () => ({
+  SubscriptionDetailDialog: ({
+    open,
+    subscription,
+    onEditSubscription,
+  }: {
+    open: boolean;
+    subscription: Subscription | null;
+    onEditSubscription?: (subscription: Subscription) => void;
+  }) => (
+    <div data-testid="subscription-detail-dialog">
+      {open && subscription ? (
+        <>
+          <span>{subscription.name} 详情</span>
+          <button type="button" onClick={() => onEditSubscription?.(subscription)}>
+            编辑详情 {subscription.name}
+          </button>
+        </>
+      ) : null}
+    </div>
   ),
 }));
 
@@ -153,6 +202,7 @@ function subscription(overrides: SubscriptionOverrides = {}): Subscription {
     paymentMethod: undefined,
     startDate: assertDateOnly("2026-01-01"),
     nextBillingDate: assertDateOnly("2026-02-01"),
+    autoRenew: false,
     autoCalculateNextBillingDate: true,
     trialEndDate: undefined,
     website: undefined,
@@ -163,6 +213,7 @@ function subscription(overrides: SubscriptionOverrides = {}): Subscription {
     repeatReminderInterval: "1h",
     repeatReminderWindow: "72h",
     pinned: false,
+    publicHidden: false,
   };
 
   if (overrides.billingCycle === "custom") {
@@ -171,6 +222,21 @@ function subscription(overrides: SubscriptionOverrides = {}): Subscription {
       ...overrides,
       billingCycle: "custom",
       customDays: overrides.customDays ?? 30,
+      customCycleUnit: overrides.customCycleUnit ?? "day",
+      oneTimeTermCount: undefined,
+      oneTimeTermUnit: undefined,
+    };
+  }
+
+  if (overrides.billingCycle === "one-time") {
+    return {
+      ...base,
+      ...overrides,
+      billingCycle: "one-time",
+      customDays: undefined,
+      customCycleUnit: undefined,
+      oneTimeTermCount: overrides.oneTimeTermCount,
+      oneTimeTermUnit: overrides.oneTimeTermUnit,
     };
   }
 
@@ -179,6 +245,9 @@ function subscription(overrides: SubscriptionOverrides = {}): Subscription {
     ...overrides,
     billingCycle: overrides.billingCycle ?? "monthly",
     customDays: undefined,
+    customCycleUnit: undefined,
+    oneTimeTermCount: undefined,
+    oneTimeTermUnit: undefined,
   };
 }
 
@@ -229,6 +298,10 @@ function manySubscriptions(count: number) {
   );
 }
 
+beforeEach(() => {
+  mocks.renderHeaderActions = false;
+});
+
 describe("Subscriptions page sorting", () => {
   beforeAll(() => {
     Element.prototype.hasPointerCapture ??= vi.fn(() => false);
@@ -241,6 +314,7 @@ describe("Subscriptions page sorting", () => {
     mockMobileTagFilterMatch(false);
     mocks.useSettings.mockReturnValue({
       data: {
+        ...DEFAULT_SETTINGS,
         timezone: "Asia/Shanghai",
         defaultCurrency: "CNY",
         notificationReminderDays: 5,
@@ -311,6 +385,38 @@ describe("Subscriptions page sorting", () => {
     expect(mocks.handleTogglePinnedSubscription).toHaveBeenCalledWith("regular");
   });
 
+  it("wires public visibility toggles from subscription cards", async () => {
+    const user = userEvent.setup();
+    mocks.useInfiniteSubscriptions.mockReturnValue({
+      subscriptions: [subscription({ id: "public-toggle", name: "Public Toggle" })],
+      isPending: false,
+    });
+
+    renderSubscriptionsPage();
+
+    await user.click(screen.getByRole("button", { name: "公开切换 Public Toggle" }));
+
+    expect(mocks.handleTogglePublicHiddenSubscription).toHaveBeenCalledWith("public-toggle");
+  });
+
+  it("opens the read-only detail view from a subscription card and edits from that detail view", async () => {
+    const user = userEvent.setup();
+    mocks.useInfiniteSubscriptions.mockReturnValue({
+      subscriptions: [subscription({ id: "readable", name: "Readable Service" })],
+      isPending: false,
+    });
+
+    renderSubscriptionsPage();
+
+    await user.click(screen.getByRole("button", { name: "查看 Readable Service 的详情" }));
+
+    expect(screen.getByText("Readable Service 详情")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "编辑详情 Readable Service" }));
+
+    expect(mocks.handleEditSubscription).toHaveBeenCalledWith("readable");
+  });
+
   it("shows the back-to-top float button when the app root is scrolled", async () => {
     renderSubscriptionsPage();
     const root = document.getElementById("root");
@@ -336,6 +442,20 @@ describe("Subscriptions page sorting", () => {
     expect(searchInput).toHaveAttribute("name", "subscription-search");
     expect(searchInput).toHaveAttribute("enterkeyhint", "search");
     expect(screen.getByTestId("mobile-sort-tag-row")).toBeInTheDocument();
+  });
+
+  it("keeps the AI add shortcut accessible, compact, and wired to the recognition dialog", async () => {
+    mocks.renderHeaderActions = true;
+    const user = userEvent.setup();
+    renderSubscriptionsPage();
+
+    const aiButton = screen.getByRole("button", { name: "AI 识别添加" });
+    expect(aiButton).toHaveClass("h-12", "w-12", "sm:h-10", "sm:w-10", "text-primary");
+    expect(aiButton).not.toHaveAttribute("title");
+
+    await user.click(aiButton);
+
+    expect(await screen.findByRole("dialog", { name: "AI 识别订阅" })).toHaveTextContent("true");
   });
 
   it("keeps import as a dedicated action next to the export menu", async () => {
@@ -401,6 +521,7 @@ describe("Subscriptions page desktop tag filters", () => {
     mockMobileTagFilterMatch(false);
     mocks.useSettings.mockReturnValue({
       data: {
+        ...DEFAULT_SETTINGS,
         timezone: "Asia/Shanghai",
         defaultCurrency: "CNY",
         notificationReminderDays: 5,
@@ -480,6 +601,7 @@ describe("Subscriptions page mobile tag filters", () => {
     mockMobileTagFilterMatch(true);
     mocks.useSettings.mockReturnValue({
       data: {
+        ...DEFAULT_SETTINGS,
         timezone: "Asia/Shanghai",
         defaultCurrency: "CNY",
         notificationReminderDays: 5,
@@ -577,6 +699,7 @@ describe("Subscriptions page virtualization", () => {
     mockMobileTagFilterMatch(false, 1280);
     mocks.useSettings.mockReturnValue({
       data: {
+        ...DEFAULT_SETTINGS,
         timezone: "Asia/Shanghai",
         defaultCurrency: "CNY",
         notificationReminderDays: 5,

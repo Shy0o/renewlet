@@ -31,6 +31,10 @@ const mocks = vi.hoisted(() => ({
   calendarFeedStatus: { data: { enabled: false, feedUrl: undefined as string | undefined }, isLoading: false },
   createCalendarFeedMutateAsync: vi.fn(),
   deleteCalendarFeedMutateAsync: vi.fn(),
+  publicStatusPageStatus: { data: { enabled: false, pageUrl: undefined as string | undefined, showPrices: false }, isLoading: false },
+  createPublicStatusPageMutateAsync: vi.fn(),
+  updatePublicStatusPageMutateAsync: vi.fn(),
+  deletePublicStatusPageMutateAsync: vi.fn(),
   writeClipboard: vi.fn(),
   fetch: vi.fn(),
   openWindow: vi.fn(),
@@ -89,6 +93,22 @@ vi.mock("@/hooks/use-calendar-feed", () => ({
   }),
 }));
 
+vi.mock("@/hooks/use-public-status-page", () => ({
+  usePublicStatusPageStatus: () => mocks.publicStatusPageStatus,
+  useCreatePublicStatusPage: () => ({
+    mutateAsync: mocks.createPublicStatusPageMutateAsync,
+    isPending: false,
+  }),
+  useUpdatePublicStatusPage: () => ({
+    mutateAsync: mocks.updatePublicStatusPageMutateAsync,
+    isPending: false,
+  }),
+  useDeletePublicStatusPage: () => ({
+    mutateAsync: mocks.deletePublicStatusPageMutateAsync,
+    isPending: false,
+  }),
+}));
+
 vi.mock("@/lib/theme-provider", () => ({
   clearThemeModeOverride: mocks.clearThemeModeOverride,
   useTheme: () => ({
@@ -138,6 +158,22 @@ vi.mock("@/i18n/I18nProvider", () => {
     "settings.calendarFeedRevoked": "日历订阅已撤销",
     "settings.calendarFeedRevokedDescription": "旧 URL 已失效，日历客户端后续刷新将无法再读取。",
     "settings.calendarFeedRevokeFailedDescription": "无法撤销日历订阅，请稍后重试。",
+    "settings.publicStatusGenerated": "公开展示已生成",
+    "settings.publicStatusGeneratedDescription": "你可以复制链接，或先按订阅逐条隐藏不想公开的项目。",
+    "settings.publicStatusCopied": "URL 已复制",
+    "settings.publicStatusCopiedDescription": "现在可以分享这个私密公开链接。",
+    "settings.publicStatusCopyFailed": "复制失败",
+    "settings.publicStatusCopyFailedDescription": "浏览器拒绝了剪贴板访问，请手动选择并复制 URL。",
+    "settings.publicStatusRegenerated": "公开展示已重新生成",
+    "settings.publicStatusRegeneratedDescription": "旧 URL 已失效，请使用新的公开展示链接。",
+    "settings.publicStatusRevoked": "公开展示已撤销",
+    "settings.publicStatusRevokedDescription": "旧 URL 已失效，后续访问会得到 404。",
+    "settings.publicStatusUpdated": "公开展示已更新",
+    "settings.publicStatusPricesEnabled": "公开页会显示价格和币种。",
+    "settings.publicStatusFailed": "公开展示操作失败",
+    "settings.publicStatusFailedDescription": "无法生成公开展示链接，请稍后重试。",
+    "settings.publicStatusRevokeFailedDescription": "无法撤销公开展示，请稍后重试。",
+    "settings.publicStatusUpdateFailedDescription": "无法更新公开展示设置，请稍后重试。",
     "error.code.BUILT_IN_ICON_SOURCE_REQUIRED": "请至少启用一个内置图标来源",
   };
 
@@ -205,6 +241,9 @@ describe("useSettingsFormController", () => {
     mocks.refetchNotificationHistory.mockReset();
     mocks.createCalendarFeedMutateAsync.mockReset();
     mocks.deleteCalendarFeedMutateAsync.mockReset();
+    mocks.createPublicStatusPageMutateAsync.mockReset();
+    mocks.updatePublicStatusPageMutateAsync.mockReset();
+    mocks.deletePublicStatusPageMutateAsync.mockReset();
     mocks.writeClipboard.mockReset();
     mocks.fetch.mockReset();
     mocks.openWindow.mockReset();
@@ -212,6 +251,7 @@ describe("useSettingsFormController", () => {
     localStorage.removeItem(SETTINGS_APPEARANCE_PENDING_STORAGE_KEY);
     localStorage.removeItem(SETTINGS_THEME_MODE_STORAGE_KEY);
     mocks.calendarFeedStatus = { data: { enabled: false, feedUrl: undefined }, isLoading: false };
+    mocks.publicStatusPageStatus = { data: { enabled: false, pageUrl: undefined, showPrices: false }, isLoading: false };
     mocks.remoteSettings = BASE_SETTINGS;
     mocks.customConfig = DEFAULT_CUSTOM_CONFIG;
     mocks.isCloudflareRuntime = false;
@@ -226,6 +266,21 @@ describe("useSettingsFormController", () => {
       feedUrl: "https://example.com/calendar/renewals.ics?token=secret",
     });
     mocks.deleteCalendarFeedMutateAsync.mockResolvedValue({ ok: true });
+    mocks.createPublicStatusPageMutateAsync.mockResolvedValue({
+      enabled: true,
+      createdAt: "2026-06-07T00:00:00Z",
+      updatedAt: "2026-06-07T00:00:00Z",
+      pageUrl: "https://example.com/status/secret",
+      showPrices: false,
+    });
+    mocks.updatePublicStatusPageMutateAsync.mockResolvedValue({
+      enabled: true,
+      createdAt: "2026-06-07T00:00:00Z",
+      updatedAt: "2026-06-07T00:00:00Z",
+      pageUrl: "https://example.com/status/secret",
+      showPrices: true,
+    });
+    mocks.deletePublicStatusPageMutateAsync.mockResolvedValue({ ok: true });
     mocks.writeClipboard.mockResolvedValue(undefined);
     mocks.fetch.mockResolvedValue(new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n", {
       headers: { "content-type": "text/calendar; charset=utf-8" },
@@ -670,6 +725,76 @@ describe("useSettingsFormController", () => {
     expect(mocks.toast).toHaveBeenCalledWith({
       title: "日历订阅已撤销",
       description: "旧 URL 已失效，日历客户端后续刷新将无法再读取。",
+    });
+  });
+
+  it("manages the public status page URL and price visibility", async () => {
+    const { result } = renderHook(() => useSettingsFormController());
+
+    expect(result.current.publicStatusPage.enabled).toBe(false);
+    expect(result.current.publicStatusPage.pageUrl).toBeNull();
+
+    await act(async () => {
+      await result.current.publicStatusPage.createOrRotate();
+    });
+
+    expect(mocks.createPublicStatusPageMutateAsync).toHaveBeenCalledTimes(1);
+    expect(mocks.toast).toHaveBeenCalledWith({
+      title: "公开展示已生成",
+      description: "你可以复制链接，或先按订阅逐条隐藏不想公开的项目。",
+    });
+
+    mocks.publicStatusPageStatus = {
+      data: {
+        enabled: true,
+        pageUrl: "https://example.com/status/secret",
+        showPrices: false,
+      },
+      isLoading: false,
+    };
+    const { result: enabledResult } = renderHook(() => useSettingsFormController());
+    expect(enabledResult.current.publicStatusPage.pageUrl).toBe("https://example.com/status/secret");
+
+    await act(async () => {
+      await enabledResult.current.publicStatusPage.copyUrl();
+    });
+    expect(mocks.writeClipboard).toHaveBeenCalledWith("https://example.com/status/secret");
+    expect(mocks.toast).toHaveBeenCalledWith({
+      title: "URL 已复制",
+      description: "现在可以分享这个私密公开链接。",
+    });
+
+    await act(async () => {
+      await enabledResult.current.publicStatusPage.openPage();
+    });
+    expect(mocks.openWindow).toHaveBeenCalledWith("https://example.com/status/secret", "_blank", "noopener,noreferrer");
+
+    await act(async () => {
+      await enabledResult.current.publicStatusPage.updateShowPrices(true);
+    });
+    expect(mocks.updatePublicStatusPageMutateAsync).toHaveBeenCalledWith(true);
+    expect(mocks.toast).toHaveBeenCalledWith({
+      title: "公开展示已更新",
+      description: "公开页会显示价格和币种。",
+    });
+
+    await act(async () => {
+      await enabledResult.current.publicStatusPage.regenerate();
+    });
+    expect(mocks.deletePublicStatusPageMutateAsync).toHaveBeenCalledTimes(1);
+    expect(mocks.createPublicStatusPageMutateAsync).toHaveBeenCalledTimes(2);
+    expect(mocks.toast).toHaveBeenCalledWith({
+      title: "公开展示已重新生成",
+      description: "旧 URL 已失效，请使用新的公开展示链接。",
+    });
+
+    await act(async () => {
+      await enabledResult.current.publicStatusPage.revoke();
+    });
+    expect(mocks.deletePublicStatusPageMutateAsync).toHaveBeenCalledTimes(2);
+    expect(mocks.toast).toHaveBeenCalledWith({
+      title: "公开展示已撤销",
+      description: "旧 URL 已失效，后续访问会得到 404。",
     });
   });
 });

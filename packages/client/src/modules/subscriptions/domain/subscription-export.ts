@@ -8,10 +8,11 @@
  * 注意： CSV 面向表格软件，任何新增字段都要继续经过 `escapeCsvCell`，
  * 避免 `= + - @ tab` 开头的内容被当作公式执行。
  */
-import { localizedLabel, type Locale } from "@/i18n/locales";
+import type { Locale } from "@/i18n/locales";
 import { translate } from "@/i18n/messages";
 import type { DateOnly } from "@/lib/time/date-only";
-import { INHERIT_REMINDER_DAYS, CYCLE_LABELS, type Subscription } from "@/types/subscription";
+import { formatBillingCycleLabel } from "@/lib/subscription-billing";
+import { DISABLED_REMINDER_DAYS, INHERIT_REMINDER_DAYS, type Subscription } from "@/types/subscription";
 import { getEffectiveSubscriptionStatus } from "./subscription-status";
 
 interface SubscriptionExportLabelMaps {
@@ -49,14 +50,16 @@ export function buildSubscriptionsCsv(
   const rows = subscriptions.map((subscription) => {
     // CSV 是面向用户阅读的报表，状态列跟 UI 一样使用有效状态；JSON 导出仍保留原始 status，方便备份和未来迁移。
     const effectiveStatus = getEffectiveSubscriptionStatus(subscription, labelMaps.today);
-    const reminderDays = subscription.reminderDays === INHERIT_REMINDER_DAYS
-      ? translate(labelMaps.locale, "subscription.reminderInheritCsv")
-      : subscription.reminderDays;
+    const reminderDays = subscription.reminderDays === DISABLED_REMINDER_DAYS
+      ? translate(labelMaps.locale, "subscription.reminderDisabledCsv")
+      : subscription.reminderDays === INHERIT_REMINDER_DAYS
+        ? translate(labelMaps.locale, "subscription.reminderInheritCsv")
+        : subscription.reminderDays;
     return [
       subscription.name,
       subscription.price,
       subscription.currency,
-      localizedLabel(CYCLE_LABELS[subscription.billingCycle], labelMaps.locale),
+      formatBillingCycleLabel(subscription, labelMaps.locale),
       labelMaps.categoryLabelByValue.get(subscription.category) ?? subscription.category,
       labelMaps.statusLabelByValue.get(effectiveStatus) ?? effectiveStatus,
       subscription.startDate,

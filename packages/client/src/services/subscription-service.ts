@@ -10,11 +10,13 @@ import {
   subscriptionResponseSchema,
   subscriptionDeleteResponseSchema,
   type ApiSubscription,
-} from "@/lib/api/schemas/subscriptions";
+} from "@renewlet/shared/schemas/subscriptions";
 import { isCloudflareRuntime } from "./runtime";
 import {
   REPEAT_REMINDER_INTERVALS,
   REPEAT_REMINDER_WINDOWS,
+  CUSTOM_CYCLE_UNITS,
+  type CustomCycleUnit,
   type RepeatReminderInterval,
   type RepeatReminderWindow,
   type Subscription,
@@ -23,6 +25,32 @@ import {
 
 const SUBSCRIPTION_PAGE_SIZE = 50;
 const SUBSCRIPTION_AGGREGATE_LIMIT = 5000;
+type SubscriptionBaseForService = Pick<
+  Subscription,
+  | "id"
+  | "name"
+  | "logo"
+  | "price"
+  | "currency"
+  | "category"
+  | "status"
+  | "paymentMethod"
+  | "startDate"
+  | "nextBillingDate"
+  | "autoRenew"
+  | "autoCalculateNextBillingDate"
+  | "pinned"
+  | "publicHidden"
+  | "trialEndDate"
+  | "website"
+  | "notes"
+  | "tags"
+  | "reminderDays"
+  | "repeatReminderEnabled"
+  | "repeatReminderInterval"
+  | "repeatReminderWindow"
+  | "extra"
+>;
 
 export interface SubscriptionPage {
   subscriptions: Subscription[];
@@ -55,6 +83,12 @@ function normalizeRepeatReminderWindow(value: unknown): RepeatReminderWindow {
     : "72h";
 }
 
+function normalizeCustomCycleUnit(value: unknown): CustomCycleUnit {
+  return typeof value === "string" && CUSTOM_CYCLE_UNITS.includes(value as CustomCycleUnit)
+    ? value as CustomCycleUnit
+    : "day";
+}
+
 function normalizeSubscriptionRecord(row: unknown): unknown {
   if (!isRecord(row)) return row;
   // PocketBase SDK record 与 Worker API row 不完全同形；这里先收敛字段，再交给 shared schema。
@@ -68,14 +102,27 @@ function normalizeSubscriptionRecord(row: unknown): unknown {
     status: row["status"],
     startDate: row["startDate"],
     nextBillingDate: row["nextBillingDate"],
+    // 旧 PocketBase 行可能没有 autoRenew；缺字段按手动续订读取，避免把历史沉默数据当作自动续订授权。
+    autoRenew: row["billingCycle"] === "one-time" ? false : row["autoRenew"] === true,
     autoCalculateNextBillingDate: row["autoCalculateNextBillingDate"],
     pinned: row["pinned"] === true,
+    publicHidden: row["publicHidden"] === true,
     reminderDays: row["reminderDays"],
     repeatReminderEnabled: row["repeatReminderEnabled"] === true,
     repeatReminderInterval: normalizeRepeatReminderInterval(row["repeatReminderInterval"]),
     repeatReminderWindow: normalizeRepeatReminderWindow(row["repeatReminderWindow"]),
   };
-  if (typeof row["customDays"] === "number") normalized["customDays"] = row["customDays"];
+  if (row["billingCycle"] === "custom") {
+    if (typeof row["customDays"] === "number") normalized["customDays"] = row["customDays"];
+    // PocketBase 旧行没有 customCycleUnit；custom 读取缺省按 day，固定周期的空字符串则不进入 shared enum。
+    normalized["customCycleUnit"] = normalizeCustomCycleUnit(row["customCycleUnit"]);
+  }
+  if (row["billingCycle"] === "one-time") {
+    if (typeof row["oneTimeTermCount"] === "number" && row["oneTimeTermCount"] > 0 && typeof row["oneTimeTermUnit"] === "string") {
+      normalized["oneTimeTermCount"] = row["oneTimeTermCount"];
+      normalized["oneTimeTermUnit"] = normalizeCustomCycleUnit(row["oneTimeTermUnit"]);
+    }
+  }
   if (Array.isArray(row["tags"])) normalized["tags"] = row["tags"];
 
   for (const key of ["logo", "paymentMethod", "trialEndDate", "website", "notes"] as const) {
@@ -98,7 +145,10 @@ function normalizeSubscriptionRecord(row: unknown): unknown {
  * React 层只看到 `Subscription` union，避免表单和统计逻辑按运行面分叉。
  */
 export function fromApiSubscription(row: ApiSubscription | RecordModel): Subscription {
-  const parsedRow = apiSubscriptionSchema.parse(normalizeSubscriptionRecord(row));
+  const parsedRow: ApiSubscription = apiSubscriptionSchema.parse(normalizeSubscriptionRecord(row));
+  const startDate = assertDateOnly(parsedRow.startDate);
+  const nextBillingDate = assertDateOnly(parsedRow.nextBillingDate);
+  const trialEndDate = parsedRow.trialEndDate ? assertDateOnly(parsedRow.trialEndDate) : undefined;
   const base = {
     id: parsedRow.id,
     name: parsedRow.name,
@@ -108,11 +158,13 @@ export function fromApiSubscription(row: ApiSubscription | RecordModel): Subscri
     category: parsedRow.category,
     status: parsedRow.status,
     paymentMethod: parsedRow.paymentMethod,
-    startDate: assertDateOnly(parsedRow.startDate),
-    nextBillingDate: assertDateOnly(parsedRow.nextBillingDate),
+    startDate,
+    nextBillingDate,
+    autoRenew: parsedRow.billingCycle === "one-time" ? false : parsedRow.autoRenew,
     autoCalculateNextBillingDate: parsedRow.autoCalculateNextBillingDate,
     pinned: parsedRow.pinned,
-    trialEndDate: parsedRow.trialEndDate ? assertDateOnly(parsedRow.trialEndDate) : undefined,
+    publicHidden: parsedRow.publicHidden,
+    trialEndDate,
     website: parsedRow.website,
     notes: parsedRow.notes,
     tags: parsedRow.tags ?? [],
@@ -121,12 +173,36 @@ export function fromApiSubscription(row: ApiSubscription | RecordModel): Subscri
     repeatReminderInterval: parsedRow.repeatReminderInterval,
     repeatReminderWindow: parsedRow.repeatReminderWindow,
     extra: parsedRow.extra,
-  };
+  } satisfies SubscriptionBaseForService;
   if (parsedRow.billingCycle === "custom") {
-    // domain union 要求 custom 一定有 customDays；缺失时按 1 天兜底，避免表单回填不可编辑。
-    return { ...base, billingCycle: "custom", customDays: parsedRow.customDays ?? 1 };
+    // 旧 custom 记录没有单位字段；读边界统一按 day 解释，避免统计和自动推算把历史含义改成月/年。
+    return {
+      ...base,
+      billingCycle: "custom",
+      customDays: parsedRow.customDays ?? 1,
+      customCycleUnit: normalizeCustomCycleUnit(parsedRow.customCycleUnit),
+      oneTimeTermCount: undefined,
+      oneTimeTermUnit: undefined,
+    };
   }
-  return { ...base, billingCycle: parsedRow.billingCycle, customDays: undefined };
+  if (parsedRow.billingCycle === "one-time") {
+    return {
+      ...base,
+      billingCycle: "one-time",
+      customDays: undefined,
+      customCycleUnit: undefined,
+      oneTimeTermCount: parsedRow.oneTimeTermCount,
+      oneTimeTermUnit: parsedRow.oneTimeTermUnit ? normalizeCustomCycleUnit(parsedRow.oneTimeTermUnit) : undefined,
+    };
+  }
+  return {
+    ...base,
+    billingCycle: parsedRow.billingCycle,
+    customDays: undefined,
+    customCycleUnit: undefined,
+    oneTimeTermCount: undefined,
+    oneTimeTermUnit: undefined,
+  };
 }
 
 /**
@@ -144,13 +220,18 @@ export function toSubscriptionWritePayload(sub: SubscriptionDraft | Subscription
     billingCycle: sub.billingCycle,
     // null 表示服务端应清空可选字段；undefined 会在 PocketBase/Worker 两端产生不同 patch 语义。
     customDays: sub.customDays ?? null,
+    customCycleUnit: sub.customCycleUnit ?? null,
+    oneTimeTermCount: sub.oneTimeTermCount ?? null,
+    oneTimeTermUnit: sub.oneTimeTermUnit ?? null,
     category: sub.category,
     status: sub.status,
     paymentMethod: sub.paymentMethod ?? null,
     startDate: sub.startDate,
     nextBillingDate: sub.nextBillingDate,
+    autoRenew: sub.billingCycle === "one-time" ? false : sub.autoRenew,
     autoCalculateNextBillingDate: sub.autoCalculateNextBillingDate,
     pinned: sub.pinned,
+    publicHidden: sub.publicHidden,
     trialEndDate: sub.trialEndDate ?? null,
     website: sub.website ?? null,
     notes: sub.notes ?? null,
@@ -231,6 +312,13 @@ export const subscriptionService = {
     }
     const row = await withPocketBaseAuthGuard(pb.collection("subscriptions").update<ApiSubscription>(sub.id, payload));
     return fromApiSubscription(row);
+  },
+
+  async renew(id: string): Promise<Subscription> {
+    const data = await apiFetch(`/api/app/subscriptions/${id}/renew`, subscriptionResponseSchema, {
+      method: "POST",
+    });
+    return fromApiSubscription(data.subscription);
   },
 
   async delete(id: string): Promise<void> {

@@ -12,12 +12,16 @@ export type ThemeVariant = (typeof THEME_VARIANTS)[number];
 export const SUBSCRIPTION_STATUSES = ["trial", "active", "expired", "paused", "cancelled"] as const;
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 
-/** `one-time` 不参与续费提醒和月度折算；`custom` 是唯一允许 customDays 的周期。 */
+/** `one-time` 默认是买断；携带 oneTimeTermCount/unit 时才按固定权益期摊销并提醒到期。 */
 export const BILLING_CYCLES = ["weekly", "monthly", "quarterly", "semi-annual", "annual", "custom", "one-time"] as const;
 export type BillingCycle = (typeof BILLING_CYCLES)[number];
 
+/** 自定义扣费周期单位是跨 Go/PocketBase、D1 和前端日期算法的共同契约；旧 custom 数据缺省按 day 读取。 */
+export const CUSTOM_CYCLE_UNITS = ["day", "week", "month", "year"] as const;
+export type CustomCycleUnit = (typeof CUSTOM_CYCLE_UNITS)[number];
+
 /** 通知渠道枚举同时约束设置 payload、cron result 和历史面板筛选。 */
-export const NOTIFICATION_CHANNELS = ["telegram", "notifyx", "webhook", "wechat", "email", "bark"] as const;
+export const NOTIFICATION_CHANNELS = ["telegram", "notifyx", "webhook", "wechat", "email", "bark", "serverchan"] as const;
 export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
 
 export const REPEAT_REMINDER_INTERVALS = ["1h", "3h", "6h", "12h", "24h"] as const;
@@ -34,6 +38,8 @@ export type DateOnly = string & { readonly __brand: "DateOnly" };
 /** 通知调度保存用户本地墙钟时间；真实 UTC instant 由后端按 IANA timezone 推导。 */
 export type LocalTime = string & { readonly __brand: "LocalTime" };
 
+// reminderDays 的负值是跨 Go/PocketBase、D1、前端和导入链路共享的哨兵：-2 静默，-1 继承，0 当天提醒。
+export const DISABLED_REMINDER_DAYS = -2;
 export const INHERIT_REMINDER_DAYS = -1;
 export const DEFAULT_NOTIFICATION_REMINDER_DAYS = 3;
 export const MAX_REMINDER_DAYS = 3650;
@@ -71,13 +77,18 @@ export function normalizeExchangeRateProvider(value: unknown): ExchangeRateProvi
 }
 
 export function isValidReminderDays(value: number): boolean {
-  return Number.isInteger(value) && value >= INHERIT_REMINDER_DAYS && value <= MAX_REMINDER_DAYS;
+  return Number.isInteger(value) && value >= DISABLED_REMINDER_DAYS && value <= MAX_REMINDER_DAYS;
+}
+
+export function isDisabledReminderDays(value: number): boolean {
+  return value === DISABLED_REMINDER_DAYS;
 }
 
 export function isInheritReminderDays(value: number): boolean {
   return value === INHERIT_REMINDER_DAYS;
 }
 
-export function effectiveReminderDays(reminderDays: number, notificationReminderDays: number): number {
+export function effectiveReminderDays(reminderDays: number, notificationReminderDays: number): number | undefined {
+  if (isDisabledReminderDays(reminderDays)) return undefined;
   return isInheritReminderDays(reminderDays) ? notificationReminderDays : reminderDays;
 }

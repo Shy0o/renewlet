@@ -13,6 +13,7 @@ import Link, { NavLink } from '@/components/router-link';
 import { useRouter } from '@/lib/router';
 import { LayoutDashboard, List, CalendarDays, BarChart3, Settings, Sun, Moon, LogOut } from 'lucide-react';
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import type { SubscriptionDraft } from '@/types/subscription';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,8 @@ interface HeaderProps {
   onAddSubscription?: (subscription: SubscriptionDraft) => void;
   /** 当前用户已有标签建议，用于新增订阅弹窗复用。 */
   availableTags?: readonly string[] | undefined;
+  /** 订阅页专属快捷动作，渲染在“新增订阅”旁边。 */
+  subscriptionActions?: ReactNode;
 }
 
 type NavIconKey = "dashboard" | "subscriptions" | "calendar" | "statistics" | "settings";
@@ -59,7 +62,7 @@ function renderNavIcon(icon: NavIconKey, className: string) {
 }
 
 /** Header 组件：全局导航 + 主题切换 + 新增订阅入口。 */
-export function Header({ onAddSubscription, availableTags }: HeaderProps) {
+export function Header({ onAddSubscription, availableTags, subscriptionActions }: HeaderProps) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
@@ -98,15 +101,32 @@ export function Header({ onAddSubscription, availableTags }: HeaderProps) {
     <header className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-xl" data-testid="app-header">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 sm:py-4">
         <div className="flex min-w-0 items-center gap-4 lg:gap-8">
-          <Link href="/" className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#111720] text-[#f8fafc] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_14px_30px_-20px_rgba(0,0,0,0.8)] ring-1 ring-white/10">
+          <div className="flex min-w-0 items-center gap-3">
+            <Link
+              href="/"
+              aria-label="Renewlet"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#111720] text-[#f8fafc] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_14px_30px_-20px_rgba(0,0,0,0.8)] ring-1 ring-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
               <RenewletLogo className="h-5 w-5" />
+            </Link>
+            <div className="grid min-w-0 gap-1">
+              <Link
+                href="/"
+                className="block min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                <h1 className="truncate text-xl font-extrabold tracking-tight text-foreground">Renewlet</h1>
+              </Link>
+              {isAdmin ? (
+                <SystemUpdateDialog
+                  open={systemDialogOpen}
+                  onOpenChange={setSystemDialogOpen}
+                  contentAlign="start"
+                  triggerClassName="w-fit"
+                  badgeClassName="h-6 max-w-[5.75rem] px-2 min-[380px]:max-w-32 sm:h-7 sm:max-w-none sm:px-2.5"
+                />
+              ) : null}
             </div>
-            <div className="min-w-0">
-              <h1 className="truncate text-xl font-extrabold tracking-tight text-foreground">Renewlet</h1>
-              <p className="hidden truncate text-xs text-muted-foreground min-[380px]:block">{t("app.tagline")}</p>
-            </div>
-          </Link>
+          </div>
 
           <nav className="hidden items-center gap-1 lg:flex">
             {navItems.map((item) => (
@@ -128,9 +148,7 @@ export function Header({ onAddSubscription, availableTags }: HeaderProps) {
           </nav>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-          {isAdmin ? <SystemUpdateDialog open={systemDialogOpen} onOpenChange={setSystemDialogOpen} /> : null}
-
+        <div className="flex shrink-0 items-center gap-2">
           <Button
             variant="ghost"
             size="icon"
@@ -143,7 +161,10 @@ export function Header({ onAddSubscription, availableTags }: HeaderProps) {
           </Button>
           
           {onAddSubscription && (
-            <AddSubscriptionDialog onAdd={onAddSubscription} availableTags={availableTags} />
+            <>
+              <AddSubscriptionDialog onAdd={onAddSubscription} availableTags={availableTags} />
+              {subscriptionActions}
+            </>
           )}
 
           <Button

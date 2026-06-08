@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { assertDateOnly } from "@/lib/time/date-only";
@@ -11,11 +12,31 @@ import { SubscriptionCard } from "./subscription-card";
 const originalWindowOpen = window.open;
 const mediaUtilitiesCss = readFileSync(join(process.cwd(), "src/styles/media-utilities.css"), "utf8");
 
-type FixedBillingCycle = Exclude<Subscription["billingCycle"], "custom">;
-type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "customDays">> & (
-  | { billingCycle?: FixedBillingCycle; customDays?: undefined }
-  | { billingCycle: "custom"; customDays?: number }
+type RecurringBillingCycle = Exclude<Subscription["billingCycle"], "custom" | "one-time">;
+type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit" | "oneTimeTermCount" | "oneTimeTermUnit">> & (
+  | {
+      billingCycle?: RecurringBillingCycle;
+      customDays?: undefined;
+      customCycleUnit?: undefined;
+      oneTimeTermCount?: undefined;
+      oneTimeTermUnit?: undefined;
+    }
+  | {
+      billingCycle: "one-time";
+      customDays?: undefined;
+      customCycleUnit?: undefined;
+      oneTimeTermCount?: number | undefined;
+      oneTimeTermUnit?: Subscription["oneTimeTermUnit"];
+    }
+  | { billingCycle: "custom"; customDays?: number; customCycleUnit?: Subscription["customCycleUnit"] }
 );
+type SubscriptionCardHandlers = {
+  onEdit?: (id: string) => void;
+  onDelete?: (id: string) => void;
+  onTogglePinned?: (id: string) => void;
+  onTogglePublicHidden?: (id: string) => void;
+  onViewDetails?: (id: string) => void;
+};
 
 const mocks = vi.hoisted(() => {
   const longCategoryLabel = "生产力平台和开发者基础设施";
@@ -91,11 +112,15 @@ const baseSubscription: Subscription = {
   currency: "USD",
   billingCycle: "monthly",
   customDays: undefined,
+  customCycleUnit: undefined,
+  oneTimeTermCount: undefined,
+  oneTimeTermUnit: undefined,
   category: "developer-tools",
   status: "active",
   paymentMethod: undefined,
   startDate: assertDateOnly("2026-05-15"),
   nextBillingDate: assertDateOnly("2026-06-15"),
+  autoRenew: false,
   autoCalculateNextBillingDate: true,
   trialEndDate: undefined,
   website: undefined,
@@ -106,6 +131,7 @@ const baseSubscription: Subscription = {
   repeatReminderInterval: "1h",
   repeatReminderWindow: "72h",
   pinned: false,
+  publicHidden: false,
 };
 
 function createSubscription(overrides: SubscriptionOverrides = {}): Subscription {
@@ -115,6 +141,21 @@ function createSubscription(overrides: SubscriptionOverrides = {}): Subscription
       ...overrides,
       billingCycle: "custom",
       customDays: overrides.customDays ?? 30,
+      customCycleUnit: overrides.customCycleUnit ?? "day",
+      oneTimeTermCount: undefined,
+      oneTimeTermUnit: undefined,
+    };
+  }
+
+  if (overrides.billingCycle === "one-time") {
+    return {
+      ...baseSubscription,
+      ...overrides,
+      billingCycle: "one-time",
+      customDays: undefined,
+      customCycleUnit: undefined,
+      oneTimeTermCount: overrides.oneTimeTermCount,
+      oneTimeTermUnit: overrides.oneTimeTermUnit,
     };
   }
 
@@ -123,10 +164,13 @@ function createSubscription(overrides: SubscriptionOverrides = {}): Subscription
     ...overrides,
     billingCycle: overrides.billingCycle ?? "monthly",
     customDays: undefined,
+    customCycleUnit: undefined,
+    oneTimeTermCount: undefined,
+    oneTimeTermUnit: undefined,
   };
 }
 
-function renderSubscriptionCard(overrides: SubscriptionOverrides = {}, handlers: { onEdit?: (id: string) => void; onDelete?: (id: string) => void; onTogglePinned?: (id: string) => void } = {}) {
+function renderSubscriptionCard(overrides: SubscriptionOverrides = {}, handlers: SubscriptionCardHandlers = {}) {
   return render(
     <TooltipProvider delayDuration={0}>
       <SubscriptionCard
@@ -138,6 +182,8 @@ function renderSubscriptionCard(overrides: SubscriptionOverrides = {}, handlers:
         onEdit={handlers.onEdit ?? vi.fn()}
         onDelete={handlers.onDelete ?? vi.fn()}
         {...(handlers.onTogglePinned ? { onTogglePinned: handlers.onTogglePinned } : {})}
+        {...(handlers.onTogglePublicHidden ? { onTogglePublicHidden: handlers.onTogglePublicHidden } : {})}
+        {...(handlers.onViewDetails ? { onViewDetails: handlers.onViewDetails } : {})}
       />
     </TooltipProvider>,
   );
@@ -259,6 +305,24 @@ describe("SubscriptionCard", () => {
     expect(screen.getByRole("menuitem", { name: "取消置顶" })).toBeInTheDocument();
   });
 
+  it("toggles public visibility from the card menu", () => {
+    const onTogglePublicHidden = vi.fn();
+    renderSubscriptionCard({ publicHidden: false }, { onTogglePublicHidden });
+
+    openMoreActionsMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "从公开页隐藏" }));
+
+    expect(onTogglePublicHidden).toHaveBeenCalledWith("sub-1");
+  });
+
+  it("shows a public reveal action for hidden subscriptions", () => {
+    renderSubscriptionCard({ publicHidden: true }, { onTogglePublicHidden: vi.fn() });
+
+    openMoreActionsMenu();
+
+    expect(screen.getByRole("menuitem", { name: "在公开页展示" })).toBeInTheDocument();
+  });
+
   it("shows a title pin without adding card-level pinned accents", () => {
     renderSubscriptionCard({ pinned: true, category: "productivity" }, { onTogglePinned: vi.fn() });
 
@@ -370,6 +434,27 @@ describe("SubscriptionCard", () => {
     expect(menuButton.getAttribute("class")).not.toContain("group-hover:opacity-100");
   });
 
+  it("opens subscription details from the card primary action", () => {
+    const onViewDetails = vi.fn();
+    renderSubscriptionCard({ name: "Fastmail" }, { onViewDetails });
+
+    fireEvent.click(screen.getByRole("button", { name: "查看 Fastmail 的详情" }));
+
+    expect(onViewDetails).toHaveBeenCalledWith("sub-1");
+  });
+
+  it("opens subscription details from keyboard activation", async () => {
+    vi.useRealTimers();
+    const user = userEvent.setup();
+    const onViewDetails = vi.fn();
+    renderSubscriptionCard({ name: "Fastmail" }, { onViewDetails });
+
+    screen.getByRole("button", { name: "查看 Fastmail 的详情" }).focus();
+    await user.keyboard("{Enter}");
+
+    expect(onViewDetails).toHaveBeenCalledWith("sub-1");
+  });
+
   it("orders overflow menu actions with matching icons and separates the destructive action", () => {
     renderSubscriptionCard({}, { onTogglePinned: vi.fn() });
 
@@ -397,6 +482,18 @@ describe("SubscriptionCard", () => {
     const separator = screen.getByRole("separator");
     expect(calendarItem.compareDocumentPosition(separator) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(separator.compareDocumentPosition(deleteItem) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps overflow actions separate from the card detail action", () => {
+    const onViewDetails = vi.fn();
+    const onEdit = vi.fn();
+    renderSubscriptionCard({}, { onViewDetails, onEdit, onTogglePinned: vi.fn() });
+
+    openMoreActionsMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "编辑" }));
+
+    expect(onEdit).toHaveBeenCalledWith("sub-1");
+    expect(onViewDetails).not.toHaveBeenCalled();
   });
 
   it("opens the add-to-calendar dialog from the overflow menu", async () => {
@@ -517,15 +614,35 @@ describe("SubscriptionCard", () => {
     }
   });
 
-  it("keeps the add-to-calendar entry available for one-time subscriptions", () => {
+  it("hides the add-to-calendar entry for one-time buyouts", () => {
     renderSubscriptionCard({ billingCycle: "one-time" });
+
+    openMoreActionsMenu();
+
+    expect(screen.queryByRole("menuitem", { name: "添加到日历" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the add-to-calendar entry available for one-time fixed terms", () => {
+    renderSubscriptionCard({
+      billingCycle: "one-time",
+      oneTimeTermCount: 6,
+      oneTimeTermUnit: "month",
+    });
 
     openMoreActionsMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: "添加到日历" }));
 
-    expect(screen.getByRole("dialog", { name: "添加到日历" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "添加到期日历" })).toBeInTheDocument();
+    expect(screen.getByText("为「dmit」创建单独日历订阅，只同步这次服务到期。")).toBeInTheDocument();
     expect(screen.getByText("事件日期")).toBeInTheDocument();
     expect(screen.getByText("2026年6月15日")).toBeInTheDocument();
+  });
+
+  it("renders concrete custom billing cycle labels", () => {
+    renderSubscriptionCard({ billingCycle: "custom", customDays: 3, customCycleUnit: "year" });
+
+    expect(screen.getByText("每 3 年")).toBeInTheDocument();
+    expect(screen.queryByText("自定义")).not.toBeInTheDocument();
   });
 
   it("renders overdue active subscriptions with the expired status treatment", () => {
@@ -558,5 +675,24 @@ describe("SubscriptionCard", () => {
     );
 
     expect(screen.getByText("默认提醒：提前 5 天")).toBeInTheDocument();
+  });
+
+  it("renders disabled reminder days", () => {
+    render(
+      <TooltipProvider delayDuration={0}>
+        <SubscriptionCard
+          subscription={createSubscription({ reminderDays: -2 })}
+          viewMode="list"
+          timeZone="Asia/Shanghai"
+          inheritedReminderDays={5}
+          categoryByValue={new Map(mocks.categories.map((category) => [category.value, category]))}
+          paymentMethodByValue={new Map(mocks.paymentMethods.map((method) => [method.value, method]))}
+          onEdit={vi.fn()}
+          onDelete={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("不提醒")).toBeInTheDocument();
   });
 });

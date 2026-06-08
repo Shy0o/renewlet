@@ -6,28 +6,33 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { assertDateOnly } from "@/lib/time/date-only";
 import type { ApiSubscription } from "@/lib/api/schemas/subscriptions";
 import type {
-  FixedCycleSubscription,
+  RecurringCycleSubscription,
   RepeatReminderInterval,
   RepeatReminderWindow,
   Subscription,
 } from "@/types/subscription";
 import { useCreateSubscription, useInfiniteSubscriptions, useSubscriptions, useSubscriptionsPage, useUpdateSubscription } from "./use-subscriptions";
 
-type FixedSubscriptionDraft = Omit<FixedCycleSubscription, "id">;
+type RecurringSubscriptionDraft = Omit<RecurringCycleSubscription, "id">;
 
 type SubscriptionWritePayload = {
   name: string;
   logo: string | null;
   price: number;
   currency: string;
-  billingCycle: FixedCycleSubscription["billingCycle"] | "custom";
+  billingCycle: Subscription["billingCycle"];
   customDays: number | null;
+  customCycleUnit: Subscription["customCycleUnit"] | null;
+  oneTimeTermCount: number | null;
+  oneTimeTermUnit: Subscription["oneTimeTermUnit"] | null;
   category: string;
   status: Subscription["status"];
   pinned: boolean;
+  publicHidden: boolean;
   paymentMethod: string | null;
   startDate: string;
   nextBillingDate: string;
+  autoRenew: boolean;
   autoCalculateNextBillingDate: boolean;
   trialEndDate: string | null;
   website: string | null;
@@ -86,12 +91,17 @@ function apiSubscriptionFromPayload(id: string, payload: SubscriptionWritePayloa
     currency: payload.currency,
     billingCycle: payload.billingCycle,
     ...(payload.billingCycle === "custom" && payload.customDays !== null ? { customDays: payload.customDays } : {}),
+    ...(payload.billingCycle === "custom" && payload.customCycleUnit !== null ? { customCycleUnit: payload.customCycleUnit } : {}),
+    ...(payload.billingCycle === "one-time" && payload.oneTimeTermCount !== null ? { oneTimeTermCount: payload.oneTimeTermCount } : {}),
+    ...(payload.billingCycle === "one-time" && payload.oneTimeTermUnit !== null ? { oneTimeTermUnit: payload.oneTimeTermUnit } : {}),
     category: payload.category,
     status: payload.status,
     pinned: payload.pinned,
+    publicHidden: payload.publicHidden,
     ...(payload.paymentMethod !== null ? { paymentMethod: payload.paymentMethod } : {}),
     startDate: payload.startDate,
     nextBillingDate: payload.nextBillingDate,
+    autoRenew: payload.autoRenew,
     autoCalculateNextBillingDate: payload.autoCalculateNextBillingDate,
     ...(payload.trialEndDate !== null ? { trialEndDate: payload.trialEndDate } : {}),
     ...(payload.website !== null ? { website: payload.website } : {}),
@@ -104,7 +114,7 @@ function apiSubscriptionFromPayload(id: string, payload: SubscriptionWritePayloa
   };
 }
 
-function apiSubscriptionFromDraft(id: string, draft: FixedSubscriptionDraft): ApiSubscription {
+function apiSubscriptionFromDraft(id: string, draft: RecurringSubscriptionDraft): ApiSubscription {
   return apiSubscriptionFromPayload(id, {
     name: draft.name,
     logo: draft.logo ?? null,
@@ -112,12 +122,17 @@ function apiSubscriptionFromDraft(id: string, draft: FixedSubscriptionDraft): Ap
     currency: draft.currency,
     billingCycle: draft.billingCycle,
     customDays: draft.customDays ?? null,
+    customCycleUnit: draft.customCycleUnit ?? null,
+    oneTimeTermCount: draft.oneTimeTermCount ?? null,
+    oneTimeTermUnit: draft.oneTimeTermUnit ?? null,
     category: draft.category,
     status: draft.status,
     pinned: draft.pinned,
+    publicHidden: draft.publicHidden,
     paymentMethod: draft.paymentMethod ?? null,
     startDate: draft.startDate,
     nextBillingDate: draft.nextBillingDate,
+    autoRenew: draft.autoRenew,
     autoCalculateNextBillingDate: draft.autoCalculateNextBillingDate,
     trialEndDate: draft.trialEndDate ?? null,
     website: draft.website ?? null,
@@ -130,7 +145,7 @@ function apiSubscriptionFromDraft(id: string, draft: FixedSubscriptionDraft): Ap
   });
 }
 
-function subscriptionDraft(overrides: Partial<FixedSubscriptionDraft> = {}): FixedSubscriptionDraft {
+function subscriptionDraft(overrides: Partial<RecurringSubscriptionDraft> = {}): RecurringSubscriptionDraft {
   return {
     name: "Aws",
     logo: "https://aws.amazon.com/favicon.ico",
@@ -138,12 +153,15 @@ function subscriptionDraft(overrides: Partial<FixedSubscriptionDraft> = {}): Fix
     currency: "USD",
     billingCycle: "monthly",
     customDays: undefined,
+    customCycleUnit: undefined,
     category: "productivity",
     status: "active",
     pinned: false,
+    publicHidden: false,
     paymentMethod: undefined,
     startDate: assertDateOnly("2026-05-14"),
     nextBillingDate: assertDateOnly("2026-06-14"),
+    autoRenew: false,
     autoCalculateNextBillingDate: true,
     trialEndDate: undefined,
     website: undefined,
@@ -189,6 +207,7 @@ describe("use-subscriptions mutations", () => {
       repeatReminderEnabled: false,
       repeatReminderInterval: "1h",
       repeatReminderWindow: "72h",
+      autoRenew: false,
       user: "user-1",
     }));
   });

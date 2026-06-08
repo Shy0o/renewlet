@@ -346,4 +346,39 @@ describe("SettingsScreen section navigation", () => {
     expect(window.location.hash).toBe("#settings-notifications");
     confirmSpy.mockRestore();
   });
+
+  it("uses the Renewlet confirmation dialog for unsaved in-app navigation", async () => {
+    const user = userEvent.setup();
+    const controller = createControllerState({
+      hasUnsavedChanges: true,
+    });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    mocks.useSettingsFormController.mockReturnValue(controller);
+
+    window.history.replaceState(null, "", "/settings");
+    renderSettingsScreen();
+    const linkContainer = document.createElement("div");
+    linkContainer.innerHTML = `<a href="${window.location.origin}/" data-testid="test-logo-link">Renewlet</a>`;
+    document.body.appendChild(linkContainer);
+    const link = screen.getByTestId("test-logo-link");
+
+    await user.click(link);
+
+    const dialog = await screen.findByRole("alertdialog", { name: "离开设置页？" });
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId("route-path")).toHaveTextContent("/settings");
+
+    await user.click(within(dialog).getByRole("button", { name: "取消" }));
+    expect(screen.queryByRole("alertdialog", { name: "离开设置页？" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("route-path")).toHaveTextContent("/settings");
+
+    await user.click(link);
+    await user.click(await screen.findByRole("button", { name: "放弃并离开" }));
+
+    expect(controller.handleDiscardChanges).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("route-path")).toHaveTextContent("/");
+    expect(confirmSpy).not.toHaveBeenCalled();
+    linkContainer.remove();
+    confirmSpy.mockRestore();
+  });
 });
