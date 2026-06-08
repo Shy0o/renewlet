@@ -21,6 +21,8 @@
 
 Renewlet is a self-hosted subscription ledger that reminds you before renewals. Add a subscription or any recurring charge, set its renewal date and reminder days, and it will notify you through the channels you configure. You can also track price, currency, budget, logo, category, and payment method.
 
+If you already have bill screenshots, notes, or table data, AI recognition can turn them into editable subscription drafts for review before import.
+
 Mobile web is first-class: open it in a phone browser to add subscriptions, filter lists, review stats, and configure notifications.
 
 Idle memory usage is around 20-30MiB in local testing, making it comfortable for small VPS, NAS, and homelab boxes.
@@ -32,9 +34,11 @@ Idle memory usage is around 20-30MiB in local testing, making it comfortable for
 ## Highlights
 
 - Track each subscription clearly: name, logo, price, currency, billing cycle, renewal date, status, category, payment method, tags, website, and notes.
+- Add with AI recognition: turn bill screenshots, notes, or pasted table data into editable subscription drafts, then review and import them.
 - Understand spending: normalize costs by month and year, then review budget usage, category breakdowns, payment-method charts, and inactive-subscription savings.
 - Get renewal reminders: jobs are generated from each user's IANA time zone and local notification time, with reminder days, repeat reminders, delivery history, and failed-send retries.
 - Subscribe from calendar apps: generate a global private ICS feed URL in settings, or create an independent per-subscription feed from a subscription card or calendar detail dialog to open the system calendar subscription flow.
+- Share a public status page: publish a shareable view of the subscriptions you choose to show.
 - Send notifications through seven channels: Telegram, Notifyx, Webhook, WeCom Bot, SMTP email, Bark, and ServerChan.
 - Choose subscription artwork: upload a Logo, paste an image URL, search built-in icon sources, or use favicon fallback suggestions.
 - Handle multiple currencies: choose Exchange API or FloatRates JSON Feeds, with fallback rates when remote providers are unavailable.

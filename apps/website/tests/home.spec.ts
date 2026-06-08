@@ -16,7 +16,7 @@ const desktopViewport = {
   width: renewletImageManifest.viewports.desktop.width,
   height: renewletImageManifest.viewports.desktop.height,
 }
-const featureScreenshotKeys: ScreenshotKey[] = ['subscriptions', 'calendar', 'statistics', 'dashboard']
+const featureScreenshotKeys: ScreenshotKey[] = ['ai-recognition', 'subscriptions', 'public-status', 'calendar', 'statistics']
 
 function retinaName(key: ScreenshotKey, suffix: 'zh' | 'en') {
   return screenshotName(key, suffix)
@@ -118,7 +118,7 @@ test('renders the Renewlet homepage and opens deployment dialog from both entry 
   }
   await expect(footer.getByRole('link', { name: /中文 README|英文 README|MIT License/i })).toHaveCount(0)
 
-  for (const card of ['subscriptions', 'reminders', 'calendar', 'statistics', 'hosting']) {
+  for (const card of ['ai-recognition', 'subscriptions', 'public-status', 'reminders', 'calendar', 'statistics']) {
     await expect(page.locator(`[data-card="${card}"]`)).toBeVisible()
     await expect(page.locator(`[data-scene="${card}"]`)).toBeVisible()
   }
@@ -126,7 +126,7 @@ test('renders the Renewlet homepage and opens deployment dialog from both entry 
 
   await expectLocalizedScreenshots(page, 'zh')
 
-  await expect(page.locator('[data-responsive-image="feature-screenshot"] source[type="image/avif"]')).toHaveCount(3)
+  await expect(page.locator('[data-responsive-image="feature-screenshot"] source[type="image/avif"]')).toHaveCount(5)
   await expect(page.locator('[data-responsive-image="feature-phone"] source[type="image/avif"]')).toHaveCount(1)
 
   await page.getByRole('button', { name: /选择部署方式/i }).click()
@@ -152,7 +152,7 @@ test('switches the homepage copy to English', async ({ page }) => {
   await header.getByRole('button', { name: /Switch to English/i }).click()
 
   await expect(
-    page.getByRole('heading', { name: /Stop letting renewals quietly drain your budget/i }),
+    page.getByRole('heading', { name: /Catch renewals before they charge/i }),
   ).toBeVisible()
   await expect(page.getByRole('button', { name: /Choose deployment/i })).toBeVisible()
   await expect(header.getByRole('link', { name: /^Docs$/i })).toBeVisible()
