@@ -7,6 +7,8 @@ type CallToActionProps = {
 }
 
 export function CallToAction({ locale, onDeployClick }: CallToActionProps) {
+  const isChinese = locale === 'zh'
+
   return (
     <section className="relative mx-auto mt-16 max-w-full p-6 pb-12 pt-20 lg:px-8" data-section="cta">
       <div
@@ -41,11 +43,11 @@ export function CallToAction({ locale, onDeployClick }: CallToActionProps) {
             }}
           />
         </div>
-        <div className="mx-auto max-w-xl text-center">
+        <div className={`mx-auto text-center ${isChinese ? 'max-w-xl' : 'max-w-[42rem]'}`}>
           <h2 className="bg-gradient-to-br from-zinc-100 to-zinc-600 bg-clip-text text-3xl font-bold tracking-tight text-transparent sm:text-4xl">
             {text(copy.cta.title, locale)}
           </h2>
-          <p className="mx-auto mt-6 max-w-xl text-lg text-zinc-400/80">
+          <p className={`mx-auto mt-6 text-zinc-400/80 ${isChinese ? 'max-w-xl text-lg' : 'max-w-[36rem] text-base leading-7 md:text-lg md:leading-8'}`}>
             {text(copy.cta.body, locale)}
           </p>
           <div className="mt-12 flex items-center justify-center">

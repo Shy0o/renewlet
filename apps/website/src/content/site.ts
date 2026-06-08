@@ -6,7 +6,8 @@ import {
   Cloud,
   Container,
   CreditCard,
-  Server,
+  Eye,
+  Sparkles,
 } from 'lucide-react'
 
 export type Locale = 'zh' | 'en'
@@ -40,11 +41,11 @@ export const copy = {
     eyebrow: { zh: 'Self-hosted renewal tracker', en: 'Self-hosted renewal tracker' },
     title: {
       zh: '别再让续费悄悄扣走预算',
-      en: 'Stop letting renewals quietly drain your budget',
+      en: 'Catch renewals before they charge',
     },
     body: {
-      zh: 'Renewlet 是一个自托管订阅账本，把订阅、续费日、预算、通知和日历放在同一个地方。适合小 VPS、NAS 和 homelab 长期运行。',
-      en: 'Renewlet is a self-hosted subscription ledger that keeps services, renewal dates, budgets, notifications, and calendars in one place. It is built to stay small on a VPS, NAS, or homelab.',
+      zh: 'Renewlet 是一个自托管订阅账本，把 AI 辅助录入、订阅、续费日、预算、通知、日历和公开状态页放在同一个地方。适合小 VPS、NAS 和 homelab 长期运行。',
+      en: 'Renewlet is a small self-hosted ledger for subscriptions. Add items with AI, track renewal dates, and share a public status page when you need one.',
     },
     secondaryCta: { zh: '选择部署方式', en: 'Choose deployment' },
     learnMore: { zh: '看看它能管住什么', en: 'See what it tracks' },
@@ -56,41 +57,41 @@ export const copy = {
   intro: {
     title: {
       zh: '订阅不是记一张表，而是知道下一次扣费会不会影响预算。',
-      en: 'A subscription list is useful. Knowing the next charge will not surprise you is better.',
+      en: 'A list is not enough. Keep the next charge in view.',
     },
     body: {
-      zh: 'Renewlet 记录每个周期性扣费的价格、币种、周期、续费日和付款方式，再把它们折算成月度/年度成本。你可以看清预算还剩多少，哪些服务快续费，哪些试用需要及时处理。',
-      en: 'Renewlet records the price, currency, billing cycle, renewal date, and payment method for each recurring charge, then turns that into monthly and yearly cost. You can see what is due soon, what still fits the budget, and which trials need attention.',
+      zh: 'Renewlet 可以从截图、备忘录或表格内容生成订阅草稿，也能记录每个周期性扣费的价格、币种、周期、续费日和付款方式，再把它们折算成月度/年度成本。',
+      en: 'Paste notes, screenshots, or tables to draft subscriptions. Renewlet turns prices, cycles, dates, and payment methods into monthly and yearly cost.',
     },
     highlight: {
       zh: '它不替你做决定，只把该看到的账和提醒放到眼前。',
-      en: 'It does not make decisions for you. It keeps the renewal facts visible before money leaves the card.',
+      en: 'You stay in control.',
     },
   },
   featuresHeading: {
-    title: { zh: '该记的都在。多余的没有。', en: 'Everything renewal-related. Nothing padded.' },
+    title: { zh: '该记的都在。多余的没有。', en: 'Track renewals without the clutter.' },
     body: {
-      zh: '从订阅清单到通知、日历和统计，Renewlet 把常驻自托管工具该做的部分做扎实。',
-      en: 'From the subscription ledger to reminders, calendars, and spending charts, Renewlet focuses on the daily work a self-hosted renewal tracker should handle well.',
+      zh: '从 AI 识别添加到订阅清单、公开状态页、通知、日历和统计，Renewlet 把常驻自托管工具该做的部分做扎实。',
+      en: 'AI entry, a clean ledger, public status pages, reminders, calendars, and spending charts stay in one quiet tool.',
     },
-    highlight: { zh: '轻量、明确、长期可维护。', en: 'Small, explicit, and meant to be maintained.' },
+    highlight: { zh: '轻量、明确、长期可维护。', en: 'Small, explicit, maintainable.' },
   },
   runtimeHeading: {
-    title: { zh: '两种运行方式，一套使用体验', en: 'Two runtimes, one product experience' },
+    title: { zh: '两种运行方式，一套使用体验', en: 'Two runtimes. Same product.' },
     body: {
       zh: '你可以把它放在自己的 VPS/NAS，也可以用 Cloudflare 的边缘服务运行。前端体验保持一致，部署边界清楚。',
-      en: 'Run it on your own VPS or NAS, or deploy it on Cloudflare edge services. The app experience stays the same while the hosting boundary remains clear.',
+      en: 'Run Renewlet on a VPS or NAS, or deploy it on Cloudflare. The app stays the same; the hosting boundary stays clear.',
     },
-    highlight: { zh: '自托管不应该难维护。', en: 'Self-hosting should stay manageable.' },
+    highlight: { zh: '自托管不应该难维护。', en: 'Self-hosting stays manageable.' },
   },
   cta: {
     title: {
       zh: '把下一次续费放回你的掌控里。',
-      en: 'Put the next renewal back where you can see it.',
+      en: 'See the next renewal before it charges.',
     },
     body: {
       zh: '从 Docker 单容器开始，或者直接走 Cloudflare Workers。数据在你的环境里，提醒按你的时区发出。',
-      en: 'Start with the single Docker container, or deploy the Cloudflare Workers runtime. Your data stays in your environment, and reminders follow your timezone.',
+      en: 'Start with Docker or Cloudflare Workers. Your data stays in your environment, and reminders use your timezone.',
     },
     button: { zh: '查看部署方式', en: 'View deployment options' },
   },
@@ -114,12 +115,29 @@ export type FeatureCard = {
 
 export const featureCards: FeatureCard[] = [
   {
+    key: 'ai-recognition',
+    icon: Sparkles,
+    title: { zh: 'AI 识别添加', en: 'AI-assisted entry' },
+    body: {
+      zh: '把账单截图、备忘录或表格内容整理成可编辑订阅草稿，确认后再导入。',
+      en: 'Turn screenshots, notes, or tables into editable drafts. Review them before import.',
+    },
+    imageAlt: {
+      zh: 'Renewlet AI 识别订阅弹窗',
+      en: 'Renewlet AI recognition dialog',
+    },
+    stats: [
+      { label: { zh: '输入', en: 'Inputs' }, value: '文字/图片' },
+      { label: { zh: '草稿', en: 'Drafts' }, value: '可编辑' },
+    ],
+  },
+  {
     key: 'subscriptions',
     icon: CreditCard,
     title: { zh: '订阅清单', en: 'Subscription ledger' },
     body: {
       zh: '名称、Logo、价格、币种、周期、续费日、状态、分类、付款方式、标签、网站和备注都能放在同一张账里。',
-      en: 'Track name, logo, price, currency, cycle, renewal date, status, category, payment method, tags, website, and notes in one ledger.',
+      en: 'Keep names, prices, cycles, renewal dates, status, tags, and notes in one ledger.',
     },
     imageAlt: {
       zh: 'Renewlet 订阅清单页面',
@@ -131,19 +149,36 @@ export const featureCards: FeatureCard[] = [
     ],
   },
   {
+    key: 'public-status',
+    icon: Eye,
+    title: { zh: '公开订阅状态页', en: 'Public status page' },
+    body: {
+      zh: '生成可分享的订阅状态页，按订阅控制可见内容，也可以隐藏金额。',
+      en: 'Share a public status page. Choose visible items and hide prices when needed.',
+    },
+    imageAlt: {
+      zh: 'Renewlet 公开订阅状态页',
+      en: 'Renewlet public subscription status page',
+    },
+    stats: [
+      { label: { zh: '分享', en: 'Sharing' }, value: 'URL' },
+      { label: { zh: '金额', en: 'Prices' }, value: '可隐藏' },
+    ],
+  },
+  {
     key: 'reminders',
     icon: BellRing,
     title: { zh: '续费前提醒', en: 'Renewal reminders' },
     body: {
       zh: '按用户自己的时区和提醒时间生成任务，支持提前天数、重复提醒、发送历史和失败重试。',
-      en: 'Schedule reminders with the user timezone and local reminder time, including advance days, repeat reminders, send history, and retry handling.',
+      en: 'Send renewal reminders in your timezone, with advance days, history, and retry handling.',
     },
     imageAlt: {
       zh: 'Renewlet 通知设置页面',
       en: 'Renewlet notification settings page',
     },
     stats: [
-      { label: { zh: '渠道', en: 'Channels' }, value: '6' },
+      { label: { zh: '渠道', en: 'Channels' }, value: '7' },
       { label: { zh: '时区', en: 'Timezone' }, value: 'IANA' },
     ],
   },
@@ -153,7 +188,7 @@ export const featureCards: FeatureCard[] = [
     title: { zh: '日历订阅', en: 'Calendar feeds' },
     body: {
       zh: '全局私有 ICS Feed 和单订阅 Feed 都可以复制、下载或用 webcal 唤起系统日历。',
-      en: 'Copy, download, or open private global and per-subscription ICS feeds with webcal-compatible calendar apps.',
+      en: 'Copy, download, or open private ICS feeds in calendar apps.',
     },
     imageAlt: {
       zh: 'Renewlet 续费日历页面',
@@ -170,7 +205,7 @@ export const featureCards: FeatureCard[] = [
     title: { zh: '支出统计', en: 'Spending overview' },
     body: {
       zh: '月度/年度成本、预算使用、分类占比、付款方式占比和多币种换算都按当前订阅实时汇总。',
-      en: 'Monthly and yearly cost, budget usage, category share, payment method share, and multi-currency conversion are summarized from your current subscriptions.',
+      en: 'See monthly cost, budget use, category share, payment mix, and currency conversion.',
     },
     imageAlt: {
       zh: 'Renewlet 统计分析页面',
@@ -179,23 +214,6 @@ export const featureCards: FeatureCard[] = [
     stats: [
       { label: { zh: '汇率源', en: 'Rate feeds' }, value: '2' },
       { label: { zh: '预算', en: 'Budget' }, value: '月/年' },
-    ],
-  },
-  {
-    key: 'hosting',
-    icon: Server,
-    title: { zh: '自托管部署', en: 'Self-hosted deployment' },
-    body: {
-      zh: 'React 前端、Go/PocketBase 后端、SQLite 数据和静态资源可以跑在单容器里，也能部署到 Cloudflare Workers + D1 + R2 + Cron。',
-      en: 'Run the React app, Go/PocketBase backend, SQLite data, and static assets in one container, or deploy with Cloudflare Workers, D1, R2, and Cron.',
-    },
-    imageAlt: {
-      zh: 'Renewlet 仪表盘页面',
-      en: 'Renewlet dashboard page',
-    },
-    stats: [
-      { label: { zh: '空闲内存', en: 'Idle RAM' }, value: '20-30MiB' },
-      { label: { zh: '运行面', en: 'Runtimes' }, value: '2' },
     ],
   },
 ]
@@ -215,12 +233,12 @@ export const runtimeCards: RuntimeCard[] = [
     title: { zh: 'Docker / NAS / VPS', en: 'Docker, NAS, or VPS' },
     body: {
       zh: '单容器运行 React 静态资源、Go/PocketBase 后端和 SQLite 数据库，数据持久化到 `data/`。',
-      en: 'A single container serves the React assets, Go/PocketBase backend, and SQLite database, with data persisted under `data/`.',
+      en: 'A single container serves the app, API, and SQLite data. Data persists under `data/`.',
     },
     details: [
-      { zh: '部署脚本自动生成 `.env`、密钥和数据目录。', en: 'The deploy script creates `.env`, secrets, and the data directory.' },
-      { zh: '适合小 VPS、NAS 和 homelab 常驻运行。', en: 'A good fit for small VPS, NAS, and homelab installs.' },
-      { zh: '页面顶部可以检查版本并触发更新。', en: 'The app header can check versions and trigger updates.' },
+      { zh: '部署脚本自动生成 `.env`、密钥和数据目录。', en: 'The deploy script creates `.env`, secrets, and data folders.' },
+      { zh: '适合小 VPS、NAS 和 homelab 常驻运行。', en: 'Fits small VPS, NAS, and homelab installs.' },
+      { zh: '页面顶部可以检查版本并触发更新。', en: 'The app header can check versions and start updates.' },
     ],
   },
   {
@@ -229,12 +247,12 @@ export const runtimeCards: RuntimeCard[] = [
     title: { zh: 'Cloudflare Workers', en: 'Cloudflare Workers' },
     body: {
       zh: 'React 静态资源、Worker API、D1、R2 和 Cron Triggers 组成无 Go/PocketBase 服务器的运行面。',
-      en: 'React assets, Worker API, D1, R2, and Cron Triggers form a runtime without a Go/PocketBase server.',
+      en: 'Static assets, Worker API, D1, R2, and Cron run without a Go/PocketBase server.',
     },
     details: [
-      { zh: '适合已经使用 Cloudflare 的轻量部署。', en: 'Useful for lightweight installs already on Cloudflare.' },
-      { zh: 'D1 保存应用数据，R2 保存上传 Logo 和图标。', en: 'D1 stores app data, while R2 stores uploaded logos and icons.' },
-      { zh: 'Cron Triggers 负责通知调度。', en: 'Cron Triggers drive notification scheduling.' },
+      { zh: '适合已经使用 Cloudflare 的轻量部署。', en: 'Good for lightweight installs already on Cloudflare.' },
+      { zh: 'D1 保存应用数据，R2 保存上传 Logo 和图标。', en: 'D1 stores app data; R2 stores uploaded logos and icons.' },
+      { zh: 'Cron Triggers 负责通知调度。', en: 'Cron Triggers schedule notifications.' },
     ],
   },
 ]

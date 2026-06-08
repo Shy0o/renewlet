@@ -12,6 +12,11 @@ describe("isPublicRoutePath", () => {
     expect(isPublicRoutePath("/privacy")).toBe(true);
   });
 
+  it("allows public status pages", () => {
+    expect(isPublicRoutePath("/status/abc123abc123abc123abc123abc123abc123abc123a")).toBe(true);
+    expect(isPublicRoutePath("/status")).toBe(false);
+  });
+
   it("keeps application pages protected", () => {
     expect(isPublicRoutePath("/settings")).toBe(false);
     expect(isPublicRoutePath("/admin/users")).toBe(false);

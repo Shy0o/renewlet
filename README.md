@@ -21,6 +21,8 @@
 
 Renewlet is a self-hosted subscription ledger that reminds you before renewals. Add a subscription or any recurring charge, set its renewal date and reminder days, and it will notify you through the channels you configure. You can also track price, currency, budget, logo, category, and payment method.
 
+If you already have bill screenshots, notes, or table data, AI recognition can turn them into editable subscription drafts for review before import.
+
 Mobile web is first-class: open it in a phone browser to add subscriptions, filter lists, review stats, and configure notifications.
 
 Idle memory usage is around 20-30MiB in local testing, making it comfortable for small VPS, NAS, and homelab boxes.
@@ -32,10 +34,12 @@ Idle memory usage is around 20-30MiB in local testing, making it comfortable for
 ## Highlights
 
 - Track each subscription clearly: name, logo, price, currency, billing cycle, renewal date, status, category, payment method, tags, website, and notes.
+- Add with AI recognition: turn bill screenshots, notes, or pasted table data into editable subscription drafts, then review and import them.
 - Understand spending: normalize costs by month and year, then review budget usage, category breakdowns, payment-method charts, and inactive-subscription savings.
 - Get renewal reminders: jobs are generated from each user's IANA time zone and local notification time, with reminder days, repeat reminders, delivery history, and failed-send retries.
 - Subscribe from calendar apps: generate a global private ICS feed URL in settings, or create an independent per-subscription feed from a subscription card or calendar detail dialog to open the system calendar subscription flow.
-- Send notifications through six channels: Telegram, Notifyx, Webhook, WeCom Bot, SMTP email, and Bark.
+- Share a public status page: publish a shareable view of the subscriptions you choose to show.
+- Send notifications through seven channels: Telegram, Notifyx, Webhook, WeCom Bot, SMTP email, Bark, and ServerChan.
 - Choose subscription artwork: upload a Logo, paste an image URL, search built-in icon sources, or use favicon fallback suggestions.
 - Handle multiple currencies: choose Exchange API or FloatRates JSON Feeds, with fallback rates when remote providers are unavailable.
 - Move subscription data in and out: export from Renewlet, import Renewlet or Wallos files, preview mapped subscriptions, and adjust Logos before saving.
@@ -51,7 +55,7 @@ Idle memory usage is around 20-30MiB in local testing, making it comfortable for
 
 Click the button and follow the Cloudflare wizard for the easiest deployment path.
 
-If you want to create Cloudflare resources yourself or deploy with GitHub Actions, see [Cloudflare Workers manual deploy](docs/cloudflare-workers-deploy.md).
+If the page says `Failed to get repository contents`, Cloudflare is usually being rate-limited while reading the public GitHub repository. Avoid repeated retries; try again later, or use [Cloudflare Workers manual deploy](docs/cloudflare-workers-deploy.md).
 
 ## Quick Deploy
 
@@ -141,6 +145,16 @@ The full Docker environment template is in `.env.example`.
 ## Screenshots
 
 <table>
+  <tr>
+    <td width="50%">
+      <strong>AI recognition</strong><br>
+      <img src="./docs/screenshots/renewlet-ai-recognition-en.png" alt="Renewlet AI recognition dialog showing the input state before turning text content into editable subscription drafts">
+    </td>
+    <td width="50%">
+      <strong>Public subscription status page</strong><br>
+      <img src="./docs/screenshots/renewlet-public-status-en.png" alt="Renewlet public subscription status page showing public subscription totals, prices, and subscription cards">
+    </td>
+  </tr>
   <tr>
     <td width="50%">
       <strong>Subscriptions</strong><br>

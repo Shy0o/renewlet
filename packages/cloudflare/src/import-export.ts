@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   importApplyRequestSchema,
   importApplyResponseSchema,
@@ -10,28 +11,28 @@ import {
   type ImportSummary,
   type ImportSubscription,
 } from "@renewlet/shared/schemas/import-export";
-import { appSettingsSchema } from "@renewlet/shared/schemas/settings";
 import { customConfigSchema } from "@renewlet/shared/schemas/custom-config";
-import { cleanBuiltInIconSourceSettingsPatch, mergeBuiltInIconSourceSettings } from "@renewlet/shared/built-in-icons";
-import { getSettings, listSubscriptions, newId, nowIso, parseJsonObject } from "./db";
+import { getSettings, listSubscriptions, mergeSettingsPatch, newId, nowIso, parseJsonObject } from "./db";
 import { requestLocale, json, readJsonWithLimit, HttpError, type AppLocale } from "./http";
 import { serverText } from "./server-i18n";
 import { requireAuth } from "./auth";
-import { subscriptionRowValues, toSubscriptionRow } from "./subscriptions";
+import { normalizeSubscriptionBodyForStorage, subscriptionRowValues, toSubscriptionRow, type SubscriptionBody } from "./subscriptions";
 import type { Env, SubscriptionRow } from "./types";
 
 const INSERT_SUBSCRIPTION_SQL = `
   INSERT INTO subscriptions (
-    id, user_id, name, logo, price, currency, billing_cycle, custom_days, category, status, pinned, payment_method,
-    start_date, next_billing_date, auto_calculate_next_billing_date, trial_end_date, website, notes, tags_json,
+    id, user_id, name, logo, price, currency, billing_cycle, custom_days, custom_cycle_unit, one_time_term_count, one_time_term_unit,
+    category, status, pinned, public_hidden, payment_method,
+    start_date, next_billing_date, auto_renew, auto_calculate_next_billing_date, trial_end_date, website, notes, tags_json,
     reminder_days, repeat_reminder_enabled, repeat_reminder_interval, repeat_reminder_window, extra_json, created_at, updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `;
 
 const UPDATE_SUBSCRIPTION_SQL = `
   UPDATE subscriptions SET
-    name = ?, logo = ?, price = ?, currency = ?, billing_cycle = ?, custom_days = ?, category = ?, status = ?,
-    pinned = ?, payment_method = ?, start_date = ?, next_billing_date = ?, auto_calculate_next_billing_date = ?,
+    name = ?, logo = ?, price = ?, currency = ?, billing_cycle = ?, custom_days = ?, custom_cycle_unit = ?,
+    one_time_term_count = ?, one_time_term_unit = ?, category = ?, status = ?,
+    pinned = ?, public_hidden = ?, payment_method = ?, start_date = ?, next_billing_date = ?, auto_renew = ?, auto_calculate_next_billing_date = ?,
     trial_end_date = ?, website = ?, notes = ?, tags_json = ?, reminder_days = ?, repeat_reminder_enabled = ?,
     repeat_reminder_interval = ?, repeat_reminder_window = ?, extra_json = ?, updated_at = ?
   WHERE user_id = ? AND id = ?
@@ -48,7 +49,7 @@ export async function previewImport(request: Request, env: Env): Promise<Respons
   const body = await readJsonWithLimit(request, importPreviewRequestSchema, locale, IMPORT_JSON_LIMIT_BYTES);
   assertValidSkipIndexes(body.skipIndexes, body.payload.subscriptions.length, locale);
   const existing = await listSubscriptions(env, auth.user.id);
-  return json(importPreviewResponseSchema.parse(buildPreview(body.payload, body.conflictMode, existing, body.skipIndexes)));
+  return json(importPreviewResponseSchema.parse(publicPreview(buildPreview(body.payload, body.conflictMode, existing, body.skipIndexes))));
 }
 
 /** 应用导入会重新计算 preview，避免客户端篡改 action 结果后直接写库。 */
@@ -63,7 +64,7 @@ export async function applyImport(request: Request, env: Env): Promise<Response>
   const existing = await listSubscriptions(env, auth.user.id);
   const preview = buildPreview(body.payload, body.conflictMode, existing, body.skipIndexes);
   if (preview.summary.errors > 0) {
-    throw new HttpError(400, serverText(locale, "import.previewFailed"), "IMPORT_PREVIEW_FAILED", preview);
+    throw new HttpError(400, serverText(locale, "import.previewFailed"), "IMPORT_PREVIEW_FAILED", publicPreview(preview));
   }
 
   const timestamp = nowIso();
@@ -71,10 +72,10 @@ export async function applyImport(request: Request, env: Env): Promise<Response>
   const existingMatches = buildExistingImportMatches(existing);
   for (const item of preview.items) {
     if (item.action !== "create" && item.action !== "replace") continue;
-    const source = body.payload.subscriptions[item.index];
+    const source = preview.normalizedByIndex.get(item.index);
     if (!source) continue;
     const { row: existingRow } = resolveExistingImportMatch(existingMatches, source.extra.import, source);
-    // toSubscriptionRow 只接收订阅 allowlist 字段，user_id 始终来自当前 session，避免导入 payload 做 mass assignment。
+    // import preview 已按 shared 写入 schema 收敛；apply 只消费这份 allowlist body，避免预览通过后 D1 写入才暴露字段错误。
     const row = toSubscriptionRow(
       existingRow?.id ?? newId("sub"),
       auth.user.id,
@@ -90,12 +91,17 @@ export async function applyImport(request: Request, env: Env): Promise<Response>
         row.currency,
         row.billing_cycle,
         row.custom_days,
+        row.custom_cycle_unit,
+        row.one_time_term_count,
+        row.one_time_term_unit,
         row.category,
         row.status,
         row.pinned,
+        row.public_hidden,
         row.payment_method,
         row.start_date,
         row.next_billing_date,
+        row.auto_renew,
         row.auto_calculate_next_billing_date,
         row.trial_end_date,
         row.website,
@@ -117,11 +123,7 @@ export async function applyImport(request: Request, env: Env): Promise<Response>
 
   if (body.payload.settings) {
     const current = await getSettings(env, auth.user.id);
-    const next = appSettingsSchema.parse({
-      ...current,
-      ...body.payload.settings,
-      builtInIconSources: mergeBuiltInIconSourceSettings(current.builtInIconSources, cleanBuiltInIconSourceSettingsPatch(body.payload.settings.builtInIconSources)),
-    });
+    const next = mergeSettingsPatch(current, body.payload.settings);
     statements.push(env.DB.prepare(`
       INSERT INTO settings (user_id, settings_json, created_at, updated_at)
       VALUES (?, ?, ?, ?)
@@ -141,7 +143,7 @@ export async function applyImport(request: Request, env: Env): Promise<Response>
     // D1 batch 在同一事务里执行；导入要么整体写入，要么让调用方看到明确失败。
     await env.DB.batch(statements);
   }
-  return json(importApplyResponseSchema.parse({ ok: true, ...preview }));
+  return json(importApplyResponseSchema.parse({ ok: true, ...publicPreview(preview) }));
 }
 
 function assertApplyPayloadSize(count: number, locale: AppLocale): void {
@@ -155,12 +157,21 @@ type PreviewResult = {
   items: ImportPreviewItem[];
   includesSettings: boolean;
   includesCustomConfig: boolean;
+  normalizedByIndex: Map<number, NormalizedImportSubscription>;
 };
+
+type NormalizedImportSubscription = SubscriptionBody & { extra: ImportSubscription["extra"] };
+
+function publicPreview(preview: PreviewResult): Omit<PreviewResult, "normalizedByIndex"> {
+  const { normalizedByIndex: _normalizedByIndex, ...rest } = preview;
+  return rest;
+}
 
 function buildPreview(payload: ImportPayload, conflictMode: ImportConflictMode, existing: SubscriptionRow[], skipIndexes: number[]): PreviewResult {
   const existingMatches = buildExistingImportMatches(existing);
   const skippedIndexes = new Set(skipIndexes);
   const seenPayloadKeys = new Set<string>();
+  const normalizedByIndex = new Map<number, NormalizedImportSubscription>();
   const items = payload.subscriptions.map((subscription, index) => {
     const importKey = subscription.extra.import;
     const warnings: string[] = [];
@@ -185,6 +196,12 @@ function buildPreview(payload: ImportPayload, conflictMode: ImportConflictMode, 
       errors.push("IMPORT_SOURCE_ID_DUPLICATE");
     }
     seenPayloadKeys.add(keyString);
+    const normalized = normalizeImportSubscriptionForPreview(subscription);
+    if (normalized.ok) {
+      normalizedByIndex.set(index, normalized.body);
+    } else {
+      errors.push(normalized.error);
+    }
     const { row: existingRow, fallback } = resolveExistingImportMatch(existingMatches, importKey, subscription);
     if (fallback) {
       // Wallos display:* 是低置信桥接，只给用户 warning；真正写入仍保留原 import key 方便后续精确替换。
@@ -207,7 +224,23 @@ function buildPreview(payload: ImportPayload, conflictMode: ImportConflictMode, 
     items,
     includesSettings: Boolean(payload.settings),
     includesCustomConfig: Boolean(payload.customConfig),
+    normalizedByIndex,
   };
+}
+
+function normalizeImportSubscriptionForPreview(subscription: ImportSubscription): { ok: true; body: NormalizedImportSubscription } | { ok: false; error: string } {
+  try {
+    return { ok: true, body: normalizeSubscriptionBodyForStorage(subscription) as NormalizedImportSubscription };
+  } catch (error) {
+    return { ok: false, error: importValidationErrorCode(error) };
+  }
+}
+
+function importValidationErrorCode(error: unknown): string {
+  if (error instanceof z.ZodError) {
+    return `IMPORT_SUBSCRIPTION_INVALID:${error.issues[0]?.path.join(".") || "payload"}`;
+  }
+  return "IMPORT_SUBSCRIPTION_INVALID";
 }
 
 function summarize(items: ImportPreviewItem[]): ImportSummary {
@@ -271,7 +304,7 @@ function resolveExistingImportMatch(
 function isImportKey(value: unknown): value is ImportSubscription["extra"]["import"] {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
-  return (record["source"] === "renewlet" || record["source"] === "wallos")
+  return (record["source"] === "renewlet" || record["source"] === "wallos" || record["source"] === "ai")
     && typeof record["sourceId"] === "string"
     && (record["confidence"] === undefined || record["confidence"] === "high" || record["confidence"] === "low");
 }

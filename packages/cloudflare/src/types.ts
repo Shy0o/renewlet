@@ -1,6 +1,7 @@
 import type { AdminUser } from "@renewlet/shared/schemas/admin";
 import type { ApiAppSettings } from "@renewlet/shared/schemas/settings";
 import type { ApiSubscription } from "@renewlet/shared/schemas/subscriptions";
+import type { CustomCycleUnit } from "@renewlet/shared/runtime";
 
 /**
  * Env 描述 wrangler 绑定和 CI 注入的构建变量。
@@ -62,12 +63,17 @@ export interface SubscriptionRow {
   currency: string;
   billing_cycle: string;
   custom_days: number | null;
+  custom_cycle_unit: CustomCycleUnit | null;
+  one_time_term_count: number | null;
+  one_time_term_unit: CustomCycleUnit | null;
   category: string;
   status: string;
   pinned: number;
+  public_hidden: number;
   payment_method: string | null;
   start_date: string;
   next_billing_date: string;
+  auto_renew: number;
   auto_calculate_next_billing_date: number;
   trial_end_date: string | null;
   website: string | null;
@@ -118,6 +124,16 @@ export interface CalendarFeedRow {
   scope: "all" | "subscription";
   subscription_id: string | null;
   token: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 公开展示页 token 是可撤销 bearer secret；只有完整 URL 回显给登录用户复制。 */
+export interface PublicStatusPageRow {
+  id: string;
+  user_id: string;
+  token: string;
+  show_prices: number;
   created_at: string;
   updated_at: string;
 }

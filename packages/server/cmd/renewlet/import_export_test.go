@@ -51,6 +51,32 @@ func TestImportApplyCreatesAndSkipsByImportKey(t *testing.T) {
 	}
 }
 
+func TestImportApplyAcceptsAIImportSource(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	registerRecordHooks(app)
+	user, token := createRouteTestUser(t, app, "user")
+	body := importRequestBodyWithSource("skip", "ai", "ai-github", 12)
+
+	res := serveTestRequest(t, app, http.MethodPost, "/api/app/import/apply", body, token)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"creates":1`) {
+		t.Fatalf("expected AI import to create, got %d: %s", res.Code, res.Body.String())
+	}
+	if count := subscriptionCountForUser(t, app, user.Id); count != 1 {
+		t.Fatalf("subscription count = %d, want 1", count)
+	}
+
+	res = serveTestRequest(t, app, http.MethodPost, "/api/app/import/apply", body, token)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"skips":1`) {
+		t.Fatalf("expected second AI import to skip, got %d: %s", res.Code, res.Body.String())
+	}
+	if count := subscriptionCountForUser(t, app, user.Id); count != 1 {
+		t.Fatalf("subscription count after skip = %d, want 1", count)
+	}
+}
+
 func TestImportApplyReplacesCurrentUserRecord(t *testing.T) {
 	app := newSchemaTestApp(t)
 	if err := ensureSchema(app); err != nil {
@@ -158,6 +184,68 @@ func TestImportApplyPreservesInheritedReminderDays(t *testing.T) {
 	}
 }
 
+func TestImportApplyPreservesDisabledReminderDays(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	registerRecordHooks(app)
+	user, token := createRouteTestUser(t, app, "user")
+
+	body := importRequestBodyWithReminderDays("skip", "renewlet", "renewlet-sub-quiet", disabledReminderDays, 12)
+	res := serveTestRequest(t, app, http.MethodPost, "/api/app/import/apply", body, token)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected disabled reminder import apply 200, got %d: %s", res.Code, res.Body.String())
+	}
+	rows, err := app.FindAllRecords("subscriptions", dbx.HashExp{"user": user.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].GetInt("reminderDays") != disabledReminderDays {
+		t.Fatalf("expected disabled reminder days to be preserved, got rows=%d reminderDays=%d", len(rows), rows[0].GetInt("reminderDays"))
+	}
+}
+
+func TestImportApplyDefaultsMissingAutoRenewToManualButPreservesExplicitTrue(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	registerRecordHooks(app)
+	user, token := createRouteTestUser(t, app, "user")
+
+	if res := serveTestRequest(t, app, http.MethodPost, "/api/app/import/apply", importRequestBody("skip", 12), token); res.Code != http.StatusOK {
+		t.Fatalf("expected missing autoRenew import apply 200, got %d: %s", res.Code, res.Body.String())
+	}
+	rows, err := app.FindAllRecords("subscriptions", dbx.HashExp{"user": user.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].GetBool("autoRenew") {
+		t.Fatalf("expected missing autoRenew to default false, got rows=%d autoRenew=%v", len(rows), rows[0].GetBool("autoRenew"))
+	}
+
+	if res := serveTestRequest(t, app, http.MethodPost, "/api/app/import/apply", importRequestBodyWithAutoRenew("skip", "1:43", true, 13), token); res.Code != http.StatusOK {
+		t.Fatalf("expected explicit autoRenew import apply 200, got %d: %s", res.Code, res.Body.String())
+	}
+	rows, err = app.FindAllRecords("subscriptions", dbx.HashExp{"user": user.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected two imported rows, got %d", len(rows))
+	}
+	foundExplicitAuto := false
+	for _, row := range rows {
+		if row.GetFloat("price") == 13 {
+			foundExplicitAuto = row.GetBool("autoRenew")
+		}
+	}
+	if !foundExplicitAuto {
+		t.Fatalf("expected explicit autoRenew=true to be preserved")
+	}
+}
+
 func TestImportPreviewMarksDuplicateSourceId(t *testing.T) {
 	app := newSchemaTestApp(t)
 	if err := ensureSchema(app); err != nil {
@@ -171,6 +259,29 @@ func TestImportPreviewMarksDuplicateSourceId(t *testing.T) {
 	}
 }
 
+func TestImportPreviewRejectsSubscriptionStorageErrors(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	registerRecordHooks(app)
+	_, token := createRouteTestUser(t, app, "user")
+	body := importRequestBody("skip", 12)
+	var decoded map[string]interface{}
+	_ = json.Unmarshal([]byte(body), &decoded)
+	payload := decoded["payload"].(map[string]interface{})
+	subscriptions := payload["subscriptions"].([]interface{})
+	subscription := subscriptions[0].(map[string]interface{})
+	subscription["startDate"] = "2026-07-01"
+	subscription["nextBillingDate"] = "2026-06-01"
+	data, _ := json.Marshal(decoded)
+
+	res := serveTestRequest(t, app, http.MethodPost, "/api/app/import/preview", string(data), token)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"errors":1`) || !strings.Contains(res.Body.String(), "NEXT_BILLING_DATE_BEFORE_START_DATE") {
+		t.Fatalf("expected preview storage validation error, got %d: %s", res.Code, res.Body.String())
+	}
+}
+
 func TestImportApplyAcceptsOneTimeBillingCycle(t *testing.T) {
 	app := newSchemaTestApp(t)
 	if err := ensureSchema(app); err != nil {
@@ -179,7 +290,8 @@ func TestImportApplyAcceptsOneTimeBillingCycle(t *testing.T) {
 	registerRecordHooks(app)
 	user, token := createRouteTestUser(t, app, "user")
 
-	res := serveTestRequest(t, app, http.MethodPost, "/api/app/import/apply", importRequestBodyWithBillingCycle("skip", "one-time", nil, true, 199), token)
+	customCycleUnit := "year"
+	res := serveTestRequest(t, app, http.MethodPost, "/api/app/import/apply", importRequestBodyWithBillingCycleUnit("skip", "one-time", nil, &customCycleUnit, true, 199), token)
 	if res.Code != http.StatusOK {
 		t.Fatalf("expected one-time import apply 200, got %d: %s", res.Code, res.Body.String())
 	}
@@ -187,8 +299,55 @@ func TestImportApplyAcceptsOneTimeBillingCycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].GetString("billingCycle") != "one-time" || rows[0].GetInt("customDays") != 0 || rows[0].GetBool("autoCalculateNextBillingDate") {
-		t.Fatalf("expected one-time record normalized, got rows=%d cycle=%q customDays=%d auto=%v", len(rows), rows[0].GetString("billingCycle"), rows[0].GetInt("customDays"), rows[0].GetBool("autoCalculateNextBillingDate"))
+	if len(rows) != 1 || rows[0].GetString("billingCycle") != "one-time" || rows[0].GetInt("customDays") != 0 || rows[0].GetString("customCycleUnit") != "" || rows[0].GetInt("oneTimeTermCount") != 0 || rows[0].GetString("oneTimeTermUnit") != "" || rows[0].GetBool("autoCalculateNextBillingDate") {
+		t.Fatalf("expected one-time record normalized, got rows=%d cycle=%q customDays=%d customCycleUnit=%q oneTimeTermCount=%d oneTimeTermUnit=%q auto=%v", len(rows), rows[0].GetString("billingCycle"), rows[0].GetInt("customDays"), rows[0].GetString("customCycleUnit"), rows[0].GetInt("oneTimeTermCount"), rows[0].GetString("oneTimeTermUnit"), rows[0].GetBool("autoCalculateNextBillingDate"))
+	}
+}
+
+func TestImportApplyAcceptsOneTimeFixedTerm(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	registerRecordHooks(app)
+	user, token := createRouteTestUser(t, app, "user")
+
+	customCycleUnit := "year"
+	oneTimeTermCount := 6
+	oneTimeTermUnit := "month"
+	res := serveTestRequest(t, app, http.MethodPost, "/api/app/import/apply", importRequestBodyWithOneTimeTerm("skip", nil, &customCycleUnit, &oneTimeTermCount, &oneTimeTermUnit, true, 120), token)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected fixed-term one-time import apply 200, got %d: %s", res.Code, res.Body.String())
+	}
+	rows, err := app.FindAllRecords("subscriptions", dbx.HashExp{"user": user.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].GetString("billingCycle") != "one-time" || rows[0].GetInt("oneTimeTermCount") != 6 || rows[0].GetString("oneTimeTermUnit") != "month" || rows[0].GetInt("customDays") != 0 || rows[0].GetString("customCycleUnit") != "" || rows[0].GetBool("autoCalculateNextBillingDate") {
+		t.Fatalf("expected fixed-term one-time record to preserve term and clear custom fields, got rows=%d cycle=%q customDays=%d customCycleUnit=%q oneTimeTermCount=%d oneTimeTermUnit=%q auto=%v", len(rows), rows[0].GetString("billingCycle"), rows[0].GetInt("customDays"), rows[0].GetString("customCycleUnit"), rows[0].GetInt("oneTimeTermCount"), rows[0].GetString("oneTimeTermUnit"), rows[0].GetBool("autoCalculateNextBillingDate"))
+	}
+}
+
+func TestImportApplyAcceptsCustomCycleUnit(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	registerRecordHooks(app)
+	user, token := createRouteTestUser(t, app, "user")
+
+	customDays := 3
+	customCycleUnit := "year"
+	res := serveTestRequest(t, app, http.MethodPost, "/api/app/import/apply", importRequestBodyWithBillingCycleUnit("skip", "custom", &customDays, &customCycleUnit, true, 360), token)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected custom unit import apply 200, got %d: %s", res.Code, res.Body.String())
+	}
+	rows, err := app.FindAllRecords("subscriptions", dbx.HashExp{"user": user.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].GetString("billingCycle") != "custom" || rows[0].GetInt("customDays") != 3 || rows[0].GetString("customCycleUnit") != "year" {
+		t.Fatalf("expected custom record to keep unit, got rows=%d cycle=%q customDays=%d customCycleUnit=%q", len(rows), rows[0].GetString("billingCycle"), rows[0].GetInt("customDays"), rows[0].GetString("customCycleUnit"))
 	}
 }
 
@@ -266,6 +425,10 @@ func importRequestBodyWithSkipIndexes(conflictMode string, skipIndexes []int, pr
 }
 
 func importRequestBodyWithBillingCycle(conflictMode string, billingCycle string, customDays *int, autoCalculate bool, prices ...int) string {
+	return importRequestBodyWithBillingCycleUnit(conflictMode, billingCycle, customDays, nil, autoCalculate, prices...)
+}
+
+func importRequestBodyWithBillingCycleUnit(conflictMode string, billingCycle string, customDays *int, customCycleUnit *string, autoCalculate bool, prices ...int) string {
 	body := importRequestBodyWithOptions(conflictMode, "wallos", "1:42", "high", nil, prices...)
 	var decoded map[string]interface{}
 	_ = json.Unmarshal([]byte(body), &decoded)
@@ -275,7 +438,23 @@ func importRequestBodyWithBillingCycle(conflictMode string, billingCycle string,
 		subscription := item.(map[string]interface{})
 		subscription["billingCycle"] = billingCycle
 		subscription["customDays"] = customDays
+		subscription["customCycleUnit"] = customCycleUnit
 		subscription["autoCalculateNextBillingDate"] = autoCalculate
+	}
+	data, _ := json.Marshal(decoded)
+	return string(data)
+}
+
+func importRequestBodyWithOneTimeTerm(conflictMode string, customDays *int, customCycleUnit *string, oneTimeTermCount *int, oneTimeTermUnit *string, autoCalculate bool, prices ...int) string {
+	body := importRequestBodyWithBillingCycleUnit(conflictMode, "one-time", customDays, customCycleUnit, autoCalculate, prices...)
+	var decoded map[string]interface{}
+	_ = json.Unmarshal([]byte(body), &decoded)
+	payload := decoded["payload"].(map[string]interface{})
+	subscriptions := payload["subscriptions"].([]interface{})
+	for _, item := range subscriptions {
+		subscription := item.(map[string]interface{})
+		subscription["oneTimeTermCount"] = oneTimeTermCount
+		subscription["oneTimeTermUnit"] = oneTimeTermUnit
 	}
 	data, _ := json.Marshal(decoded)
 	return string(data)
@@ -290,6 +469,20 @@ func importRequestBodyWithReminderDays(conflictMode string, source string, sourc
 	for _, item := range subscriptions {
 		subscription := item.(map[string]interface{})
 		subscription["reminderDays"] = reminderDays
+	}
+	data, _ := json.Marshal(decoded)
+	return string(data)
+}
+
+func importRequestBodyWithAutoRenew(conflictMode string, sourceID string, autoRenew bool, prices ...int) string {
+	body := importRequestBodyWithOptions(conflictMode, "wallos", sourceID, "high", nil, prices...)
+	var decoded map[string]interface{}
+	_ = json.Unmarshal([]byte(body), &decoded)
+	payload := decoded["payload"].(map[string]interface{})
+	subscriptions := payload["subscriptions"].([]interface{})
+	for _, item := range subscriptions {
+		subscription := item.(map[string]interface{})
+		subscription["autoRenew"] = autoRenew
 	}
 	data, _ := json.Marshal(decoded)
 	return string(data)
@@ -338,9 +531,11 @@ func importSubscriptionBody(source string, sourceID string, confidence string, p
 		"currency":                     "USD",
 		"billingCycle":                 "monthly",
 		"customDays":                   nil,
+		"customCycleUnit":              nil,
 		"category":                     "developer_tools",
 		"status":                       "active",
 		"pinned":                       false,
+		"publicHidden":                 false,
 		"paymentMethod":                nil,
 		"startDate":                    "2026-01-01",
 		"nextBillingDate":              "2026-02-01",

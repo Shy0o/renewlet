@@ -82,6 +82,10 @@ func repeatReminderIntervalHours(value string) int {
 
 func getRepeatScheduleDecision(now time.Time, settings appSettings, subscriptions []notificationSubscription, windowMinutes int) localScheduleDecision {
 	for _, sub := range subscriptions {
+		if isDisabledReminderDays(sub.ReminderDays) {
+			// -2 静默订阅不参与 repeat due，否则会绕过主通知的跳过入口。
+			continue
+		}
 		if !sub.RepeatReminderEnabled {
 			continue
 		}
@@ -90,7 +94,10 @@ func getRepeatScheduleDecision(now time.Time, settings appSettings, subscription
 			Window:   normalizeRepeatReminderWindow(sub.RepeatReminderWindow),
 		}
 		// 先检查续费，再检查试用；同一个 tick 只需要命中一次，真正的 items 收集会再聚合所有订阅。
-		reminderDays := effectiveReminderDays(sub, settings)
+		reminderDays, ok := effectiveReminderDays(sub, settings)
+		if !ok {
+			continue
+		}
 		if occurrence, ok := repeatReminderDueOccurrence(now, settings, reminderDays, sub.NextBillingDate, repeat, windowMinutes); ok {
 			return localScheduleDecision{localScheduleOccurrence: occurrence, Due: true, Reason: "repeat_reminder_due"}
 		}
@@ -170,6 +177,10 @@ func getNextRepeatScheduleOccurrence(now time.Time, settings appSettings, subscr
 	var nextInstant time.Time
 	found := false
 	for _, sub := range subscriptions {
+		if isDisabledReminderDays(sub.ReminderDays) {
+			// 下一次预览也跳过 -2，避免 UI 显示一条不会发送的重复提醒。
+			continue
+		}
 		if !sub.RepeatReminderEnabled {
 			continue
 		}
@@ -181,7 +192,10 @@ func getNextRepeatScheduleOccurrence(now time.Time, settings appSettings, subscr
 		if sub.Status == "trial" {
 			candidates = append(candidates, sub.TrialEndDate)
 		}
-		reminderDays := effectiveReminderDays(sub, settings)
+		reminderDays, ok := effectiveReminderDays(sub, settings)
+		if !ok {
+			continue
+		}
 		for _, targetDate := range candidates {
 			occurrence, ok := nextRepeatOccurrenceAfter(now, settings, reminderDays, targetDate, repeat)
 			if !ok {
@@ -252,6 +266,10 @@ func collectUpcomingRepeatBatches(now time.Time, settings appSettings, subscript
 	end := now.UTC().Add(time.Duration(maxInt(days, 1)) * 24 * time.Hour)
 	batchesByKey := map[string]*upcomingNotificationBatch{}
 	for _, sub := range subscriptions {
+		if isDisabledReminderDays(sub.ReminderDays) {
+			// 批次聚合跳过 -2，保证未来预览和实际 Cron 同源。
+			continue
+		}
 		if !sub.RepeatReminderEnabled {
 			continue
 		}
@@ -263,7 +281,10 @@ func collectUpcomingRepeatBatches(now time.Time, settings appSettings, subscript
 		if sub.Status == "trial" {
 			targets = append(targets, sub.TrialEndDate)
 		}
-		reminderDays := effectiveReminderDays(sub, settings)
+		reminderDays, ok := effectiveReminderDays(sub, settings)
+		if !ok {
+			continue
+		}
 		for _, targetDate := range targets {
 			occurrence, ok := nextRepeatOccurrenceAfter(now, settings, reminderDays, targetDate, repeat)
 			for ok {

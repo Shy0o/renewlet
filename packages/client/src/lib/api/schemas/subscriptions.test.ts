@@ -9,11 +9,13 @@ const validSubscriptionCreateBody = {
   currency: "CNY",
   billingCycle: "monthly",
   customDays: null,
+  customCycleUnit: null,
   category: "productivity",
   status: "active",
   paymentMethod: null,
   startDate: "2026-05-15",
   nextBillingDate: "2026-06-15",
+  autoRenew: true,
   autoCalculateNextBillingDate: true,
   trialEndDate: null,
   website: null,
@@ -24,6 +26,7 @@ const validSubscriptionCreateBody = {
   repeatReminderInterval: "1h",
   repeatReminderWindow: "72h",
   pinned: false,
+  publicHidden: false,
 };
 
 const validSubscriptionResponseBody = {
@@ -32,11 +35,16 @@ const validSubscriptionResponseBody = {
   price: validSubscriptionCreateBody.price,
   currency: validSubscriptionCreateBody.currency,
   billingCycle: validSubscriptionCreateBody.billingCycle,
+  customCycleUnit: undefined,
+  oneTimeTermCount: undefined,
+  oneTimeTermUnit: undefined,
   category: validSubscriptionCreateBody.category,
   status: validSubscriptionCreateBody.status,
   pinned: validSubscriptionCreateBody.pinned,
+  publicHidden: validSubscriptionCreateBody.publicHidden,
   startDate: validSubscriptionCreateBody.startDate,
   nextBillingDate: validSubscriptionCreateBody.nextBillingDate,
+  autoRenew: validSubscriptionCreateBody.autoRenew,
   autoCalculateNextBillingDate: validSubscriptionCreateBody.autoCalculateNextBillingDate,
   tags: validSubscriptionCreateBody.tags,
   reminderDays: validSubscriptionCreateBody.reminderDays,
@@ -109,8 +117,8 @@ describe("subscription API schemas", () => {
     }).success).toBe(false);
   });
 
-  it("accepts inherited and explicit reminder day boundaries", () => {
-    for (const reminderDays of [-1, 0, 3, 3650]) {
+  it("accepts disabled, inherited and explicit reminder day boundaries", () => {
+    for (const reminderDays of [-2, -1, 0, 3, 3650]) {
       expect(subscriptionCreateBodySchema.safeParse({
         ...validSubscriptionCreateBody,
         reminderDays,
@@ -122,7 +130,7 @@ describe("subscription API schemas", () => {
       }).success).toBe(true);
     }
 
-    for (const reminderDays of [-2, 3651]) {
+    for (const reminderDays of [-3, 3651]) {
       expect(subscriptionCreateBodySchema.safeParse({
         ...validSubscriptionCreateBody,
         reminderDays,
@@ -134,6 +142,30 @@ describe("subscription API schemas", () => {
     expect(subscriptionCreateBodySchema.safeParse({
       ...validSubscriptionCreateBody,
       status: "expired",
+    }).success).toBe(true);
+  });
+
+  it("defaults public visibility to shown unless the subscription opts out", () => {
+    expect(subscriptionCreateBodySchema.parse({
+      ...validSubscriptionCreateBody,
+      publicHidden: undefined,
+    }).publicHidden).toBe(false);
+
+    expect(apiSubscriptionSchema.parse({
+      ...validSubscriptionResponseBody,
+      publicHidden: true,
+    }).publicHidden).toBe(true);
+  });
+
+  it("defaults recurring writes to manual renewal while preserving response explicitness", () => {
+    expect(subscriptionCreateBodySchema.parse({
+      ...validSubscriptionCreateBody,
+      autoRenew: undefined,
+    }).autoRenew).toBe(false);
+
+    expect(apiSubscriptionSchema.safeParse({
+      ...validSubscriptionResponseBody,
+      autoRenew: false,
     }).success).toBe(true);
   });
 
@@ -154,7 +186,93 @@ describe("subscription API schemas", () => {
       ...validSubscriptionCreateBody,
       billingCycle: "one-time",
       customDays: null,
+      oneTimeTermCount: null,
+      oneTimeTermUnit: null,
+      autoRenew: false,
       autoCalculateNextBillingDate: false,
+    }).success).toBe(true);
+  });
+
+  it("accepts one-time fixed terms only when count and unit are provided together", () => {
+    expect(subscriptionCreateBodySchema.parse({
+      ...validSubscriptionCreateBody,
+      billingCycle: "one-time",
+      customDays: null,
+      customCycleUnit: null,
+      oneTimeTermCount: 6,
+      oneTimeTermUnit: "month",
+      autoCalculateNextBillingDate: false,
+    })).toMatchObject({
+      billingCycle: "one-time",
+      oneTimeTermCount: 6,
+      oneTimeTermUnit: "month",
+    });
+
+    expect(apiSubscriptionSchema.safeParse({
+      ...validSubscriptionResponseBody,
+      billingCycle: "one-time",
+      oneTimeTermCount: 2,
+      oneTimeTermUnit: "year",
+      autoCalculateNextBillingDate: false,
+    }).success).toBe(true);
+
+    expect(subscriptionCreateBodySchema.safeParse({
+      ...validSubscriptionCreateBody,
+      billingCycle: "one-time",
+      customDays: null,
+      customCycleUnit: null,
+      oneTimeTermCount: 6,
+      autoCalculateNextBillingDate: false,
+    }).success).toBe(false);
+
+    expect(subscriptionCreateBodySchema.safeParse({
+      ...validSubscriptionCreateBody,
+      billingCycle: "one-time",
+      customDays: null,
+      customCycleUnit: null,
+      oneTimeTermUnit: "month",
+      autoCalculateNextBillingDate: false,
+    }).success).toBe(false);
+  });
+
+  it("rejects one-time service terms on recurring subscriptions", () => {
+    expect(subscriptionCreateBodySchema.safeParse({
+      ...validSubscriptionCreateBody,
+      oneTimeTermCount: 6,
+      oneTimeTermUnit: "month",
+    }).success).toBe(false);
+
+    expect(apiSubscriptionSchema.safeParse({
+      ...validSubscriptionResponseBody,
+      oneTimeTermCount: 6,
+      oneTimeTermUnit: "month",
+    }).success).toBe(false);
+  });
+
+  it("accepts custom cycle units on custom subscriptions", () => {
+    expect(subscriptionCreateBodySchema.parse({
+      ...validSubscriptionCreateBody,
+      billingCycle: "custom",
+      customDays: 3,
+      customCycleUnit: "year",
+    })).toMatchObject({
+      billingCycle: "custom",
+      customDays: 3,
+      customCycleUnit: "year",
+    });
+
+    expect(subscriptionCreateBodySchema.safeParse({
+      ...validSubscriptionCreateBody,
+      billingCycle: "custom",
+      customDays: 3,
+      customCycleUnit: "decade",
+    }).success).toBe(false);
+
+    expect(apiSubscriptionSchema.safeParse({
+      ...validSubscriptionResponseBody,
+      billingCycle: "custom",
+      customDays: 2,
+      customCycleUnit: "week",
     }).success).toBe(true);
   });
 

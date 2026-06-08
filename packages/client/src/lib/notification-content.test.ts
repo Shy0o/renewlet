@@ -106,6 +106,27 @@ describe("notification-content", () => {
     expect(content.items[0]?.reminderDays).not.toBe(-1);
   });
 
+  it("skips subscriptions with disabled reminders", () => {
+    const content = buildDueNotification(
+      new Date("2026-01-10T00:00:00.000Z"),
+      { ...DEFAULT_SETTINGS, timezone: "UTC", showExpired: false },
+      [
+        {
+          id: "sub-quiet",
+          name: "Quiet SaaS",
+          price: 10,
+          currency: "USD",
+          status: "active",
+          nextBillingDate: "2026-01-10",
+          reminderDays: -2,
+        },
+      ],
+    );
+
+    expect(content.hasPayload).toBe(false);
+    expect(content.items).toEqual([]);
+  });
+
   it("builds English notification content when settings locale is English", () => {
     const content = buildDueNotification(
       new Date("2026-01-10T00:00:00.000Z"),
@@ -176,5 +197,86 @@ describe("notification-content", () => {
     expect(enabledContent.content).toContain("已过期");
     expect(enabledContent.items).toHaveLength(1);
     expect(enabledContent.items[0]).toMatchObject({ type: "expired", subscriptionId: "expired" });
+  });
+
+  it("builds expiry reminders for one-time fixed terms", () => {
+    const content = buildDueNotification(
+      new Date("2026-01-10T00:00:00.000Z"),
+      { ...DEFAULT_SETTINGS, timezone: "UTC", showExpired: false },
+      [
+        {
+          id: "fixed-term",
+          name: "Discounted membership",
+          price: 120,
+          currency: "USD",
+          status: "active",
+          billingCycle: "one-time",
+          oneTimeTermCount: 6,
+          oneTimeTermUnit: "month",
+          nextBillingDate: "2026-01-13",
+          reminderDays: 3,
+        },
+      ],
+    );
+
+    expect(content.hasPayload).toBe(true);
+    expect(content.items).toEqual([
+      expect.objectContaining({
+        subscriptionId: "fixed-term",
+        type: "expiry",
+        targetDate: "2026-01-13",
+        reminderDays: 3,
+      }),
+    ]);
+    expect(content.content).toContain("即将到期");
+    expect(content.content).not.toContain("即将续费");
+  });
+
+  it("skips one-time buyouts instead of treating purchase date as a reminder boundary", () => {
+    const content = buildDueNotification(
+      new Date("2026-01-10T00:00:00.000Z"),
+      { ...DEFAULT_SETTINGS, timezone: "UTC", showExpired: true },
+      [
+        {
+          id: "buyout",
+          name: "Lifetime license",
+          price: 199,
+          currency: "USD",
+          status: "active",
+          billingCycle: "one-time",
+          nextBillingDate: "2026-01-07",
+          reminderDays: 3,
+        },
+      ],
+    );
+
+    expect(content.hasPayload).toBe(false);
+    expect(content.items).toEqual([]);
+  });
+
+  it("moves expired one-time fixed terms into the expired group when enabled", () => {
+    const content = buildDueNotification(
+      new Date("2026-01-10T00:00:00.000Z"),
+      { ...DEFAULT_SETTINGS, timezone: "UTC", showExpired: true },
+      [
+        {
+          id: "expired-fixed-term",
+          name: "Expired membership",
+          price: 120,
+          currency: "USD",
+          status: "active",
+          billingCycle: "one-time",
+          oneTimeTermCount: 6,
+          oneTimeTermUnit: "month",
+          nextBillingDate: "2026-01-01",
+          reminderDays: 3,
+        },
+      ],
+    );
+
+    expect(content.items).toEqual([
+      expect.objectContaining({ type: "expired", subscriptionId: "expired-fixed-term" }),
+    ]);
+    expect(content.content).toContain("已过期");
   });
 });

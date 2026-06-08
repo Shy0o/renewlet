@@ -16,17 +16,20 @@ import { useCallback, useMemo, useState } from 'react';
 import { Header } from '@/components/header';
 import { BackToTopFloatButton } from '@/components/back-to-top-float-button';
 import { SubscriptionCard, type SubscriptionCardLookup } from '@/components/subscription-card';
+import { SubscriptionDetailDialog } from '@/components/subscription-detail-dialog';
 import { AddSubscriptionDialog } from '@/components/add-subscription-dialog';
 import { EditSubscriptionDialog } from '@/components/edit-subscription-dialog';
 import { ImportDataDialog } from '@/components/import-data-dialog';
+import { AIRecognizeSubscriptionDialog } from '@/components/ai-recognize-subscription-dialog';
 import { SubscriptionsPageSkeleton } from '@/components/loading-skeleton';
 import { VirtualizedList } from '@/components/ui/virtualized-list';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Category, Subscription, SubscriptionStatus } from '@/types/subscription';
 import { DEFAULT_NOTIFICATION_REMINDER_DAYS, DEFAULT_SETTINGS } from '@/types/subscription';
-import { Search, Plus, Grid, List as ListIcon, Download, Upload } from 'lucide-react';
+import { Search, Plus, Grid, List as ListIcon, Download, Upload, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
@@ -40,11 +43,13 @@ import { useSettings } from '@/hooks/use-settings';
 import { useSubscriptionCrud } from '@/modules/subscriptions/application/use-subscription-crud';
 import { useSubscriptionExport } from '@/modules/subscriptions/application/use-subscription-export';
 import { useSubscriptionFilters } from '@/modules/subscriptions/application/use-subscription-filters';
-import type { SubscriptionSortOption } from '@/modules/subscriptions/domain/subscription-filters';
+import type { SubscriptionRenewalFilter, SubscriptionSortOption } from '@/modules/subscriptions/domain/subscription-filters';
 import { useExchangeRates } from '@/hooks/use-exchange-rates';
 import { useI18n } from '@/i18n/I18nProvider';
 import type { MessageKey } from '@/i18n/messages';
 import { useMediaQuery } from '@/hooks/use-media-query';
+import { useDeferredDialogCleanup } from '@/hooks/use-deferred-dialog-cleanup';
+import { todayDateOnlyInTimeZone } from '@/lib/time/date-only';
 import {
   SelectedTagScroller,
   SubscriptionTagFilterDrawer,
@@ -68,6 +73,13 @@ const SORT_OPTION_LABEL_KEYS: Record<SubscriptionSortOption, MessageKey> = {
   price_asc: "subscriptions.sort.priceAsc",
   name_asc: "subscriptions.sort.nameAsc",
   name_desc: "subscriptions.sort.nameDesc",
+};
+
+const RENEWAL_FILTER_LABEL_KEYS: Record<SubscriptionRenewalFilter, MessageKey> = {
+  all: "subscriptions.renewalFilter.all",
+  auto: "subscriptions.renewalFilter.auto",
+  manual: "subscriptions.renewalFilter.manual",
+  "one-time": "subscriptions.renewalFilter.oneTime",
 };
 
 function getRootScrollElement() {
@@ -99,6 +111,9 @@ type SubscriptionGridProps = {
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onTogglePinned: (id: string) => void;
+  onTogglePublicHidden: (id: string) => void;
+  onRenew: (id: string) => void;
+  onViewDetails: (id: string) => void;
 };
 
 function SubscriptionGrid({
@@ -111,6 +126,9 @@ function SubscriptionGrid({
   onEdit,
   onDelete,
   onTogglePinned,
+  onTogglePublicHidden,
+  onRenew,
+  onViewDetails,
 }: SubscriptionGridProps) {
   const isTwoColumnGrid = useMediaQuery("(min-width: 640px)");
   const isThreeColumnGrid = useMediaQuery("(min-width: 1024px)");
@@ -146,6 +164,9 @@ function SubscriptionGrid({
               onEdit={onEdit}
               onDelete={onDelete}
               onTogglePinned={onTogglePinned}
+              onTogglePublicHidden={onTogglePublicHidden}
+              onRenew={onRenew}
+              onViewDetails={onViewDetails}
             />
           </div>
         ));
@@ -171,6 +192,9 @@ function SubscriptionGrid({
   const { convert } = useExchangeRates(exchangeRateProvider);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [aiRecognitionDialogOpen, setAIRecognitionDialogOpen] = useState(false);
+  const [detailSubscriptionId, setDetailSubscriptionId] = useState<string | null>(null);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const isMobileTagFilter = useMediaQuery("(max-width: 767px)");
   const {
     editingSubscription,
@@ -179,6 +203,8 @@ function SubscriptionGrid({
     handleDeleteSubscription,
     handleEditSubscription,
     handleTogglePinnedSubscription,
+    handleTogglePublicHiddenSubscription,
+    handleRenewSubscription,
     handleSaveSubscription,
     handleEditDialogOpenChange,
   } = useSubscriptionCrud(subscriptions);
@@ -189,6 +215,8 @@ function SubscriptionGrid({
     setCategoryFilter,
     statusFilter,
     setStatusFilter,
+    renewalFilter,
+    setRenewalFilter,
     sortOption,
     setSortOption,
     selectedTags,
@@ -203,6 +231,16 @@ function SubscriptionGrid({
   const settings = settingsQuery.data ?? DEFAULT_SETTINGS;
   const { exportToJSON, exportToJSONWithSecrets, exportToCSV } =
     useSubscriptionExport(filteredSubscriptions, subscriptions, config, settings, locale, timeZone);
+  const selectedDetailSubscription = useMemo(
+    () => subscriptions.find((item) => item.id === detailSubscriptionId) ?? null,
+    [detailSubscriptionId, subscriptions],
+  );
+  const today = useMemo(() => todayDateOnlyInTimeZone(new Date(), timeZone), [timeZone]);
+  const { scheduleCleanup: scheduleDetailCleanup, cancelCleanup: cancelDetailCleanup } =
+    useDeferredDialogCleanup(() => {
+      // 详情弹窗关闭动画期间仍要保留内容快照，避免 Dialog/Drawer fade-out 时标题和备注闪空。
+      setDetailSubscriptionId(null);
+    });
   // 筛选标签来自用户配置，可能被删除或禁用；找不到配置时仍显示原始值，避免筛选状态变成空白。
   const categoryFilterLabel =
     categoryFilter === "all"
@@ -216,6 +254,7 @@ function SubscriptionGrid({
       : config.statuses.find((status) => status.value === statusFilter)?.labels
         ? label(config.statuses.find((status) => status.value === statusFilter)!.labels)
         : statusFilter;
+  const renewalFilterLabel = t(RENEWAL_FILTER_LABEL_KEYS[renewalFilter]);
   const sortOptionLabel = t(SORT_OPTION_LABEL_KEYS[sortOption]);
   const removeSelectedTag = useCallback((tag: string) => {
     setSelectedTags((current) => current.filter((item) => item !== tag));
@@ -226,12 +265,47 @@ function SubscriptionGrid({
   const handleLoadMore = useCallback(() => {
     void fetchNextPage();
   }, [fetchNextPage]);
+  const handleViewDetails = useCallback((id: string) => {
+    cancelDetailCleanup();
+    setDetailSubscriptionId(id);
+    setDetailDialogOpen(true);
+  }, [cancelDetailCleanup]);
+  const handleDetailDialogOpenChange = useCallback((nextOpen: boolean) => {
+    setDetailDialogOpen(nextOpen);
+    if (nextOpen) {
+      cancelDetailCleanup();
+      return;
+    }
+    scheduleDetailCleanup();
+  }, [cancelDetailCleanup, scheduleDetailCleanup]);
+  const handleEditFromDetail = useCallback((subscription: Subscription) => {
+    handleEditSubscription(subscription.id);
+  }, [handleEditSubscription]);
+  const aiRecognitionAction = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="secondary"
+          size="icon"
+          onClick={() => setAIRecognitionDialogOpen(true)}
+          className="h-12 w-12 shrink-0 text-primary sm:h-10 sm:w-10"
+          aria-label={t("subscriptions.aiRecognizeAdd")}
+        >
+          <Sparkles className="h-4 w-4" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" align="end" className="text-xs">
+        {t("subscriptions.aiRecognizeAdd")}
+      </TooltipContent>
+    </Tooltip>
+  );
 
   // 首次加载订阅列表时展示骨架屏（筛选条 + 卡片网格占位）。
   if (subscriptionsQuery.isPending) {
     return (
       <div className="app-page bg-background">
-        <Header onAddSubscription={handleAddSubscription} availableTags={allTags} />
+        <Header onAddSubscription={handleAddSubscription} availableTags={allTags} subscriptionActions={aiRecognitionAction} />
         <main className="app-main mx-auto max-w-7xl">
           <SubscriptionsPageSkeleton withPageShell={false} />
         </main>
@@ -241,7 +315,7 @@ function SubscriptionGrid({
 
   return (
     <div className="app-page bg-background">
-      <Header onAddSubscription={handleAddSubscription} availableTags={allTags} />
+      <Header onAddSubscription={handleAddSubscription} availableTags={allTags} subscriptionActions={aiRecognitionAction} />
 
       <main className="app-main mx-auto max-w-7xl">
         <div className="mb-8 flex items-center justify-between">
@@ -343,6 +417,18 @@ function SubscriptionGrid({
                 </Select>
               </div>
 
+              <Select value={renewalFilter} onValueChange={(v) => setRenewalFilter(v as SubscriptionRenewalFilter)}>
+                <SelectTrigger className="h-11 min-w-0 border-border bg-secondary" tooltipContent={renewalFilterLabel}>
+                  <SelectValue placeholder={t("subscriptions.renewalFilter.label")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("subscriptions.renewalFilter.all")}</SelectItem>
+                  <SelectItem value="auto">{t("subscriptions.renewalFilter.auto")}</SelectItem>
+                  <SelectItem value="manual">{t("subscriptions.renewalFilter.manual")}</SelectItem>
+                  <SelectItem value="one-time">{t("subscriptions.renewalFilter.oneTime")}</SelectItem>
+                </SelectContent>
+              </Select>
+
               <div className="flex min-w-0 items-center gap-3" data-testid="mobile-sort-tag-row">
                 <div className="min-w-0 flex-1">
                   <Select value={sortOption} onValueChange={(v) => setSortOption(v as SubscriptionSortOption)}>
@@ -428,6 +514,18 @@ function SubscriptionGrid({
                   </SelectContent>
                 </Select>
 
+                <Select value={renewalFilter} onValueChange={(v) => setRenewalFilter(v as SubscriptionRenewalFilter)}>
+                  <SelectTrigger className="w-[150px] border-border bg-secondary" tooltipContent={renewalFilterLabel}>
+                    <SelectValue placeholder={t("subscriptions.renewalFilter.label")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t("subscriptions.renewalFilter.all")}</SelectItem>
+                    <SelectItem value="auto">{t("subscriptions.renewalFilter.auto")}</SelectItem>
+                    <SelectItem value="manual">{t("subscriptions.renewalFilter.manual")}</SelectItem>
+                    <SelectItem value="one-time">{t("subscriptions.renewalFilter.oneTime")}</SelectItem>
+                  </SelectContent>
+                </Select>
+
                 <Select value={sortOption} onValueChange={(v) => setSortOption(v as SubscriptionSortOption)}>
                   <SelectTrigger
                     aria-label={t("subscriptions.sort.label")}
@@ -508,6 +606,9 @@ function SubscriptionGrid({
               onEdit={handleEditSubscription}
               onDelete={handleDeleteSubscription}
               onTogglePinned={handleTogglePinnedSubscription}
+              onTogglePublicHidden={handleTogglePublicHiddenSubscription}
+              onRenew={handleRenewSubscription}
+              onViewDetails={handleViewDetails}
             />
             {subscriptionsQuery.hasNextPage && (
               <div className="mt-6 flex justify-center [overflow-anchor:none]" data-testid="subscriptions-load-more-row">
@@ -528,19 +629,36 @@ function SubscriptionGrid({
 
       <BackToTopFloatButton />
 
-        <EditSubscriptionDialog
+      <EditSubscriptionDialog
         subscription={editingSubscription}
         open={editDialogOpen}
         onOpenChange={handleEditDialogOpenChange}
         onSave={handleSaveSubscription}
         availableTags={allTags}
-        />
-        <ImportDataDialog
-          open={importDialogOpen}
-          onOpenChange={setImportDialogOpen}
+      />
+      <SubscriptionDetailDialog
+        open={detailDialogOpen}
+        onOpenChange={handleDetailDialogOpenChange}
+        subscription={selectedDetailSubscription}
+        onEditSubscription={handleEditFromDetail}
+        onRenewSubscription={handleRenewSubscription}
+        today={today}
+      />
+      <ImportDataDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        settings={settings}
+        config={config}
+      />
+      {aiRecognitionDialogOpen ? (
+        <AIRecognizeSubscriptionDialog
+          open={aiRecognitionDialogOpen}
+          onOpenChange={setAIRecognitionDialogOpen}
           settings={settings}
           config={config}
+          availableTags={allTags}
         />
+      ) : null}
     </div>
   );
 };

@@ -28,6 +28,16 @@ function unfoldIcsText(value: string): string {
   return value.replace(/\r\n[ \t]/g, "");
 }
 
+function calendarEventSection(ics: string, marker: string): string {
+  const index = ics.indexOf(marker);
+  expect(index, `expected ICS to contain ${marker}`).toBeGreaterThanOrEqual(0);
+  const start = ics.lastIndexOf("BEGIN:VEVENT", index);
+  const end = ics.indexOf("END:VEVENT", index);
+  expect(start, `expected ${marker} to be inside VEVENT`).toBeGreaterThanOrEqual(0);
+  expect(end, `expected ${marker} to be inside VEVENT`).toBeGreaterThanOrEqual(0);
+  return ics.slice(start, end + "END:VEVENT".length);
+}
+
 describe("calendar feed worker handlers", () => {
   it("creates a reusable global feed, returns the URL on status, renders filtered ICS by token, and revokes the URL", async () => {
     const env = await createCalendarFeedTestEnv();
@@ -60,11 +70,16 @@ describe("calendar feed worker handlers", () => {
     expectCalendarIcsLineEndings(ics);
     expect(unfoldedIcs).toContain("BEGIN:VCALENDAR");
     expect(unfoldedIcs).toContain("SUMMARY:Active Plan");
+    expect(unfoldedIcs).toContain("SUMMARY:Fixed Term Plan");
+    expect(unfoldedIcs).toContain("SUMMARY:Quiet Plan");
     expect(unfoldedIcs).toContain("DTSTART;VALUE=DATE:20990602");
+    expect(unfoldedIcs).toContain("DTSTART;VALUE=DATE:20990605");
+    expect(unfoldedIcs).toContain("UID:renewlet-expiry-");
     expect(unfoldedIcs).toContain("Category: Developer Tools");
     expect(unfoldedIcs).toContain("Payment method: Credit Card");
     expect(unfoldedIcs).toContain("CATEGORIES:Developer Tools");
     expect(unfoldedIcs).toContain("TRIGGER:-P5D");
+    expect(calendarEventSection(unfoldedIcs, "SUMMARY:Quiet Plan")).not.toContain("BEGIN:VALARM");
     expect(unfoldedIcs).not.toContain("developer_tools");
     expect(unfoldedIcs).not.toContain("credit_card");
     expect(unfoldedIcs).not.toContain("Paused Plan");
@@ -120,6 +135,28 @@ describe("calendar feed worker handlers", () => {
     const deleteResponse = await deleteSubscriptionCalendarFeed(authorizedRequest("https://renewlet.example/api/app/subscriptions/sub_paused/calendar-feed", { method: "DELETE" }), env, "sub_paused");
     expect(deleteResponse.status).toBe(200);
     await expect(calendarFeedIcs(new Request(first.calendarFeed.feedUrl), env)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("rejects one-time buyout subscription feeds but accepts fixed-term expiry feeds", async () => {
+    const env = await createCalendarFeedTestEnv();
+
+    await expect(createSubscriptionCalendarFeed(authorizedRequest("https://renewlet.example/api/app/subscriptions/sub_once/calendar-feed", {
+      body: "{}",
+      method: "POST",
+    }), env, "sub_once")).rejects.toMatchObject({ status: 404 });
+
+    const fixedTermResponse = await createSubscriptionCalendarFeed(authorizedRequest("https://renewlet.example/api/app/subscriptions/sub_fixed_term/calendar-feed", {
+      body: "{}",
+      method: "POST",
+    }), env, "sub_fixed_term");
+    expect(fixedTermResponse.status).toBe(200);
+    const fixedTerm = await fixedTermResponse.json() as { calendarFeed: { feedUrl: string } };
+    const ics = await (await calendarFeedIcs(new Request(fixedTerm.calendarFeed.feedUrl), env)).text();
+    const unfoldedIcs = unfoldIcsText(ics);
+
+    expect(unfoldedIcs).toContain("SUMMARY:Fixed Term Plan");
+    expect(unfoldedIcs).toContain("UID:renewlet-expiry-");
+    expect(unfoldedIcs).not.toContain("One Time Plan");
   });
 
   it("rejects subscription-scoped feed creation for another user's subscription", async () => {
@@ -242,6 +279,30 @@ describe("calendar feed worker handlers", () => {
     expect(unfoldedIcs).not.toContain("bank_transfer");
   });
 
+  it("describes custom cycle units in ICS details", async () => {
+    const env = await createCalendarFeedTestEnv({
+      locale: "zh-CN",
+      subscriptions: [
+        subscriptionRow("sub_custom_year", "Three Year Plan", "active", "custom", "2099-06-02", {
+          custom_days: 3,
+          custom_cycle_unit: "year",
+          price: 360,
+        }),
+      ],
+    });
+    const response = await createCalendarFeed(authorizedRequest("https://renewlet.example/api/app/calendar-feed", {
+      body: "{}",
+      headers: { "accept-language": "zh-CN" },
+      method: "POST",
+    }), env);
+    const created = await response.json() as { calendarFeed: { feedUrl: string } };
+
+    const ics = await (await calendarFeedIcs(new Request(created.calendarFeed.feedUrl), env)).text();
+    const unfoldedIcs = unfoldIcsText(ics);
+
+    expect(unfoldedIcs).toContain("周期：每 3 年");
+  });
+
   it("falls back to built-in labels when legacy custom config misses an entry", async () => {
     const customConfig = createCalendarFeedTestCustomConfig();
     customConfig.categories = [];
@@ -362,6 +423,13 @@ async function createCalendarFeedTestEnv(options: CalendarFeedTestOptions = {}):
       subscriptionRow("sub_cancelled", "Cancelled Plan", "cancelled", "monthly", "2099-06-03"),
       subscriptionRow("sub_expired", "Expired Plan", "expired", "monthly", "2099-06-03"),
       subscriptionRow("sub_once", "One Time Plan", "active", "one-time", "2099-06-04"),
+      subscriptionRow("sub_fixed_term", "Fixed Term Plan", "active", "one-time", "2099-06-05", {
+        one_time_term_count: 6,
+        one_time_term_unit: "month",
+      }),
+      subscriptionRow("sub_quiet", "Quiet Plan", "active", "monthly", "2099-06-06", {
+        reminder_days: -2,
+      }),
     ],
   };
   return {
@@ -387,12 +455,17 @@ function subscriptionRow(id: string, name: string, status: string, billingCycle:
     currency: "USD",
     billing_cycle: billingCycle,
     custom_days: null,
+    custom_cycle_unit: null,
+    one_time_term_count: null,
+    one_time_term_unit: null,
     category: "developer_tools",
     status,
     pinned: 0,
+    public_hidden: 0,
     payment_method: "credit_card",
     start_date: "2099-01-01",
     next_billing_date: nextBillingDate,
+    auto_renew: billingCycle === "one-time" ? 0 : 1,
     auto_calculate_next_billing_date: 1,
     trial_end_date: null,
     website: "https://example.com",

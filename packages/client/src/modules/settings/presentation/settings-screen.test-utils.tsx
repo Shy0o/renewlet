@@ -4,6 +4,7 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import { vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DEFAULT_CUSTOM_CONFIG } from "@/types/config";
+import type { ExchangeRates } from "@/lib/api/schemas/exchange-rates";
 import { DEFAULT_SETTINGS, type AppSettings, type NotificationChannel } from "@/types/subscription";
 import type { ThemeMode } from "@/types/theme";
 import { SettingsScreen } from "./settings-screen";
@@ -19,10 +20,12 @@ export const SETTINGS_SECTION_IDS = [
   "settings-appearance",
   "settings-display",
   "settings-icon-sources",
+  "settings-ai-recognition",
   "settings-budget",
   "settings-data-config",
   "settings-exchange",
   "settings-calendar-feed",
+  "settings-public-status",
   "settings-timezone",
   "settings-notifications",
 ] as const;
@@ -129,7 +132,33 @@ vi.mock("@/components/theme-selector", () => ({
 }));
 
 vi.mock("@/components/ui/searchable-select", () => ({
-  SearchableSelect: ({ value }: { value: string }) => <div data-testid="searchable-select">{value}</div>,
+  SearchableSelect: ({
+    value,
+    onValueChange,
+    options,
+    "aria-label": ariaLabel,
+  }: {
+    value: string;
+    onValueChange: (value: string) => void;
+    options: Array<{ value: string; label: string }>;
+    "aria-label"?: string;
+  }) => {
+    const selected = options.find((option) => option.value === value);
+    const next = options.find((option) => option.value !== value);
+    return (
+      <button
+        type="button"
+        role="combobox"
+        aria-label={ariaLabel}
+        data-testid="searchable-select"
+        onClick={() => {
+          if (next) onValueChange(next.value);
+        }}
+      >
+        {selected?.label ?? value}
+      </button>
+    );
+  },
 }));
 
 vi.mock("@/components/ui/time-picker", () => ({
@@ -151,8 +180,23 @@ export function createControllerState(overrides: {
     enabled?: boolean;
     feedUrl?: string | null;
   };
+  publicStatusPage?: {
+    enabled?: boolean;
+    pageUrl?: string | null;
+    showPrices?: boolean;
+    visibleCount?: number;
+    hiddenCount?: number;
+  };
+  rates?: ExchangeRates;
 } = {}) {
   const fn = vi.fn();
+  const currencySymbols: Record<string, string> = {
+    CNY: "¥",
+    EUR: "€",
+    GBP: "£",
+    USD: "$",
+  };
+
   return {
     settings: {
       ...DEFAULT_SETTINGS,
@@ -173,12 +217,12 @@ export function createControllerState(overrides: {
     customConfig: DEFAULT_CUSTOM_CONFIG,
     subscriptionsQuery: { data: [] },
     categoryUsageCount: new Map(),
-    rates: {},
+    rates: overrides.rates ?? {},
     activeRateProvider: "floatrates",
     ratesLoading: false,
     lastUpdated: null,
     ratesError: null,
-    getCurrencySymbol: () => "¥",
+    getCurrencySymbol: (currency: string) => currencySymbols[currency] ?? currency,
     updateCategories: fn,
     updateStatuses: fn,
     updatePaymentMethods: fn,
@@ -220,6 +264,23 @@ export function createControllerState(overrides: {
       openSystem: fn,
       regenerate: fn,
       revoke: fn,
+    },
+    publicStatusPage: {
+      enabled: overrides.publicStatusPage?.enabled ?? false,
+      pageUrl: overrides.publicStatusPage?.pageUrl ?? null,
+      showPrices: overrides.publicStatusPage?.showPrices ?? false,
+      visibleCount: overrides.publicStatusPage?.visibleCount ?? 0,
+      hiddenCount: overrides.publicStatusPage?.hiddenCount ?? 0,
+      isLoading: false,
+      isCreating: false,
+      isDeleting: false,
+      isUpdating: false,
+      createOrRotate: fn,
+      copyUrl: fn,
+      openPage: fn,
+      regenerate: fn,
+      revoke: fn,
+      updateShowPrices: fn,
     },
     password: {
       passwordDialogOpen: false,

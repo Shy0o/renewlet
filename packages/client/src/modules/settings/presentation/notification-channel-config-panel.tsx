@@ -31,6 +31,7 @@ const NOTIFICATION_TEST_LABEL_KEYS: Record<NotificationChannel, MessageKey> = {
   wechat: "settings.testChannel.wechat",
   email: "settings.testChannel.email",
   bark: "settings.testChannel.bark",
+  serverchan: "settings.testChannel.serverchan",
 };
 
 function NotificationTestButton({
@@ -77,6 +78,8 @@ function getNotificationChannelHelp(channel: NotificationChannel, t: Translate):
       return { href: 'https://github.com/Finb/Bark', label: t("settings.help.bark") };
     case 'notifyx':
       return { href: 'https://www.notifyx.cn/help', label: t("settings.help.notifyx") };
+    case 'serverchan':
+      return { href: 'https://sct.ftqq.com/', label: t("settings.help.serverchan") };
     case 'email':
       return null;
   }
@@ -127,7 +130,7 @@ export function NotificationChannelConfigPanel({
 
       {channel === 'telegram' ? (
         <>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4">
             <div className="grid gap-2">
               <Label htmlFor="telegramBot">Bot Token</Label>
               <Input
@@ -492,6 +495,33 @@ export function NotificationChannelConfigPanel({
           <div className="mt-4 flex justify-end">
             <NotificationTestButton
               channel="bark"
+              label={testChannelLabel}
+              testingChannel={testingChannel}
+              onTest={onTest}
+            />
+          </div>
+        </>
+      ) : null}
+
+      {channel === 'serverchan' ? (
+        <>
+          <div className="grid gap-2">
+            <Label htmlFor="serverchanSendKey">{t("settings.serverchanSendKey")}</Label>
+            <Input
+              id="serverchanSendKey"
+              name="serverchanSendKey"
+              autoCapitalize="none"
+              spellCheck={false}
+              placeholder={t("settings.serverchanSendKeyPlaceholder")}
+              value={settings.serverchanSendKey}
+              onChange={(e) => updateSetting('serverchanSendKey', e.target.value)}
+              className="border-border bg-secondary"
+            />
+            <p className="text-xs text-muted-foreground">{t("settings.serverchanHelp")}</p>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <NotificationTestButton
+              channel="serverchan"
               label={testChannelLabel}
               testingChannel={testingChannel}
               onTest={onTest}

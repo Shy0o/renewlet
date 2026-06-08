@@ -32,5 +32,10 @@ export function isPublicRoutePath(pathname: string): boolean {
     return true;
   }
 
+  // 公开展示页靠高熵 token 隔离，未登录访问不能被 auth 守卫重定向。
+  if (pathname.startsWith("/status/")) {
+    return true;
+  }
+
   return false;
 }

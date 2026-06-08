@@ -10,16 +10,18 @@ import {
   notificationsTestBodySchema,
   type NotificationHistoryStatusFilter,
 } from "@renewlet/shared/schemas/notifications";
-import { effectiveReminderDays } from "@renewlet/shared/runtime";
+import { effectiveReminderDays, isDisabledReminderDays } from "@renewlet/shared/runtime";
 import { appSettingsSchema, settingsUpdateBodySchema, type ApiAppSettings } from "@renewlet/shared/schemas/settings";
 import type { ApiSubscription } from "@renewlet/shared/schemas/subscriptions";
 import { cleanBuiltInIconSourceSettingsPatch, mergeBuiltInIconSourceSettings } from "@renewlet/shared/built-in-icons";
 import { getSettings, listSubscriptions, newId, nowIso, NOTIFICATION_JOB_COLUMNS, parseJobResult, toApiSubscription } from "./db";
+import { renewAutoSubscriptionsForUserInTimezone } from "./subscription-renewal";
 import { HttpError, json, ok, readOptionalJson, readJson, requestLocale, type AppLocale } from "./http";
 import { DEFAULT_SERVER_I18N_LOCALE, serverFormat, serverText } from "./server-i18n";
 import { requireAuth } from "./auth";
 import { notificationSmtpConfig, sendSmtpEmail } from "./smtp";
 import { assertSafeOutboundUrl } from "./outbound-url-policy";
+import { sendServerChan } from "./notification-serverchan";
 import type { Env, NotificationJobRow } from "./types";
 
 const CRON_USER_PAGE_SIZE = 50;
@@ -59,6 +61,7 @@ export async function notificationHistory(request: Request, env: Env): Promise<R
   const limit = clamp(parseIntOr(url.searchParams.get("limit"), 20), 1, 50);
   const offset = Math.max(0, parseIntOr(url.searchParams.get("offset"), 0));
   const settings = await getSettings(env, auth.user.id);
+  await renewAutoSubscriptionsForUserInTimezone(env, auth.user.id, settings.timezone, new Date());
   const subscriptions = (await listSubscriptions(env, auth.user.id)).map(toApiSubscription);
   const overview = buildOverview(new Date(), settings, subscriptions);
   const params: unknown[] = [auth.user.id];
@@ -89,13 +92,57 @@ export async function notificationHistory(request: Request, env: Env): Promise<R
 /** Cloudflare Cron 入口按用户分页并发执行，避免一次 Worker tick 放大 D1 与外部通知 provider 压力。 */
 export async function runScheduledNotifications(env: Env): Promise<void> {
   for (let offset = 0; ; offset += CRON_USER_PAGE_SIZE) {
-    const users = await env.DB.prepare("SELECT id FROM users WHERE banned = 0 ORDER BY id LIMIT ? OFFSET ?")
-      .bind(CRON_USER_PAGE_SIZE, offset)
-      .all<{ id: string }>();
+    let users: D1Result<{ id: string }>;
+    try {
+      users = await env.DB.prepare("SELECT id FROM users WHERE banned = 0 ORDER BY id LIMIT ? OFFSET ?")
+        .bind(CRON_USER_PAGE_SIZE, offset)
+        .all<{ id: string }>();
+    } catch (error) {
+      logScheduledNotificationError({ phase: "list_users", offset, error });
+      throw scheduledRuntimeError(error);
+    }
     // Cron 运行在 Worker 平台限额内；分页加固定并发避免一次 tick 把 D1/通知 provider 打满。
-    await runBounded(users.results, CRON_USER_CONCURRENCY, (user) => runScheduledForUser(env, user.id).catch(() => undefined));
+    await runBounded(users.results, CRON_USER_CONCURRENCY, async (user) => {
+      try {
+        await runScheduledForUser(env, user.id);
+      } catch (error) {
+        logScheduledNotificationError({ phase: "run_user", userId: user.id, error });
+      }
+    });
     if (users.results.length < CRON_USER_PAGE_SIZE) break;
   }
+}
+
+function logScheduledNotificationError(context: { phase: "list_users" | "run_user"; offset?: number; userId?: string; error: unknown }): void {
+  console.error("scheduled_notifications_failed", {
+    event: "scheduled_notifications_failed",
+    phase: context.phase,
+    ...(context.offset === undefined ? {} : { offset: context.offset }),
+    ...(context.userId ? { userId: context.userId } : {}),
+    error: safeScheduledError(context.error),
+  });
+}
+
+function scheduledRuntimeError(error: unknown): Error {
+  const safe = safeScheduledError(error);
+  // 平台会记录 rejected scheduled handler；抛出前复用脱敏口径，避免 provider token 进入 Cron 事件日志。
+  return new Error(safe.message);
+}
+
+function safeScheduledError(error: unknown): { name: string; message: string } {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    name: error instanceof Error ? error.name || "Error" : typeof error,
+    message: redactScheduledError(message).slice(0, 300),
+  };
+}
+
+function redactScheduledError(message: string): string {
+  // scheduled 日志覆盖 D1/通知异常，必须先粗粒度遮掉常见渠道密钥和 bearer，避免本地排查把 secret 打进终端。
+  return message
+    .replace(/sctp\d+t[A-Za-z0-9_-]+/g, "[redacted]")
+    .replace(/SCT[A-Za-z0-9_-]+/g, "[redacted]")
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [redacted]");
 }
 
 /** 简单有界并发执行器；Worker 单次 Cron 不能为每个用户同时打开外部通知请求。 */
@@ -143,8 +190,10 @@ async function runForUser(
   options: { occurrence?: ScheduleOccurrence; appUrl?: string } = {},
 ): Promise<{ sent: boolean; summary: SendSummary }> {
   const settings = await effectiveSettings(env, userId, settingsPatch);
-  const subscriptions = (await listSubscriptions(env, userId)).map(toApiSubscription);
   const now = new Date();
+  // 通知正文生成前先幂等推进自动续订，避免已自动续订的旧日期继续进入 expired/renewal 内容。
+  await renewAutoSubscriptionsForUserInTimezone(env, userId, settings.timezone, now);
+  const subscriptions = (await listSubscriptions(env, userId)).map(toApiSubscription);
   const schedule = options.occurrence ?? scheduleOccurrence(dateOnlyInZone(now, settings.timezone), settings.notificationTimeLocal, settings.timezone);
   const message = buildDueMessage(now, settings, subscriptions, true);
   if (!message.hasPayload && !force) {
@@ -246,6 +295,9 @@ async function sendChannel(env: Env, channel: Channel, settings: ApiAppSettings,
     case "email":
       await sendEmail(env, settings, message, locale, appUrl);
       return;
+    case "serverchan":
+      await sendServerChan(settings, message, locale);
+      return;
   }
 }
 
@@ -312,6 +364,7 @@ function buildDueMessage(now: Date, settings: ApiAppSettings, subscriptions: Api
 function groupedNotificationContent(items: NotificationEmailItem[], locale: AppLocale): string {
   const groups = [
     ["renewal", "notification.content.renewalBlock"],
+    ["expiry", "notification.content.expiryBlock"],
     ["trial", "notification.content.trialBlock"],
     ["expired", "notification.content.expiredBlock"],
   ] as const;
@@ -330,6 +383,8 @@ function notificationItemLine(item: NotificationEmailItem, locale: AppLocale): s
   let extra = serverFormat(locale, "notification.content.reminderDays", { days: item.reminderDays });
   if (item.type === "trial") {
     extra = serverFormat(locale, "notification.content.trialReminderDays", { days: item.reminderDays });
+  } else if (item.type === "expiry") {
+    extra = serverFormat(locale, "notification.content.expiryReminderDays", { days: item.reminderDays });
   } else if (item.type === "expired") {
     extra = serverText(locale, "notification.content.expiredStatus");
   }
@@ -356,15 +411,36 @@ function formatAmount(amount: number): string {
   return fixed.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
 }
 
+export function collectNotificationItemsForLocalDate(
+  localDate: string,
+  settings: ApiAppSettings,
+  subscriptions: ApiSubscription[],
+  options: { includeExpired?: boolean } = {},
+): NotificationEmailItem[] {
+  return collectItems(localDate, settings, subscriptions, { includeExpired: options.includeExpired ?? true });
+}
+
 function collectItems(localDate: string, settings: ApiAppSettings, subscriptions: ApiSubscription[], options: { includeExpired: boolean }): NotificationEmailItem[] {
   const items: NotificationEmailItem[] = [];
   for (const sub of subscriptions) {
-    // one-time 是买断记录；Worker 通知不能把购买日当成续费/过期日生成提醒。
-    if (sub.billingCycle === "one-time") continue;
+    if (isDisabledReminderDays(sub.reminderDays)) {
+      // -2 是单订阅静默哨兵；Worker Cron 和手动运行都在入口跳过，历史 payload 也不保留该订阅。
+      continue;
+    }
     const reminderDays = effectiveReminderDays(sub.reminderDays, settings.notificationReminderDays);
+    if (reminderDays === undefined) continue;
     const daysUntilNext = daysBetween(localDate, sub.nextBillingDate);
-    if (daysUntilNext < 0 && settings.showExpired && options.includeExpired) items.push(item("expired", sub, sub.nextBillingDate, daysUntilNext, reminderDays));
-    if (daysUntilNext === reminderDays) items.push(item("renewal", sub, sub.nextBillingDate, daysUntilNext, reminderDays));
+    if (sub.billingCycle === "one-time" && !sub.oneTimeTermCount) {
+      // one-time 买断记录没有权益到期日；Worker 不能把购买日当成续费或过期边界。
+      continue;
+    }
+    if (sub.billingCycle === "one-time") {
+      if (daysUntilNext === reminderDays) items.push(item("expiry", sub, sub.nextBillingDate, daysUntilNext, reminderDays));
+      if (daysUntilNext < 0 && settings.showExpired && options.includeExpired) items.push(item("expired", sub, sub.nextBillingDate, daysUntilNext, reminderDays));
+    } else {
+      if (daysUntilNext < 0 && settings.showExpired && options.includeExpired) items.push(item("expired", sub, sub.nextBillingDate, daysUntilNext, reminderDays));
+      if (daysUntilNext === reminderDays) items.push(item("renewal", sub, sub.nextBillingDate, daysUntilNext, reminderDays));
+    }
     if (sub.status === "trial" && sub.trialEndDate) {
       const daysUntilTrial = daysBetween(localDate, sub.trialEndDate);
       if (daysUntilTrial === reminderDays) items.push(item("trial", sub, sub.trialEndDate, daysUntilTrial, reminderDays));
@@ -373,7 +449,7 @@ function collectItems(localDate: string, settings: ApiAppSettings, subscriptions
   return items;
 }
 
-function item(type: "renewal" | "trial" | "expired", sub: ApiSubscription, targetDate: string, daysUntil: number, reminderDays: number): NotificationEmailItem {
+function item(type: "renewal" | "trial" | "expired" | "expiry", sub: ApiSubscription, targetDate: string, daysUntil: number, reminderDays: number): NotificationEmailItem {
   return {
     type,
     subscriptionId: sub.id,

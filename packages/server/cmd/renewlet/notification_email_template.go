@@ -62,9 +62,11 @@ type emailCatalog struct {
 	Footer                string `json:"footer"`
 	Truncated             string `json:"truncated"`
 	UpcomingRenewals      string `json:"upcomingRenewals"`
+	UpcomingExpiries      string `json:"upcomingExpiries"`
 	TrialEnding           string `json:"trialEnding"`
 	Expired               string `json:"expired"`
 	BillingDate           string `json:"billingDate"`
+	ExpiryDate            string `json:"expiryDate"`
 	TrialEnds             string `json:"trialEnds"`
 	ExpiredSince          string `json:"expiredSince"`
 	UpdateNextBillingDate string `json:"updateNextBillingDate"`
@@ -216,9 +218,11 @@ func loadEmailCatalog(locale appLocale) emailCatalog {
 		Footer:                serverText(locale, "email.footer"),
 		Truncated:             serverText(locale, "email.truncated"),
 		UpcomingRenewals:      serverText(locale, "email.upcomingRenewals"),
+		UpcomingExpiries:      serverText(locale, "email.upcomingExpiries"),
 		TrialEnding:           serverText(locale, "email.trialEnding"),
 		Expired:               serverText(locale, "email.expired"),
 		BillingDate:           serverText(locale, "email.billingDate"),
+		ExpiryDate:            serverText(locale, "email.expiryDate"),
 		TrialEnds:             serverText(locale, "email.trialEnds"),
 		ExpiredSince:          serverText(locale, "email.expiredSince"),
 		UpdateNextBillingDate: serverText(locale, "email.updateNextBillingDate"),
@@ -234,6 +238,7 @@ func loadEmailCatalog(locale appLocale) emailCatalog {
 func buildEmailTemplateGroups(items []notificationContentItem, locale appLocale, copy emailCatalog, theme emailTheme) []emailTemplateGroup {
 	grouped := map[string][]notificationContentItem{
 		"renewal": {},
+		"expiry":  {},
 		"trial":   {},
 		"expired": {},
 	}
@@ -247,7 +252,7 @@ func buildEmailTemplateGroups(items []notificationContentItem, locale appLocale,
 	}
 
 	// 邮件分组顺序固定，避免 map iteration 导致同一批提醒在不同运行中顺序抖动。
-	order := []string{"renewal", "trial", "expired"}
+	order := []string{"renewal", "expiry", "trial", "expired"}
 	groups := make([]emailTemplateGroup, 0, len(order))
 	for _, itemType := range order {
 		rawItems := grouped[itemType]
@@ -374,7 +379,7 @@ func validEmailCustomColor(color themeCustomColor) bool {
 
 func emailItemAccent(itemType string, theme emailTheme) emailAccent {
 	switch itemType {
-	case "trial":
+	case "trial", "expiry":
 		return emailAccent{Text: theme.Warning}
 	case "expired":
 		return emailAccent{Text: theme.Danger}
@@ -410,6 +415,8 @@ func firstNonEmptyLine(input string) string {
 
 func emailGroupLabel(itemType string, copy emailCatalog) string {
 	switch itemType {
+	case "expiry":
+		return copy.UpcomingExpiries
 	case "trial":
 		return copy.TrialEnding
 	case "expired":
@@ -421,6 +428,8 @@ func emailGroupLabel(itemType string, copy emailCatalog) string {
 
 func emailItemDateLabel(itemType string, copy emailCatalog) string {
 	switch itemType {
+	case "expiry":
+		return copy.ExpiryDate
 	case "trial":
 		return copy.TrialEnds
 	case "expired":

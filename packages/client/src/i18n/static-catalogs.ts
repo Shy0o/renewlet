@@ -10,6 +10,7 @@ import { messages as zhCNErrorMessages } from "@/i18n/catalogs/zh-CN/error.po";
 import { messages as zhCNLabelsMessages } from "@/i18n/catalogs/zh-CN/labels.po";
 import { messages as zhCNLegalMessages } from "@/i18n/catalogs/zh-CN/legal.po";
 import { messages as zhCNNotificationMessages } from "@/i18n/catalogs/zh-CN/notification.po";
+import { messages as zhCNPublicStatusMessages } from "@/i18n/catalogs/zh-CN/public-status.po";
 import { messages as zhCNSettingsMessages } from "@/i18n/catalogs/zh-CN/settings.po";
 import { messages as zhCNSubscriptionMessages } from "@/i18n/catalogs/zh-CN/subscription.po";
 import { messages as enUSAdminMessages } from "@/i18n/catalogs/en-US/admin.po";
@@ -20,6 +21,7 @@ import { messages as enUSErrorMessages } from "@/i18n/catalogs/en-US/error.po";
 import { messages as enUSLabelsMessages } from "@/i18n/catalogs/en-US/labels.po";
 import { messages as enUSLegalMessages } from "@/i18n/catalogs/en-US/legal.po";
 import { messages as enUSNotificationMessages } from "@/i18n/catalogs/en-US/notification.po";
+import { messages as enUSPublicStatusMessages } from "@/i18n/catalogs/en-US/public-status.po";
 import { messages as enUSSettingsMessages } from "@/i18n/catalogs/en-US/settings.po";
 import { messages as enUSSubscriptionMessages } from "@/i18n/catalogs/en-US/subscription.po";
 
@@ -37,6 +39,7 @@ const zhCNMessages = {
   ...zhCNSubscriptionMessages,
   ...zhCNAuthMessages,
   ...zhCNSettingsMessages,
+  ...zhCNPublicStatusMessages,
   ...zhCNNotificationMessages,
   ...zhCNLabelsMessages,
   ...zhCNAdminMessages,
@@ -50,6 +53,7 @@ const enUSMessages = {
   ...enUSSubscriptionMessages,
   ...enUSAuthMessages,
   ...enUSSettingsMessages,
+  ...enUSPublicStatusMessages,
   ...enUSNotificationMessages,
   ...enUSLabelsMessages,
   ...enUSAdminMessages,

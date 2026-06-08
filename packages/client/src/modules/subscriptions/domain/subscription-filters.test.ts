@@ -11,11 +11,12 @@ import {
   type SubscriptionSortOption,
 } from "./subscription-filters";
 
-type FixedBillingCycle = Exclude<Subscription["billingCycle"], "custom">;
-type SubscriptionBaseFixture = Omit<Subscription, "billingCycle" | "customDays">;
-type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "customDays">> & (
-  | { billingCycle?: FixedBillingCycle; customDays?: undefined }
-  | { billingCycle: "custom"; customDays?: number }
+type RecurringBillingCycle = Exclude<Subscription["billingCycle"], "custom" | "one-time">;
+type SubscriptionBaseFixture = Omit<Subscription, "billingCycle" | "customDays" | "customCycleUnit" | "oneTimeTermCount" | "oneTimeTermUnit">;
+type SubscriptionOverrides = Partial<SubscriptionBaseFixture> & (
+  | { billingCycle?: RecurringBillingCycle; customDays?: undefined; customCycleUnit?: undefined; oneTimeTermCount?: undefined; oneTimeTermUnit?: undefined }
+  | { billingCycle: "one-time"; customDays?: undefined; customCycleUnit?: undefined; oneTimeTermCount?: number; oneTimeTermUnit?: Subscription["oneTimeTermUnit"] }
+  | { billingCycle: "custom"; customDays?: number; customCycleUnit?: Subscription["customCycleUnit"]; oneTimeTermCount?: undefined; oneTimeTermUnit?: undefined }
 );
 
 const convert = (amount: number, from: string, to: string) => {
@@ -37,6 +38,7 @@ function subscription(overrides: SubscriptionOverrides = {}): Subscription {
     paymentMethod: undefined,
     startDate: assertDateOnly("2026-01-01"),
     nextBillingDate: assertDateOnly("2026-02-01"),
+    autoRenew: true,
     autoCalculateNextBillingDate: true,
     trialEndDate: undefined,
     website: undefined,
@@ -47,6 +49,7 @@ function subscription(overrides: SubscriptionOverrides = {}): Subscription {
     repeatReminderInterval: "1h",
     repeatReminderWindow: "72h",
     pinned: false,
+    publicHidden: false,
   };
 
   if (overrides.billingCycle === "custom") {
@@ -55,6 +58,21 @@ function subscription(overrides: SubscriptionOverrides = {}): Subscription {
       ...overrides,
       billingCycle: "custom",
       customDays: overrides.customDays ?? 30,
+      customCycleUnit: overrides.customCycleUnit ?? "day",
+      oneTimeTermCount: undefined,
+      oneTimeTermUnit: undefined,
+    };
+  }
+
+  if (overrides.billingCycle === "one-time") {
+    return {
+      ...base,
+      ...overrides,
+      billingCycle: "one-time",
+      customDays: undefined,
+      customCycleUnit: undefined,
+      oneTimeTermCount: overrides.oneTimeTermCount,
+      oneTimeTermUnit: overrides.oneTimeTermUnit,
     };
   }
 
@@ -63,6 +81,9 @@ function subscription(overrides: SubscriptionOverrides = {}): Subscription {
     ...overrides,
     billingCycle: overrides.billingCycle ?? "monthly",
     customDays: undefined,
+    customCycleUnit: undefined,
+    oneTimeTermCount: undefined,
+    oneTimeTermUnit: undefined,
   };
 }
 
@@ -173,6 +194,7 @@ describe("subscription filter state", () => {
     searchQuery: "",
     categoryFilter: "all",
     statusFilter: "all",
+    renewalFilter: "all",
     selectedTags: [],
   };
 
@@ -205,5 +227,18 @@ describe("subscription filter state", () => {
 
     expect(expired.map((item) => item.id)).toEqual(["legacy-overdue", "stored-expired"]);
     expect(active.map((item) => item.id)).toEqual(["active-future"]);
+  });
+
+  it("filters by renewal type without relying on color-only status", () => {
+    const subscriptions = [
+      subscription({ id: "auto", billingCycle: "monthly", autoRenew: true }),
+      subscription({ id: "manual", billingCycle: "monthly", autoRenew: false }),
+      subscription({ id: "one-time", billingCycle: "one-time", autoRenew: false }),
+    ];
+    const context = { today: assertDateOnly("2026-05-18") };
+
+    expect(filterSubscriptions(subscriptions, { ...emptyFilters, renewalFilter: "auto" }, context).map((item) => item.id)).toEqual(["auto"]);
+    expect(filterSubscriptions(subscriptions, { ...emptyFilters, renewalFilter: "manual" }, context).map((item) => item.id)).toEqual(["manual"]);
+    expect(filterSubscriptions(subscriptions, { ...emptyFilters, renewalFilter: "one-time" }, context).map((item) => item.id)).toEqual(["one-time"]);
   });
 });

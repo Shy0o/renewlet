@@ -6,6 +6,7 @@ type RuntimeSectionProps = {
 
 function RuntimeCardView({ card, locale }: { card: RuntimeCard; locale: Locale }) {
   const Icon = card.icon
+  const isChinese = locale === 'zh'
 
   return (
     <article
@@ -22,13 +23,15 @@ function RuntimeCardView({ card, locale }: { card: RuntimeCard; locale: Locale }
             <Icon aria-hidden="true" className="h-7 w-7" strokeWidth={1.4} />
           </div>
           <h3 className="text-2xl font-semibold text-zinc-100">{text(card.title, locale)}</h3>
-          <p className="mt-4 max-w-xl text-sm leading-6 text-zinc-400">{text(card.body, locale)}</p>
+          <p className={`mt-4 text-sm text-zinc-400 ${isChinese ? 'max-w-xl leading-6' : 'max-w-[34rem] leading-[1.7]'}`}>
+            {text(card.body, locale)}
+          </p>
         </div>
 
         <ul className="relative grid gap-3">
           {card.details.map((detail) => (
             <li
-              className="rounded-xl border border-white/10 bg-zinc-950/40 px-4 py-3 text-sm leading-6 text-zinc-300"
+              className={`rounded-xl border border-white/10 bg-zinc-950/40 px-4 py-3 text-sm text-zinc-300 ${isChinese ? 'leading-6' : 'leading-[1.65]'}`}
               key={text(detail, locale)}
             >
               {text(detail, locale)}
@@ -45,7 +48,7 @@ export function RuntimeSection({ locale }: RuntimeSectionProps) {
 
   return (
     <section className="mx-auto max-w-7xl p-6 py-16 md:py-24 lg:px-8" data-section="genius">
-      <div className="grid max-w-4xl items-start justify-between gap-5">
+      <div className={`grid items-start justify-between gap-5 ${isChinese ? 'max-w-4xl' : 'max-w-[40rem]'}`}>
         <div
           className={`text-[2rem]/[1.07] font-bold tracking-tight [text-wrap:balance] md:text-5xl/[1.07] ${isChinese ? 'lg:whitespace-nowrap' : ''}`}
         >
@@ -53,7 +56,7 @@ export function RuntimeSection({ locale }: RuntimeSectionProps) {
             {text(copy.runtimeHeading.title, locale)}
           </span>
         </div>
-        <div className="text-lg text-zinc-400/80">
+        <div className={`text-zinc-400/80 ${isChinese ? 'text-lg' : 'max-w-[38rem] text-base leading-7 md:text-lg md:leading-8'}`}>
           {text(copy.runtimeHeading.body, locale)}{' '}
           <span className="text-zinc-200">{text(copy.runtimeHeading.highlight, locale)}</span>
         </div>

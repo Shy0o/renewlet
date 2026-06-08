@@ -22,7 +22,6 @@ import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { SubscriptionFormFields, type SubscriptionFormErrors } from "@/components/subscription-form-fields";
 import type { UploadStatus as LogoUploadStatus } from "@/components/logo-picker";
-import { calculateNextBillingDate } from "@/lib/subscription-billing";
 import {
   isOptionalHttpUrl,
   getTagsValidationError,
@@ -37,9 +36,10 @@ import {
 } from "@/lib/subscription-form";
 import { useCustomConfig } from "@/contexts/CustomConfigContext";
 import { useDeferredDialogCleanup } from "@/hooks/use-deferred-dialog-cleanup";
+import { useSubscriptionFormAutoDates } from "@/hooks/use-subscription-form-auto-dates";
 import { useSettings } from "@/hooks/use-settings";
 import type { Subscription, SubscriptionDraft } from "@/types/subscription";
-import { DEFAULT_NOTIFICATION_REMINDER_DAYS, INHERIT_REMINDER_DAYS, REMINDER_DAYS_OPTIONS } from "@/types/subscription";
+import { DEFAULT_NOTIFICATION_REMINDER_DAYS, DISABLED_REMINDER_DAYS, INHERIT_REMINDER_DAYS, REMINDER_DAYS_OPTIONS } from "@/types/subscription";
 import { createSubscriptionFormState, type SubscriptionFormState } from "@/types/subscription-form";
 import { useI18n } from "@/i18n/I18nProvider";
 import { todayDateOnlyInTimeZone } from "@/lib/time/date-only";
@@ -173,6 +173,7 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
     if (!editSubscription) return;
 
     const subscription = editSubscription;
+    const isDisabledReminder = subscription.reminderDays === DISABLED_REMINDER_DAYS;
     const isInheritReminder = subscription.reminderDays === INHERIT_REMINDER_DAYS;
     const isPresetReminder = REMINDER_DAYS_OPTIONS.some((opt) => opt.value === subscription.reminderDays);
 
@@ -183,16 +184,22 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
       currency: subscription.currency,
       billingCycle: subscription.billingCycle,
       customDays: subscription.customDays?.toString() || "",
+      customCycleUnit: subscription.customCycleUnit ?? "day",
+      oneTimeMode: subscription.billingCycle === "one-time" && subscription.oneTimeTermCount && subscription.oneTimeTermUnit ? "term" : "buyout",
+      oneTimeTermCount: subscription.billingCycle === "one-time" && subscription.oneTimeTermCount ? subscription.oneTimeTermCount.toString() : "1",
+      oneTimeTermUnit: subscription.billingCycle === "one-time" ? subscription.oneTimeTermUnit ?? "month" : "month",
       category: subscription.category,
       status: subscription.status,
+      publicHidden: subscription.publicHidden,
       paymentMethod: subscription.paymentMethod || "",
       startDate: subscription.startDate,
       nextBillingDate: subscription.nextBillingDate,
+      autoRenew: subscription.billingCycle === "one-time" ? false : subscription.autoRenew,
       autoCalculate: subscription.autoCalculateNextBillingDate,
-      reminderType: isInheritReminder ? "inherit" : isPresetReminder ? "preset" : "custom",
-      reminderDays: isInheritReminder ? String(INHERIT_REMINDER_DAYS) : isPresetReminder ? subscription.reminderDays.toString() : "3",
-      customReminderDays: !isInheritReminder && !isPresetReminder ? subscription.reminderDays.toString() : "",
-      repeatReminderEnabled: subscription.repeatReminderEnabled,
+      reminderType: isDisabledReminder ? "disabled" : isInheritReminder ? "inherit" : isPresetReminder ? "preset" : "custom",
+      reminderDays: isDisabledReminder ? String(DISABLED_REMINDER_DAYS) : isInheritReminder ? String(INHERIT_REMINDER_DAYS) : isPresetReminder ? subscription.reminderDays.toString() : "3",
+      customReminderDays: !isDisabledReminder && !isInheritReminder && !isPresetReminder ? subscription.reminderDays.toString() : "",
+      repeatReminderEnabled: isDisabledReminder ? false : subscription.repeatReminderEnabled,
       repeatReminderInterval: subscription.repeatReminderInterval,
       repeatReminderWindow: subscription.repeatReminderWindow,
       website: subscription.website ?? "",
@@ -203,22 +210,7 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
     setFormErrors({});
   }, [editSubscription, props.mode, props.open]);
 
-  // 自动推算 nextBillingDate（仅当 autoCalculate=true 且已选择 startDate）。
-  // 注意： 这里依赖 DateOnly 字符串算法，不应引入 JS Date 时区换算，否则跨时区用户会看到扣费日漂移。
-  useEffect(() => {
-    if (formData.billingCycle === "one-time") {
-      if (formData.autoCalculate) {
-        // one-time 是买断记录，不存在“下一次续费”；这里只修正表单中间态，后端/Worker 保存时还会兜底清空。
-        setFormData((prev) => ({ ...prev, autoCalculate: false }));
-      }
-      return;
-    }
-    if (formData.autoCalculate && formData.startDate) {
-      const customDays = formData.billingCycle === "custom" ? parsePositiveIntegerInput(formData.customDays) ?? 30 : undefined;
-      const nextDate = calculateNextBillingDate(formData.startDate, formData.billingCycle, customDays, billingReferenceDate);
-      setFormData((prev) => ({ ...prev, nextBillingDate: nextDate }));
-    }
-  }, [billingReferenceDate, formData.startDate, formData.billingCycle, formData.customDays, formData.autoCalculate]);
+  useSubscriptionFormAutoDates(formData, setFormData, billingReferenceDate);
 
   /** 表单提交：create → 回传 draft；edit → merge id 后回传完整 Subscription。 */
   const handleFieldChange = useCallback(
@@ -248,19 +240,26 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
     if (parseNonNegativeFiniteNumberInput(nextFormData.price) === null) {
       errors.price = t("subscription.validation.amountInvalid");
     }
-    if (!nextFormData.startDate || !nextFormData.nextBillingDate) {
+    if (!nextFormData.startDate || (nextFormData.billingCycle !== "one-time" && !nextFormData.nextBillingDate)) {
       errors.dates = t("subscription.validation.datesRequired");
-    } else if (isRenewalDateBeforeStartDate(nextFormData)) {
+    } else if (nextFormData.billingCycle !== "one-time" && isRenewalDateBeforeStartDate(nextFormData)) {
       errors.dates = t("subscription.validation.dateOrderInvalid");
     }
     if (nextFormData.billingCycle === "custom" && parsePositiveIntegerInput(nextFormData.customDays) === null) {
       errors.customDays = t("subscription.validation.customCycleInvalid");
     }
-    const reminderValue = nextFormData.reminderType === "inherit"
-      ? INHERIT_REMINDER_DAYS
-      : nextFormData.reminderType === "custom"
-        ? parseNonNegativeIntegerInput(nextFormData.customReminderDays)
-        : parseReminderDaysInput(nextFormData.reminderDays);
+    if (nextFormData.billingCycle === "one-time" && nextFormData.oneTimeMode === "term" && parsePositiveIntegerInput(nextFormData.oneTimeTermCount) === null) {
+      errors.oneTimeTerm = t("subscription.validation.oneTimeTermInvalid");
+    }
+    const reminderValue = nextFormData.billingCycle === "one-time" && nextFormData.oneTimeMode === "buyout"
+      ? DISABLED_REMINDER_DAYS
+      : nextFormData.reminderType === "disabled"
+        ? DISABLED_REMINDER_DAYS
+        : nextFormData.reminderType === "inherit"
+          ? INHERIT_REMINDER_DAYS
+          : nextFormData.reminderType === "custom"
+            ? parseNonNegativeIntegerInput(nextFormData.customReminderDays)
+            : parseReminderDaysInput(nextFormData.reminderDays);
     if (reminderValue === null) {
       errors.reminderDays = t("subscription.validation.reminderInvalid");
     }
@@ -325,7 +324,44 @@ export function SubscriptionDialog(props: SubscriptionDialogProps) {
 
     const base = props.subscription;
     if (!base) return;
-    props.onSubmit({ ...base, ...draft, pinned: base.pinned });
+    // 编辑时可能跨周期类型切换；按目标 billingCycle 重建互斥字段，避免旧 one-time/custom 字段被 spread 残留。
+    if (draft.billingCycle === "custom") {
+      props.onSubmit({
+        ...base,
+        ...draft,
+        billingCycle: "custom",
+        customDays: draft.customDays,
+        customCycleUnit: draft.customCycleUnit,
+        oneTimeTermCount: undefined,
+        oneTimeTermUnit: undefined,
+        pinned: base.pinned,
+        publicHidden: draft.publicHidden,
+      });
+    } else if (draft.billingCycle === "one-time") {
+      props.onSubmit({
+        ...base,
+        ...draft,
+        billingCycle: "one-time",
+        customDays: undefined,
+        customCycleUnit: undefined,
+        oneTimeTermCount: draft.oneTimeTermCount,
+        oneTimeTermUnit: draft.oneTimeTermUnit,
+        pinned: base.pinned,
+        publicHidden: draft.publicHidden,
+      });
+    } else {
+      props.onSubmit({
+        ...base,
+        ...draft,
+        billingCycle: draft.billingCycle,
+        customDays: undefined,
+        customCycleUnit: undefined,
+        oneTimeTermCount: undefined,
+        oneTimeTermUnit: undefined,
+        pinned: base.pinned,
+        publicHidden: draft.publicHidden,
+      });
+    }
     setFormErrors({});
     props.onOpenChange(false);
   };

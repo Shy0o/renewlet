@@ -38,6 +38,7 @@ var (
 	// 私有资产路径只允许 record id 字符集，避免把任意 /api 路径伪装成 logo 引用。
 	privateAssetPathRe  = regexp.MustCompile(`^/api/app/assets/[A-Za-z0-9_-]+$`)
 	calendarFeedTokenRe = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+	publicStatusTokenRe = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
 )
 
 type customConfigLabels struct {
@@ -90,13 +91,26 @@ func registerRecordHooks(app core.App) {
 			if err := normalizeCalendarFeedRecord(app, e.Record); err != nil {
 				return err
 			}
+		case "public_status_pages":
+			if err := normalizePublicStatusPageRecord(e.Record); err != nil {
+				return err
+			}
 		}
 		return e.Next()
 	})
 }
 
+func normalizePublicStatusPageRecord(record *core.Record) error {
+	token := strings.TrimSpace(record.GetString("token"))
+	if !publicStatusTokenRe.MatchString(token) {
+		return errors.New("PUBLIC_STATUS_PAGE_TOKEN_INVALID")
+	}
+	record.Set("token", token)
+	return nil
+}
+
 // normalizeSubscriptionRecord 校验并规范化订阅记录。
-// 注意： billingCycle/customDays 的关系必须与前端 discriminated union 保持一致。
+// 注意： billingCycle/customDays/customCycleUnit 的关系必须与前端 discriminated union 保持一致。
 func normalizeSubscriptionRecord(record *core.Record) error {
 	name := strings.TrimSpace(record.GetString("name"))
 	if name == "" {
@@ -123,19 +137,49 @@ func normalizeSubscriptionRecord(record *core.Record) error {
 
 	billingCycle := record.GetString("billingCycle")
 	customDays := record.GetInt("customDays")
+	customCycleUnit := strings.TrimSpace(record.GetString("customCycleUnit"))
+	oneTimeTermCount := record.GetInt("oneTimeTermCount")
+	oneTimeTermUnit := strings.TrimSpace(record.GetString("oneTimeTermUnit"))
 	if billingCycle == "custom" {
 		if customDays <= 0 {
 			return errors.New("CUSTOM_DAYS_REQUIRED")
 		}
+		if customCycleUnit == "" {
+			// 旧 custom 数据没有单位字段；持久层读写边界统一按 day 解释，避免历史自定义天数被误作月/年。
+			record.Set("customCycleUnit", "day")
+		} else if !isValidCustomCycleUnit(customCycleUnit) {
+			return errors.New("CUSTOM_CYCLE_UNIT_INVALID")
+		}
 	} else if customDays < 0 {
 		return errors.New("CUSTOM_DAYS_NEGATIVE")
 	} else if customDays > 0 {
-		// 非 custom 周期清零 customDays，避免历史值影响前端统计和通知计算。
+		// 非 custom 周期清零自定义字段，避免历史值影响前端统计和通知计算。
 		record.Set("customDays", 0)
+		record.Set("customCycleUnit", "")
+	} else if customCycleUnit != "" {
+		record.Set("customCycleUnit", "")
 	}
 	if billingCycle == "one-time" {
-		// one-time 是买断/终身授权，不应参与自动续费日期推算；API 和 Admin UI 写入都在持久层兜底关闭。
+		if oneTimeTermCount < 0 {
+			return errors.New("ONE_TIME_TERM_COUNT_NEGATIVE")
+		}
+		if oneTimeTermCount > maxReminderDays {
+			return errors.New("ONE_TIME_TERM_COUNT_TOO_HIGH")
+		}
+		if oneTimeTermCount > 0 {
+			if !isValidCustomCycleUnit(oneTimeTermUnit) {
+				return errors.New("ONE_TIME_TERM_UNIT_REQUIRED")
+			}
+		} else if oneTimeTermUnit != "" {
+			return errors.New("ONE_TIME_TERM_COUNT_REQUIRED")
+		}
+		// one-time 有服务期时只表达预付权益到期，不自动推进下一期；买断记录则继续保持长期有效。
+		record.Set("autoRenew", false)
 		record.Set("autoCalculateNextBillingDate", false)
+	} else if oneTimeTermCount != 0 || oneTimeTermUnit != "" {
+		// one-time 服务期是统计摊销和到期提醒专用字段，切回周期订阅必须清空，避免历史服务期继续影响月均支出。
+		record.Set("oneTimeTermCount", 0)
+		record.Set("oneTimeTermUnit", "")
 	}
 
 	startDate := strings.TrimSpace(record.GetString("startDate"))
@@ -181,7 +225,7 @@ func normalizeSubscriptionRecord(record *core.Record) error {
 	}
 
 	reminderDays := record.GetInt("reminderDays")
-	if reminderDays < inheritReminderDays || reminderDays > maxReminderDays {
+	if reminderDays < disabledReminderDays || reminderDays > maxReminderDays {
 		return errors.New("REMINDER_DAYS_OUT_OF_RANGE")
 	}
 
@@ -204,6 +248,10 @@ func normalizeSubscriptionRecord(record *core.Record) error {
 	record.Set("repeatReminderWindow", repeatWindow)
 
 	return nil
+}
+
+func isValidCustomCycleUnit(value string) bool {
+	return value == "day" || value == "week" || value == "month" || value == "year"
 }
 
 // normalizeSettingsRecord 校验 settings JSON 并写回规范化后的强类型结构。

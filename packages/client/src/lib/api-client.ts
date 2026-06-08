@@ -51,6 +51,7 @@ export class ApiError extends Error {
 /** 请求级 fetch 配置；`timeoutMs` 只在本 client 内消费，不透传给浏览器 fetch。 */
 export type ApiFetchInit = RequestInit & {
   timeoutMs?: number;
+  streamIdleTimeoutMs?: number;
 };
 
 const DEFAULT_JSON_TIMEOUT_MS = 30_000;
@@ -66,10 +67,15 @@ function isAbortError(error: unknown): boolean {
 function createAbortSignal(
   externalSignal: AbortSignal | null | undefined,
   timeoutMs: number,
-): { signal?: AbortSignal; cleanup: () => void; didTimeout: () => boolean } {
+): { signal?: AbortSignal; clearTimeout: () => void; cleanup: () => void; didTimeout: () => boolean; abortForTimeout: () => void } {
   const normalizedTimeout = Number.isFinite(timeoutMs) ? Math.floor(timeoutMs) : 0;
   if (!externalSignal && normalizedTimeout <= 0) {
-    return { cleanup: () => undefined, didTimeout: () => false };
+    return {
+      clearTimeout: () => undefined,
+      cleanup: () => undefined,
+      didTimeout: () => false,
+      abortForTimeout: () => undefined,
+    };
   }
 
   // 将外部取消和本地超时合并成一个 signal，调用方无需关心哪个来源触发 abort。
@@ -78,6 +84,15 @@ function createAbortSignal(
   let timedOut = false;
   let timeout: ReturnType<typeof setTimeout> | null = null;
 
+  const clearLocalTimeout = () => {
+    if (!timeout) return;
+    clearTimeout(timeout);
+    timeout = null;
+  };
+  const abortForTimeout = () => {
+    timedOut = true;
+    controller.abort();
+  };
   const abortFromExternal = () => controller.abort();
   if (externalSignal) {
     if (externalSignal.aborted) {
@@ -88,20 +103,82 @@ function createAbortSignal(
   }
 
   if (normalizedTimeout > 0) {
-    timeout = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, normalizedTimeout);
+    timeout = setTimeout(abortForTimeout, normalizedTimeout);
   }
 
   return {
     signal: controller.signal,
+    clearTimeout: clearLocalTimeout,
     cleanup: () => {
-      if (timeout) clearTimeout(timeout);
+      clearLocalTimeout();
       externalSignal?.removeEventListener("abort", abortFromExternal);
     },
     didTimeout: () => timedOut,
+    abortForTimeout,
   };
+}
+
+function createStreamIdleWatchdog(
+  abort: ReturnType<typeof createAbortSignal>,
+  timeoutMs: number | null | undefined,
+): { reset: () => void; cleanup: () => void } {
+  const normalizedTimeout = Number.isFinite(timeoutMs ?? 0) ? Math.floor(timeoutMs ?? 0) : 0;
+  if (normalizedTimeout <= 0) {
+    return { reset: () => undefined, cleanup: () => undefined };
+  }
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  const clear = () => {
+    if (!timeout) return;
+    clearTimeout(timeout);
+    timeout = null;
+  };
+  const reset = () => {
+    clear();
+    timeout = setTimeout(() => {
+      abort.abortForTimeout();
+    }, normalizedTimeout);
+  };
+  return { reset, cleanup: clear };
+}
+
+function responseWithStreamActivity(response: Response, onChunk: () => void, signal: AbortSignal | undefined): Response {
+  if (!response.body) return response;
+  const reader = response.body.getReader();
+  let removeAbortListener: (() => void) | null = null;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (!signal) return;
+      const abortStream = () => {
+        controller.error(new DOMException("Aborted", "AbortError"));
+        void reader.cancel();
+      };
+      if (signal.aborted) {
+        abortStream();
+        return;
+      }
+      signal.addEventListener("abort", abortStream, { once: true });
+      removeAbortListener = () => signal.removeEventListener("abort", abortStream);
+    },
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        removeAbortListener?.();
+        controller.close();
+        return;
+      }
+      onChunk();
+      controller.enqueue(value);
+    },
+    async cancel(reason) {
+      removeAbortListener?.();
+      await reader.cancel(reason);
+    },
+  });
+  return new Response(body, {
+    headers: response.headers,
+    status: response.status,
+    statusText: response.statusText,
+  });
 }
 
 async function parseJsonSafely(response: Response): Promise<unknown> {
@@ -195,23 +272,9 @@ function getClientTimeZoneHeader(): string | null {
   }
 }
 
-/**
- * 带运行时 schema 校验的 fetch 封装（默认 JSON）。
- *
- * 约定：
- * - 自动加 JSON content-type，但 FormData 保留浏览器 multipart boundary
- * - 自动携带 Cookie 和当前运行面的 Bearer token
- * - 非 2xx 时抛出 `ApiError`
- * - 2xx 响应必须通过调用方传入的 Zod schema，否则抛出 `ApiError`
- */
-export async function apiFetch<Schema extends z.ZodType>(
-  input: RequestInfo,
-  responseSchema: Schema,
-  init?: ApiFetchInit,
-): Promise<z.infer<Schema>> {
-  const { timeoutMs = DEFAULT_JSON_TIMEOUT_MS, signal: externalSignal, ...fetchInit } = init ?? {};
-  const headers = new Headers(init?.headers);
-  const isFormDataBody = typeof FormData !== "undefined" && fetchInit.body instanceof FormData;
+function buildApiHeaders(headersInit: HeadersInit | undefined, body: BodyInit | null | undefined): Headers {
+  const headers = new Headers(headersInit);
+  const isFormDataBody = typeof FormData !== "undefined" && body instanceof FormData;
   // 默认 JSON；FormData 必须让浏览器自己补 multipart boundary。
   if (!headers.has("content-type") && !isFormDataBody) {
     headers.set("content-type", "application/json");
@@ -227,9 +290,17 @@ export async function apiFetch<Schema extends z.ZodType>(
   for (const [key, value] of Object.entries(getAuthHeader())) {
     if (!headers.has(key)) headers.set(key, value);
   }
+  return headers;
+}
 
+async function fetchWithApiBoundary(input: RequestInfo, init?: ApiFetchInit): Promise<{
+  abort: ReturnType<typeof createAbortSignal>;
+  response: Response;
+}> {
+  const { timeoutMs = DEFAULT_JSON_TIMEOUT_MS, signal: externalSignal, ...fetchInit } = init ?? {};
+  delete (fetchInit as { streamIdleTimeoutMs?: number }).streamIdleTimeoutMs;
+  const headers = buildApiHeaders(init?.headers, fetchInit.body ?? null);
   const abort = createAbortSignal(externalSignal, timeoutMs);
-  let res: Response;
   try {
     const requestInit: RequestInit = {
       ...fetchInit,
@@ -237,8 +308,10 @@ export async function apiFetch<Schema extends z.ZodType>(
       credentials: "include",
       ...(abort.signal ? { signal: abort.signal } : {}),
     };
-    res = await fetch(input, requestInit);
+    const response = await fetch(input, requestInit);
+    return { abort, response };
   } catch (e: unknown) {
+    abort.cleanup();
     if (abort.didTimeout()) {
       throw new ApiError(translate(getApiLocale(), "error.timeout"), 0, undefined, "timeout");
     }
@@ -246,31 +319,86 @@ export async function apiFetch<Schema extends z.ZodType>(
       throw new ApiError(translate(getApiLocale(), "error.aborted"), 0, undefined, "aborted");
     }
     throw new ApiError(e instanceof Error ? e.message : translate(getApiLocale(), "error.network"), 0, undefined, "network");
+  }
+}
+
+/**
+ * 带运行时 schema 校验的 fetch 封装（默认 JSON）。
+ *
+ * 约定：
+ * - 自动加 JSON content-type，但 FormData 保留浏览器 multipart boundary
+ * - 自动携带 Cookie 和当前运行面的 Bearer token
+ * - 非 2xx 时抛出 `ApiError`
+ * - 2xx 响应必须通过调用方传入的 Zod schema，否则抛出 `ApiError`
+ */
+export async function apiFetch<Schema extends z.ZodType>(
+  input: RequestInfo,
+  responseSchema: Schema,
+  init?: ApiFetchInit,
+): Promise<z.infer<Schema>> {
+  const { abort, response: res } = await fetchWithApiBoundary(input, init);
+  try {
+    const json = await parseJsonSafely(res);
+
+    if (!res.ok) {
+      const message = getErrorMessage(json) || res.statusText || "Request failed";
+      if (res.status === 401) {
+        clearAuthSession();
+      }
+      throw new ApiError(message, res.status, json, getErrorCode(json));
+    }
+
+    const parsed = responseSchema.safeParse(json);
+    if (!parsed.success) {
+      // API 返回即使是 2xx，也必须重新过 schema。这样后端字段漂移、代理返回 HTML、
+      // 或第三方错误页被误转发时，会在边界变成 ApiError，而不是污染 domain/UI 状态。
+      throw new ApiError(
+        translate(getApiLocale(), "error.invalidResponse"),
+        res.status,
+        parsed.error.flatten(),
+        "invalid_response",
+      );
+    }
+
+    return parsed.data;
   } finally {
     abort.cleanup();
   }
+}
 
-  const json = await parseJsonSafely(res);
-
-  if (!res.ok) {
-    const message = getErrorMessage(json) || res.statusText || "Request failed";
-    if (res.status === 401) {
-      clearAuthSession();
+export async function apiFetchStream<T>(
+  input: RequestInfo,
+  init: ApiFetchInit,
+  consume: (response: Response) => Promise<T>,
+): Promise<T> {
+  const { abort, response } = await fetchWithApiBoundary(input, init);
+  abort.clearTimeout();
+  // 流式 API 的首包和后续 chunk 是两类风险：拿到响应头后只保留 idle watchdog，避免真实 SSE 仍在推进时被总时长计时器误杀。
+  const idleWatchdog = createStreamIdleWatchdog(abort, init.streamIdleTimeoutMs);
+  try {
+    if (!response.ok) {
+      const json = await parseJsonSafely(response);
+      const message = getErrorMessage(json) || response.statusText || "Request failed";
+      if (response.status === 401) {
+        clearAuthSession();
+      }
+      throw new ApiError(message, response.status, json, getErrorCode(json));
     }
-    throw new ApiError(message, res.status, json, getErrorCode(json));
+    idleWatchdog.reset();
+    const responseForConsume = responseWithStreamActivity(response, idleWatchdog.reset, abort.signal);
+    try {
+      return await consume(responseForConsume);
+    } catch (e: unknown) {
+      if (abort.didTimeout()) {
+        throw new ApiError(translate(getApiLocale(), "error.timeout"), 0, undefined, "timeout");
+      }
+      if (isAbortError(e)) {
+        throw new ApiError(translate(getApiLocale(), "error.aborted"), 0, undefined, "aborted");
+      }
+      throw e;
+    }
+  } finally {
+    idleWatchdog.cleanup();
+    abort.cleanup();
   }
-
-  const parsed = responseSchema.safeParse(json);
-  if (!parsed.success) {
-    // API 返回即使是 2xx，也必须重新过 schema。这样后端字段漂移、代理返回 HTML、
-    // 或第三方错误页被误转发时，会在边界变成 ApiError，而不是污染 domain/UI 状态。
-    throw new ApiError(
-      translate(getApiLocale(), "error.invalidResponse"),
-      res.status,
-      parsed.error.flatten(),
-      "invalid_response",
-    );
-  }
-
-  return parsed.data;
 }

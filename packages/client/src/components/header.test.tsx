@@ -53,7 +53,7 @@ vi.mock("@/i18n/I18nProvider", () => ({
   useI18n: () => ({
     t: (key: string, params?: Record<string, string | number>) => {
       const messages: Record<string, string> = {
-        "app.tagline": "订阅账本",
+        "app.tagline": "订阅管理助手",
         "header.logout": "退出登录",
         "header.toggleTheme": "切换主题",
         "nav.calendar": "日历",
@@ -191,7 +191,12 @@ describe("Header system version entry", () => {
 
     renderHeader();
 
-    await user.click(screen.getByRole("button", { name: "打开系统更新" }));
+    const updateButton = screen.getByRole("button", { name: "打开系统更新" });
+    expect(screen.getAllByRole("button", { name: "打开系统更新" })).toHaveLength(1);
+    expect(updateButton.closest("a")).toBeNull();
+    expect(screen.queryByText("订阅管理助手")).not.toBeInTheDocument();
+
+    await user.click(updateButton);
 
     expect(screen.getByText("可更新到 v1.1.0")).toBeInTheDocument();
     expect(screen.getByText("当前版本")).toBeInTheDocument();
@@ -203,6 +208,7 @@ describe("Header system version entry", () => {
     renderHeader();
 
     expect(screen.queryByRole("button", { name: "打开系统更新" })).not.toBeInTheDocument();
+    expect(screen.queryByText("订阅管理助手")).not.toBeInTheDocument();
   });
 
   it("keeps the header theme toggle as a local-only preference", async () => {

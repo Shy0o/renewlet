@@ -35,9 +35,11 @@ describe("SettingsScreen SMTP email settings", () => {
 
   it("renders SMTP fields instead of Resend fields for email notifications", () => {
     renderSettingsScreen();
+    const notificationsSection = document.getElementById("settings-notifications");
 
     expect(screen.queryByText(/Resend/i)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
+    expect(notificationsSection).not.toBeNull();
+    expect(within(notificationsSection as HTMLElement).queryByLabelText("API Key")).not.toBeInTheDocument();
     expect(screen.getByLabelText("SMTP 服务器")).toHaveValue("smtp.example.com");
     expect(screen.getByLabelText("SMTP 端口")).toHaveValue("587");
     expect(screen.getByLabelText("SMTP 用户名")).toHaveValue("smtp-user");
@@ -124,6 +126,44 @@ describe("SettingsScreen SMTP email settings", () => {
     expect(select).toBeEnabled();
   });
 
+  it("shows common currency quotes in the reporting currency direction", () => {
+    mocks.useSettingsFormController.mockReturnValue(createControllerState({
+      settings: {
+        defaultCurrency: "CNY",
+      },
+      rates: {
+        USD: 1,
+        CNY: 6.78,
+      },
+    }));
+
+    renderSettingsScreen();
+
+    expect(screen.getByRole("heading", { name: "常用货币折算为 CNY" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "汇率预览 (1 CNY = )" })).not.toBeInTheDocument();
+    expect(screen.getByText("1 USD")).toBeInTheDocument();
+    expect(screen.getAllByText("≈ ¥6.78 CNY").length).toBeGreaterThan(0);
+  });
+
+  it("uses CNY as the first preview reference when another reporting currency is selected", () => {
+    mocks.useSettingsFormController.mockReturnValue(createControllerState({
+      settings: {
+        defaultCurrency: "USD",
+      },
+      rates: {
+        USD: 1,
+        CNY: 6.78,
+      },
+    }));
+
+    renderSettingsScreen();
+
+    expect(screen.getByRole("heading", { name: "常用货币折算为 USD" })).toBeInTheDocument();
+    const previewCards = screen.getByText("1 CNY").closest("div")?.parentElement?.children;
+    expect(previewCards?.[0]).toHaveTextContent("1 CNY");
+    expect(screen.getByText("≈ $0.1475 USD")).toBeInTheDocument();
+  });
+
   it("renders the monthly budget as a formatted text input instead of a spinbutton", () => {
     renderSettingsScreen();
 
@@ -206,6 +246,81 @@ describe("SettingsScreen SMTP email settings", () => {
     expect(screen.getByRole("button", { name: "生成订阅 URL" })).toBeInTheDocument();
   });
 
+  it("lets users choose the public status reporting currency from the public status section", async () => {
+    const user = userEvent.setup();
+    const controller = createControllerState({
+      settings: {
+        defaultCurrency: "USD",
+        publicStatusCurrency: "inherit",
+      },
+      publicStatusPage: {
+        enabled: true,
+        pageUrl: "https://example.com/status/secret",
+        showPrices: true,
+        visibleCount: 3,
+        hiddenCount: 1,
+      },
+    });
+    mocks.useSettingsFormController.mockReturnValue(controller);
+
+    renderSettingsScreen();
+
+    expect(screen.getByRole("heading", { name: "公开展示" })).toBeInTheDocument();
+    expect(screen.getByLabelText("公开展示 URL")).toHaveValue("https://example.com/status/secret");
+    expect(screen.getByText("展示 3 · 隐藏 1")).toBeInTheDocument();
+    expect(screen.queryByText("当前将展示 3 条订阅，隐藏 1 条。")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "复制 URL" }));
+    expect(controller.publicStatusPage.copyUrl).toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "打开公开页" }));
+    expect(controller.publicStatusPage.openPage).toHaveBeenCalled();
+
+    await user.click(screen.getByRole("switch", { name: "公开金额" }));
+    expect(controller.publicStatusPage.updateShowPrices).toHaveBeenCalledWith(false);
+
+    const currencySelect = screen.getByRole("combobox", { name: "公开页统计货币" });
+    expect(currencySelect).toHaveTextContent("继承统计货币（当前 USD）");
+
+    await user.click(currencySelect);
+
+    expect(controller.updateSetting).toHaveBeenLastCalledWith("publicStatusCurrency", "CNY");
+
+    await user.click(screen.getByRole("button", { name: "重新生成" }));
+    const regenerateDialog = await screen.findByRole("alertdialog", { name: "重新生成公开展示 URL？" });
+    expect(within(regenerateDialog).getByText("旧 URL 会立即失效，已经分享出去的公开页需要使用新链接访问。")).toBeInTheDocument();
+    await user.click(within(regenerateDialog).getByRole("button", { name: "重新生成" }));
+    expect(controller.publicStatusPage.regenerate).toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "撤销公开页" }));
+    expect(controller.publicStatusPage.revoke).toHaveBeenCalled();
+  });
+
+  it("keeps the public status setup compact before URL generation", async () => {
+    const user = userEvent.setup();
+    const controller = createControllerState({
+      publicStatusPage: {
+        enabled: false,
+        pageUrl: null,
+        visibleCount: 105,
+        hiddenCount: 0,
+      },
+    });
+    mocks.useSettingsFormController.mockReturnValue(controller);
+
+    renderSettingsScreen();
+
+    expect(screen.getByRole("heading", { name: "公开展示" })).toBeInTheDocument();
+    expect(screen.getByText("生成后展示未隐藏订阅，金额默认隐藏。")).toBeInTheDocument();
+    expect(screen.getByText("展示 105 · 隐藏 0")).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "公开金额" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "公开页统计货币" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("公开展示 URL")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "生成公开链接" }));
+    expect(controller.publicStatusPage.createOrRotate).toHaveBeenCalled();
+  });
+
   it("uses H5 layout classes and native phone metadata for settings", () => {
     const { container } = renderSettingsScreen();
 
@@ -217,6 +332,14 @@ describe("SettingsScreen SMTP email settings", () => {
     expect(phoneInput).toHaveAttribute("inputmode", "tel");
     expect(phoneInput).toHaveAttribute("autocomplete", "tel");
     expect(phoneInput).toHaveAttribute("enterkeyhint", "done");
+  });
+
+  it("keeps AI recognition provider and model controls in the shared field grid", () => {
+    renderSettingsScreen();
+
+    const providerModelGrid = screen.getByTestId("ai-provider-model-grid");
+    expect(providerModelGrid).toHaveClass("items-start");
+    expect(providerModelGrid).toHaveClass("md:gap-y-2");
   });
 
   it("updates built-in icon source and variant settings without allowing all sources off", async () => {
@@ -365,6 +488,30 @@ describe("SettingsScreen SMTP email settings", () => {
     expect(controller.toggleChannel).toHaveBeenCalledWith("bark");
     expect(screen.getByRole("heading", { name: "Bark 配置" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "测试 Bark 通知" })).toBeEnabled();
+  });
+
+  it("renders ServerChan config with SendKey input and help link", async () => {
+    const user = userEvent.setup();
+    const controller = createControllerState({
+      settings: {
+        enabledChannels: ["telegram", "serverchan"],
+        serverchanSendKey: "SCT123456",
+      },
+    });
+    mocks.useSettingsFormController.mockReturnValue(controller);
+
+    renderSettingsScreen();
+
+    expect(screen.getByText("SendKey 已填写")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "配置 Server酱" }));
+
+    expect(screen.getByRole("heading", { name: "Server酱 配置" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Server酱 文档" })).toHaveAttribute("href", "https://sct.ftqq.com/");
+    const input = screen.getByLabelText("SendKey");
+    expect(input).toHaveValue("SCT123456");
+    await user.type(input, "x");
+    expect(controller.updateSetting).toHaveBeenLastCalledWith("serverchanSendKey", "SCT123456x");
+    expect(screen.getByRole("button", { name: "测试 Server酱 通知" })).toBeEnabled();
   });
 
   it("renders Webhook examples as placeholders instead of default textarea values", () => {

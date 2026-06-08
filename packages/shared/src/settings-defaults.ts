@@ -21,6 +21,7 @@ export function createDefaultAppSettings(options: DefaultSettingsOptions = {}): 
     locale: options.locale ?? "zh-CN",
     showExpired: true,
     defaultCurrency: "CNY",
+    publicStatusCurrency: "inherit",
     exchangeRateProvider: "floatrates",
     builtInIconSources: DEFAULT_BUILT_IN_ICON_SOURCES,
     monthlyBudget: 1500,
@@ -54,5 +55,15 @@ export function createDefaultAppSettings(options: DefaultSettingsOptions = {}): 
     barkServerUrl: "https://api.day.app",
     barkDeviceKey: "",
     barkSilentPush: false,
+    serverchanSendKey: "",
+    aiRecognition: {
+      providerType: "openai",
+      transportProtocol: "openai-chat",
+      model: "",
+      modelInputMode: "select",
+      baseUrl: "",
+      apiKey: "",
+      defaultThinkingControl: null,
+    },
   };
 }

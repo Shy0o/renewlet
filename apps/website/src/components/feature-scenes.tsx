@@ -2,13 +2,12 @@ import {
   BellRing,
   CalendarClock,
   CheckCircle2,
-  Cloud,
-  Container,
-  Database,
-  HardDrive,
+  Eye,
+  EyeOff,
+  Image,
   Link,
-  Server,
-  Timer,
+  Sparkles,
+  Table2,
 } from 'lucide-react'
 
 import type { Locale } from '../content/site'
@@ -18,30 +17,41 @@ type FeatureSceneProps = {
   locale: Locale
 }
 
-type SceneKey = 'subscriptions' | 'reminders' | 'calendar' | 'statistics' | 'hosting'
-
-const images = {
-  logo: `${import.meta.env.BASE_URL}assets/renewlet/logo.svg`,
-}
+type SceneKey = 'ai-recognition' | 'subscriptions' | 'public-status' | 'reminders' | 'calendar' | 'statistics'
 
 // 官网语言切换时，所有可见产品截图都必须同步切换，避免英文页面混入中文 UI。
 function localizedImages(locale: Locale) {
   return {
+    aiRecognition: responsiveScreenshotAsset(screenshotName('ai-recognition', locale), 'featureWide'),
     subscriptions: responsiveScreenshotAsset(screenshotName('subscriptions', locale)),
+    publicStatus: responsiveScreenshotAsset(screenshotName('public-status', locale), 'featureWide'),
     reminders: responsiveScreenshotAsset(screenshotName('notifications-h5', locale), 'featurePhone'),
     calendar: responsiveScreenshotAsset(screenshotName('calendar', locale)),
     statistics: responsiveScreenshotAsset(screenshotName('statistics', locale), 'featureWide'),
-    dashboard: responsiveScreenshotAsset(screenshotName('dashboard', locale)),
   }
 }
 
 const copy = {
+  aiRecognition: {
+    chips: [
+      { zh: '截图', en: 'Screenshots' },
+      { zh: '表格', en: 'Tables' },
+      { zh: '草稿', en: 'Drafts' },
+    ],
+  },
   subscriptions: {
     chips: [
       { zh: '价格', en: 'Price' },
       { zh: '周期', en: 'Cycle' },
       { zh: '续费日', en: 'Renewal date' },
       { zh: '付款方式', en: 'Payment method' },
+    ],
+  },
+  publicStatus: {
+    chips: [
+      { zh: '公开项', en: 'Visible items' },
+      { zh: '隐藏金额', en: 'Hidden prices' },
+      { zh: '可撤销链接', en: 'Revocable link' },
     ],
   },
   reminders: {
@@ -63,29 +73,6 @@ const copy = {
       { zh: '月度成本', en: 'Monthly cost' },
       { zh: '预算使用', en: 'Budget usage' },
       { zh: '多币种', en: 'Multi-currency' },
-    ],
-  },
-  hosting: {
-    panels: [
-      {
-        title: 'Docker',
-        icon: Container,
-        items: [
-          { label: 'Go/PB', icon: Server },
-          { label: 'SQLite', icon: Database },
-          { label: 'data/', icon: HardDrive },
-        ],
-      },
-      {
-        title: 'Cloudflare',
-        icon: Cloud,
-        items: [
-          { label: 'Workers', icon: Cloud },
-          { label: 'D1', icon: Database },
-          { label: 'R2', icon: HardDrive },
-          { label: 'Cron', icon: Timer },
-        ],
-      },
     ],
   },
 }
@@ -171,6 +158,29 @@ function ProductBackdrop({ asset }: { asset: ScreenshotAsset }) {
   )
 }
 
+function AIRecognitionScene({ locale }: FeatureSceneProps) {
+  const imageSet = localizedImages(locale)
+
+  return (
+    <SceneBase>
+      <ProductBackdrop asset={imageSet.aiRecognition} />
+      <ScreenshotLayer
+        alt=""
+        asset={imageSet.aiRecognition}
+        className="left-6 top-8 h-[255px] w-[680px] object-left-top"
+      />
+      <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-zinc-950 via-zinc-950/82 to-transparent" />
+      <div className="absolute bottom-7 left-6 right-6 flex flex-wrap gap-2">
+        {copy.aiRecognition.chips.map((item, index) => (
+          <Chip key={item.en} icon={index === 0 ? Image : index === 1 ? Table2 : Sparkles}>
+            {text(item, locale)}
+          </Chip>
+        ))}
+      </div>
+    </SceneBase>
+  )
+}
+
 function SubscriptionsScene({ locale }: FeatureSceneProps) {
   const imageSet = localizedImages(locale)
 
@@ -186,6 +196,29 @@ function SubscriptionsScene({ locale }: FeatureSceneProps) {
       <div className="absolute bottom-7 left-6 right-6 flex flex-wrap gap-2">
         {copy.subscriptions.chips.map((item) => (
           <Chip key={item.en}>{text(item, locale)}</Chip>
+        ))}
+      </div>
+    </SceneBase>
+  )
+}
+
+function PublicStatusScene({ locale }: FeatureSceneProps) {
+  const imageSet = localizedImages(locale)
+
+  return (
+    <SceneBase>
+      <ProductBackdrop asset={imageSet.publicStatus} />
+      <ScreenshotLayer
+        alt=""
+        asset={imageSet.publicStatus}
+        className="left-8 top-8 h-[255px] w-[680px] object-left-top"
+      />
+      <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-zinc-950 via-zinc-950/82 to-transparent" />
+      <div className="absolute bottom-7 left-6 right-6 flex flex-wrap gap-2">
+        {copy.publicStatus.chips.map((item, index) => (
+          <Chip key={item.en} icon={index === 0 ? Eye : index === 1 ? EyeOff : Link}>
+            {text(item, locale)}
+          </Chip>
         ))}
       </div>
     </SceneBase>
@@ -275,97 +308,13 @@ function StatisticsScene({ locale }: FeatureSceneProps) {
   )
 }
 
-function HostingPanel({
-  icon: Icon,
-  items,
-  title,
-}: {
-  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>
-  items: Array<{ label: string; icon: React.ComponentType<{ className?: string; strokeWidth?: number }> }>
-  title: string
-}) {
-  // 小屏下 Cloudflare 四项保持单列，避免 Workers/D1 挤压重叠；桌面再恢复两列密度。
-  const itemGridClass = items.length > 3 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'
-
-  return (
-    <div className="relative min-h-[124px] overflow-hidden rounded-[1.15rem] border border-white/10 bg-zinc-950/70 p-3 shadow-2xl shadow-black/25 backdrop-blur">
-      <div aria-hidden="true" className="absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-emerald-300/35 to-transparent" />
-      <div className="flex items-center gap-2.5 sm:gap-3">
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-emerald-300/25 bg-emerald-300/10 text-emerald-300 sm:h-9 sm:w-9">
-          <Icon aria-hidden="true" className="h-4 w-4 sm:h-[18px] sm:w-[18px]" strokeWidth={1.7} />
-        </span>
-        <span className="min-w-0 truncate text-sm font-semibold text-zinc-100 sm:text-base">{title}</span>
-      </div>
-      <div className={`mt-3 grid ${itemGridClass} gap-1.5`}>
-        {items.map((item) => {
-          const ItemIcon = item.icon
-
-          return (
-            <span
-              className="flex min-h-7 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.045] px-2.5 text-[11px] font-medium text-zinc-300 sm:min-h-8 sm:px-3 sm:text-xs"
-              key={item.label}
-            >
-              <ItemIcon aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-emerald-300/80" strokeWidth={1.7} />
-              <span className="min-w-0 whitespace-nowrap">{item.label}</span>
-            </span>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function HostingScene({ locale }: FeatureSceneProps) {
-  const imageSet = localizedImages(locale)
-
-  return (
-    <SceneBase>
-      <ProductBackdrop asset={imageSet.dashboard} />
-      {/* 自托管卡只展示真实运行面，避免把不存在的第三方集成画进官网。 */}
-      <div
-        aria-hidden="true"
-        className="absolute left-5 right-5 top-5 h-56 rounded-[2rem] border border-white/8 bg-gradient-to-br from-white/[0.055] via-transparent to-emerald-300/[0.045] blur-[0.2px]"
-      />
-      <div
-        aria-hidden="true"
-        className="absolute left-1/2 top-16 h-px w-64 -translate-x-1/2 bg-gradient-to-r from-transparent via-emerald-300/35 to-transparent"
-      />
-      <div className="absolute inset-x-3 top-4 z-10 sm:inset-x-4">
-        <div className="mx-auto max-w-[560px] overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/78 p-3 shadow-2xl shadow-black/35 backdrop-blur">
-          <div className="flex items-center justify-between gap-2 border-b border-white/8 px-1 pb-3 sm:gap-3">
-            <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-emerald-300/20 bg-zinc-950 sm:h-9 sm:w-9">
-                <img alt="" aria-hidden="true" className="h-4 w-4 sm:h-5 sm:w-5" src={images.logo} />
-              </span>
-              <span className="min-w-0 truncate text-base font-semibold text-zinc-100 sm:text-lg">Renewlet</span>
-            </div>
-            <span className="shrink-0 rounded-full border border-emerald-300/25 bg-emerald-300/10 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-emerald-200 sm:px-3 sm:text-[10px] sm:tracking-[0.16em]">
-              self-hosted
-            </span>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            {copy.hosting.panels.map((panel) => (
-              <HostingPanel
-                icon={panel.icon}
-                items={panel.items}
-                key={panel.title}
-                title={panel.title}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-      <div aria-hidden="true" className="absolute inset-x-0 bottom-0 z-0 h-16 bg-gradient-to-t from-zinc-950 via-zinc-950/62 to-transparent" />
-    </SceneBase>
-  )
-}
-
 const scenes: Record<SceneKey, (props: FeatureSceneProps) => React.ReactElement> = {
+  'ai-recognition': AIRecognitionScene,
   subscriptions: SubscriptionsScene,
+  'public-status': PublicStatusScene,
   reminders: RemindersScene,
   calendar: CalendarScene,
   statistics: StatisticsScene,
-  hosting: HostingScene,
 }
 
 export function FeatureScene({ scene, locale }: FeatureSceneProps & { scene: string }) {

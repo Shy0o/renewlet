@@ -116,6 +116,7 @@ func TestNormalizeSubscriptionRecordDefaultsAndValidatesContract(t *testing.T) {
 	record.Set("currency", "usd")
 	record.Set("billingCycle", "monthly")
 	record.Set("customDays", 30)
+	record.Set("customCycleUnit", "year")
 	record.Set("startDate", "2026-05-14")
 	record.Set("nextBillingDate", "2026-06-14")
 	record.Set("tags", []string{"streaming", "streaming", " media "})
@@ -124,8 +125,8 @@ func TestNormalizeSubscriptionRecordDefaultsAndValidatesContract(t *testing.T) {
 	if err := normalizeSubscriptionRecord(record); err != nil {
 		t.Fatal(err)
 	}
-	if record.GetString("name") != "Netflix" || record.GetString("currency") != "USD" || record.GetInt("customDays") != 0 {
-		t.Fatalf("subscription was not normalized: name=%q currency=%q customDays=%d", record.GetString("name"), record.GetString("currency"), record.GetInt("customDays"))
+	if record.GetString("name") != "Netflix" || record.GetString("currency") != "USD" || record.GetInt("customDays") != 0 || record.GetString("customCycleUnit") != "" {
+		t.Fatalf("subscription was not normalized: name=%q currency=%q customDays=%d customCycleUnit=%q", record.GetString("name"), record.GetString("currency"), record.GetInt("customDays"), record.GetString("customCycleUnit"))
 	}
 	tags := record.GetStringSlice("tags")
 	if len(tags) != 2 || tags[0] != "streaming" || tags[1] != "media" {
@@ -151,15 +152,75 @@ func TestNormalizeSubscriptionRecordDefaultsAndValidatesContract(t *testing.T) {
 	if err := normalizeSubscriptionRecord(record); err == nil {
 		t.Fatal("expected custom billing cycle without customDays to fail")
 	}
+	record.Set("customDays", 45)
+	record.Set("customCycleUnit", "")
+	if err := normalizeSubscriptionRecord(record); err != nil {
+		t.Fatalf("expected legacy custom billing cycle to default to day: %v", err)
+	}
+	if record.GetString("customCycleUnit") != "day" {
+		t.Fatalf("expected legacy custom billing cycle to default unit to day, got %q", record.GetString("customCycleUnit"))
+	}
+	record.Set("customCycleUnit", "decade")
+	if err := normalizeSubscriptionRecord(record); err == nil {
+		t.Fatal("expected invalid custom cycle unit to fail")
+	}
 
 	record.Set("billingCycle", "one-time")
 	record.Set("customDays", 45)
+	record.Set("customCycleUnit", "week")
+	record.Set("oneTimeTermCount", 0)
+	record.Set("oneTimeTermUnit", "")
+	record.Set("autoRenew", true)
 	record.Set("autoCalculateNextBillingDate", true)
 	if err := normalizeSubscriptionRecord(record); err != nil {
 		t.Fatalf("expected one-time billing cycle to be accepted: %v", err)
 	}
-	if record.GetInt("customDays") != 0 || record.GetBool("autoCalculateNextBillingDate") {
-		t.Fatalf("expected one-time to clear customDays and auto calculation, got customDays=%d auto=%v", record.GetInt("customDays"), record.GetBool("autoCalculateNextBillingDate"))
+	if record.GetInt("customDays") != 0 || record.GetString("customCycleUnit") != "" || record.GetInt("oneTimeTermCount") != 0 || record.GetString("oneTimeTermUnit") != "" || record.GetBool("autoRenew") || record.GetBool("autoCalculateNextBillingDate") {
+		t.Fatalf("expected one-time buyout to clear custom fields and renewal flags, got customDays=%d customCycleUnit=%q oneTimeTermCount=%d oneTimeTermUnit=%q autoRenew=%v auto=%v", record.GetInt("customDays"), record.GetString("customCycleUnit"), record.GetInt("oneTimeTermCount"), record.GetString("oneTimeTermUnit"), record.GetBool("autoRenew"), record.GetBool("autoCalculateNextBillingDate"))
+	}
+
+	record.Set("billingCycle", "one-time")
+	record.Set("oneTimeTermCount", 6)
+	record.Set("oneTimeTermUnit", "month")
+	record.Set("autoRenew", true)
+	record.Set("autoCalculateNextBillingDate", true)
+	if err := normalizeSubscriptionRecord(record); err != nil {
+		t.Fatalf("expected one-time fixed term to be accepted: %v", err)
+	}
+	if record.GetInt("oneTimeTermCount") != 6 || record.GetString("oneTimeTermUnit") != "month" || record.GetBool("autoRenew") || record.GetBool("autoCalculateNextBillingDate") {
+		t.Fatalf("expected one-time fixed term to preserve term and disable renewal flags, got count=%d unit=%q autoRenew=%v auto=%v", record.GetInt("oneTimeTermCount"), record.GetString("oneTimeTermUnit"), record.GetBool("autoRenew"), record.GetBool("autoCalculateNextBillingDate"))
+	}
+
+	record.Set("oneTimeTermUnit", "")
+	if err := normalizeSubscriptionRecord(record); err == nil {
+		t.Fatal("expected one-time term count without unit to fail")
+	}
+	record.Set("oneTimeTermCount", 0)
+	record.Set("oneTimeTermUnit", "month")
+	if err := normalizeSubscriptionRecord(record); err == nil {
+		t.Fatal("expected one-time term unit without count to fail")
+	}
+	record.Set("oneTimeTermCount", maxReminderDays+1)
+	record.Set("oneTimeTermUnit", "month")
+	if err := normalizeSubscriptionRecord(record); err == nil {
+		t.Fatal("expected one-time term count above max to fail")
+	}
+	record.Set("oneTimeTermCount", 6)
+	record.Set("oneTimeTermUnit", "month")
+	record.Set("billingCycle", "monthly")
+	if err := normalizeSubscriptionRecord(record); err != nil {
+		t.Fatalf("expected recurring subscription to clear stale one-time term fields: %v", err)
+	}
+	if record.GetInt("oneTimeTermCount") != 0 || record.GetString("oneTimeTermUnit") != "" {
+		t.Fatalf("expected recurring subscription to clear one-time term fields, got count=%d unit=%q", record.GetInt("oneTimeTermCount"), record.GetString("oneTimeTermUnit"))
+	}
+	record.Set("oneTimeTermCount", -1)
+	record.Set("oneTimeTermUnit", "month")
+	if err := normalizeSubscriptionRecord(record); err != nil {
+		t.Fatalf("expected recurring subscription to clear invalid stale one-time term fields: %v", err)
+	}
+	if record.GetInt("oneTimeTermCount") != 0 || record.GetString("oneTimeTermUnit") != "" {
+		t.Fatalf("expected recurring subscription to clear invalid one-time term fields, got count=%d unit=%q", record.GetInt("oneTimeTermCount"), record.GetString("oneTimeTermUnit"))
 	}
 
 	record.Set("billingCycle", "monthly")
@@ -179,13 +240,17 @@ func TestNormalizeSubscriptionRecordDefaultsAndValidatesContract(t *testing.T) {
 	}
 
 	record.Set("price", 10)
+	record.Set("reminderDays", disabledReminderDays)
+	if err := normalizeSubscriptionRecord(record); err != nil {
+		t.Fatalf("expected disabled reminder days to be accepted: %v", err)
+	}
 	record.Set("reminderDays", inheritReminderDays)
 	if err := normalizeSubscriptionRecord(record); err != nil {
 		t.Fatalf("expected inherited reminder days to be accepted: %v", err)
 	}
-	record.Set("reminderDays", inheritReminderDays-1)
+	record.Set("reminderDays", disabledReminderDays-1)
 	if err := normalizeSubscriptionRecord(record); err == nil {
-		t.Fatal("expected reminder days below inherit sentinel to fail")
+		t.Fatal("expected reminder days below disabled sentinel to fail")
 	}
 	record.Set("reminderDays", maxReminderDays+1)
 	if err := normalizeSubscriptionRecord(record); err == nil {
@@ -401,6 +466,7 @@ func newSubscriptionRecord(t *testing.T, app core.App, userID string, tags inter
 		"paymentMethod":                "",
 		"startDate":                    "2026-05-14",
 		"nextBillingDate":              "2026-06-14",
+		"autoRenew":                    true,
 		"autoCalculateNextBillingDate": true,
 		"trialEndDate":                 "",
 		"website":                      "",

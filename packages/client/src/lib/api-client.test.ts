@@ -1,6 +1,6 @@
 // apiFetch 测试保护 Zod 运行时校验、错误归一和超时取消语义，是前端网络边界的主回归基线。
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiFetch } from "./api-client";
+import { ApiError, apiFetch, apiFetchStream } from "./api-client";
 import { okResponseSchema } from "@/lib/api/schemas/common";
 
 const mocks = vi.hoisted(() => ({
@@ -18,6 +18,7 @@ describe("api-client", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -133,6 +134,67 @@ describe("api-client", () => {
     }));
 
     const promise = apiFetch("/api/cancelled", okResponseSchema, { signal: controller.signal, timeoutMs: 0 });
+    const assertion = expect(promise).rejects.toMatchObject({
+      status: 0,
+      code: "aborted",
+    } satisfies Partial<ApiError>);
+    controller.abort();
+
+    await assertion;
+  });
+
+  it("keeps stream response timeout scoped to headers after the response starts", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue(new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        setTimeout(() => {
+          controller.enqueue(new TextEncoder().encode("ok"));
+          controller.close();
+        }, 80);
+      },
+    })));
+
+    const promise = apiFetchStream("/api/stream", {
+      timeoutMs: 50,
+      streamIdleTimeoutMs: 100,
+    }, async (response) => await response.text());
+    const assertion = expect(promise).resolves.toBe("ok");
+    await vi.advanceTimersByTimeAsync(80);
+
+    await assertion;
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit & { streamIdleTimeoutMs?: number };
+    expect(init.streamIdleTimeoutMs).toBeUndefined();
+  });
+
+  it("classifies stream idle timeouts after headers are received", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue(new Response(new ReadableStream<Uint8Array>()));
+
+    const promise = apiFetchStream("/api/stream-idle", {
+      timeoutMs: 50,
+      streamIdleTimeoutMs: 100,
+    }, async (response) => await response.text());
+    const assertion = expect(promise).rejects.toMatchObject({
+      status: 0,
+      code: "timeout",
+    } satisfies Partial<ApiError>);
+    await vi.advanceTimersByTimeAsync(100);
+
+    await assertion;
+  });
+
+  it("keeps caller aborts working while a stream body is being consumed", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue(new Response(new ReadableStream<Uint8Array>()));
+
+    const promise = apiFetchStream("/api/stream-cancelled", {
+      signal: controller.signal,
+      timeoutMs: 0,
+      streamIdleTimeoutMs: 0,
+    }, async (response) => await response.text());
     const assertion = expect(promise).rejects.toMatchObject({
       status: 0,
       code: "aborted",

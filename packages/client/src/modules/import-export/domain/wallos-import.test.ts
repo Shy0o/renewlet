@@ -1,12 +1,22 @@
 // Wallos 导入测试保护 JSON/API/ZIP/SQLite 多来源映射，避免低保真路径误标成高置信导入。
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_CUSTOM_CONFIG } from "@/types/config";
 import { DEFAULT_SETTINGS } from "@/types/subscription";
 import { assertDateOnly } from "@/lib/time/date-only";
 import { translate } from "@/i18n/messages";
-import { parseJsonText } from "./wallos-import";
+import { parseJsonText, resolveImportAssets } from "./wallos-import";
 import { formatImportMessage } from "./import-message-format";
 import { importApplyRequestSchema, importPayloadSchema } from "@/lib/api/schemas/import-export";
+
+const assetMocks = vi.hoisted(() => ({
+  create: vi.fn(),
+}));
+
+vi.mock("@/services/asset-service", () => ({
+  assetService: {
+    create: assetMocks.create,
+  },
+}));
 
 const context = {
   config: DEFAULT_CUSTOM_CONFIG,
@@ -15,6 +25,10 @@ const context = {
 };
 
 describe("wallos import", () => {
+  beforeEach(() => {
+    assetMocks.create.mockReset();
+  });
+
   it("keeps preview large but caps apply requests at 200 subscriptions", () => {
     const subscription = {
       name: "Bulk",
@@ -25,6 +39,8 @@ describe("wallos import", () => {
       customDays: null,
       category: "productivity",
       status: "active",
+      pinned: false,
+      publicHidden: false,
       paymentMethod: null,
       startDate: "2026-05-21",
       nextBillingDate: "2026-06-21",
@@ -92,11 +108,78 @@ describe("wallos import", () => {
 
     expect(prepared.payload.source).toBe("wallos");
     expect(prepared.payload.subscriptions[0]?.billingCycle).toBe("custom");
-    expect(prepared.payload.subscriptions[0]?.customDays).toBe(14);
+    expect(prepared.payload.subscriptions[0]?.customDays).toBe(2);
+    expect(prepared.payload.subscriptions[0]?.customCycleUnit).toBe("week");
     expect(prepared.payload.subscriptions[0]?.reminderDays).toBe(-1);
+    expect(prepared.payload.subscriptions[0]?.autoRenew).toBe(true);
     expect(prepared.payload.subscriptions[0]?.extra.import.sourceId).toBe("7:12");
     expect(prepared.payload.subscriptions[0]?.logo).toBeNull();
     expect(prepared.payload.customConfig?.categories.some((item) => item.labels["en-US"] === "Developer")).toBe(true);
+  });
+
+  it("defaults Wallos rows without auto_renew to manual renewal", async () => {
+    const prepared = await parseJsonText(JSON.stringify({
+      success: true,
+      subscriptions: [{
+        id: 44,
+        user_id: 7,
+        name: "Missing Auto Renew",
+        price: 4,
+        currency_id: 1,
+        start_date: "2026-01-01",
+        next_payment: "2026-06-01",
+        cycle: 3,
+        frequency: 1,
+        inactive: 0,
+      }],
+    }), context);
+
+    expect(prepared.payload.subscriptions[0]?.autoRenew).toBe(false);
+  });
+
+  it("keeps Wallos audit metadata bounded and trims notes to the write schema limit", async () => {
+    const prepared = await parseJsonText(JSON.stringify({
+      success: true,
+      subscriptions: [{
+        id: 12,
+        user_id: 7,
+        name: "Large Wallos Row",
+        price: 4,
+        currency_id: 1,
+        start_date: "2026-01-01",
+        next_payment: "2026-06-01",
+        cycle: 3,
+        frequency: 1,
+        auto_renew: 1,
+        inactive: 0,
+        notify: 1,
+        notify_days_before: 7,
+        url: "https://billing.example.test/account",
+        logo: "oversized-logo-name.png",
+        notes: "n".repeat(6000),
+        unexpected_large_blob: "x".repeat(6000),
+      }],
+    }), context);
+
+    const subscription = prepared.payload.subscriptions[0];
+    const wallosAudit = subscription?.extra["wallos"] as Record<string, unknown>;
+
+    expect(subscription?.notes).toHaveLength(5000);
+    expect(wallosAudit).toEqual({
+      id: 12,
+      user_id: 7,
+      cycle: 3,
+      frequency: 1,
+      auto_renew: 1,
+      inactive: 0,
+      notify: 1,
+      notify_days_before: 7,
+      currency_id: 1,
+    });
+    expect(wallosAudit).not.toHaveProperty("notes");
+    expect(wallosAudit).not.toHaveProperty("url");
+    expect(wallosAudit).not.toHaveProperty("logo");
+    expect(wallosAudit).not.toHaveProperty("unexpected_large_blob");
   });
 
   it("keeps explicit Wallos reminder days while mapping only -1 to inherited reminders", async () => {
@@ -363,8 +446,9 @@ describe("wallos import", () => {
 
     expect(prepared.warnings).toContain("IMPORT_WARNING_FOR_SUBSCRIPTION|Lifetime Tool|IMPORT_WARNING_WALLOS_ONE_TIME");
     expect(prepared.warnings).toContain("IMPORT_WARNING_FOR_SUBSCRIPTION|Lifetime Tool|IMPORT_WARNING_WALLOS_NOTIFY_DISABLED");
+    expect(prepared.payload.subscriptions[0]?.reminderDays).toBe(-2);
     expect(formatted).toContain("Lifetime Tool：一次性购买已按买断记录导入，不参与自动续费。");
-    expect(formatted).toContain("Lifetime Tool：Wallos 这条订阅关闭了通知；Renewlet 没有单条通知开关，已保留默认提前 3 天提醒。");
+    expect(formatted).toContain("Lifetime Tool：Wallos 这条订阅关闭了通知；已按“不提醒”导入，可在预览中修改。");
     expect(formatted.join("\n")).not.toContain("IMPORT_WARNING_WALLOS");
   });
 
@@ -444,4 +528,61 @@ describe("wallos import", () => {
     expect(prepared.payload.subscriptions[0]?.website).toBe("https://billing.example.app/account");
     expect(prepared.payload.subscriptions[0]?.logo).toBeNull();
   });
+
+  it("uploads only logos that will be written by the import apply step", async () => {
+    const payload = importPayloadSchema.parse({
+      source: "wallos",
+      subscriptions: [
+        importSubscriptionFixture("Skipped Logo", "skip"),
+        importSubscriptionFixture("Writable Logo", "write"),
+      ],
+    });
+    assetMocks.create.mockResolvedValue({ url: "/api/app/assets/uploaded_logo" });
+
+    const resolved = await resolveImportAssets({
+      payload,
+      assets: [
+        { subscriptionIndex: 0, filename: "skipped.png", blob: new Blob(["skip"], { type: "image/png" }) },
+        { subscriptionIndex: 1, filename: "writable.png", blob: new Blob(["write"], { type: "image/png" }) },
+      ],
+      warnings: [],
+    }, [
+      { index: 0, name: "Skipped Logo", source: "wallos", sourceId: "skip", action: "skip", warnings: [], errors: [] },
+      { index: 1, name: "Writable Logo", source: "wallos", sourceId: "write", action: "create", warnings: [], errors: [] },
+    ]);
+
+    expect(assetMocks.create).toHaveBeenCalledTimes(1);
+    expect(assetMocks.create).toHaveBeenCalledWith(expect.any(Blob), "logo", "writable.png");
+    expect(resolved.subscriptions[0]?.logo).toBeNull();
+    expect(resolved.subscriptions[1]?.logo).toBe("/api/app/assets/uploaded_logo");
+  });
 });
+
+function importSubscriptionFixture(name: string, sourceId: string) {
+  return {
+    name,
+    logo: null,
+    price: 1,
+    currency: "USD",
+    billingCycle: "monthly",
+    customDays: null,
+    customCycleUnit: null,
+    category: "productivity",
+    status: "active",
+    pinned: false,
+    publicHidden: false,
+    paymentMethod: null,
+    startDate: "2026-05-21",
+    nextBillingDate: "2026-06-21",
+    autoCalculateNextBillingDate: true,
+    trialEndDate: null,
+    website: null,
+    notes: null,
+    tags: [],
+    reminderDays: 3,
+    repeatReminderEnabled: false,
+    repeatReminderInterval: "1h",
+    repeatReminderWindow: "72h",
+    extra: { import: { source: "wallos", sourceId, confidence: "high" } },
+  };
+}

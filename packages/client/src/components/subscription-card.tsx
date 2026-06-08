@@ -14,16 +14,15 @@ import { useState } from 'react';
 import type { ConfigItem } from '@/types/config';
 import {
   DEFAULT_NOTIFICATION_REMINDER_DAYS,
+  DISABLED_REMINDER_DAYS,
   INHERIT_REMINDER_DAYS,
-  STATUS_LABELS,
   CYCLE_LABELS,
   type Subscription,
-  type SubscriptionStatus,
 } from '@/types/subscription';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { colorWithAlpha } from '@/lib/color';
-import { Calendar, MoreHorizontal, CalendarClock, Bell, CreditCard, CalendarPlus, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
+import { Calendar, MoreHorizontal, CalendarClock, Bell, CreditCard, CalendarPlus, Eye, EyeOff, Pencil, Pin, PinOff, RotateCw, Trash2 } from 'lucide-react';
 import {
   daysBetweenDateOnly,
   todayDateOnlyInTimeZone,
@@ -53,6 +52,9 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { localizedLabel } from '@/i18n/locales';
 import { AddToCalendarDialog } from '@/components/add-to-calendar-dialog';
 import { SubscriptionLogo } from '@/components/subscription-logo';
+import { SubscriptionStatusBadge } from '@/components/subscription-status-badge';
+import { formatBillingCycleLabel, isOneTimeBuyout, isOneTimeFixedTerm } from '@/lib/subscription-billing';
+import { isManualRenewEligible } from '@renewlet/shared/subscription-renewal';
 
 export type SubscriptionCardLookup = ReadonlyMap<string, ConfigItem>;
 
@@ -67,6 +69,12 @@ interface SubscriptionCardProps {
   onDelete?: (id: string) => void;
   /** 置顶切换动作由页面持有 mutation，卡片只负责菜单入口。 */
   onTogglePinned?: (id: string) => void;
+  /** 公开页隐藏切换由页面持有 mutation，卡片只负责菜单入口。 */
+  onTogglePublicHidden?: (id: string) => void;
+  /** 手动续订动作由页面持有 mutation，卡片只负责可见入口。 */
+  onRenew?: (id: string) => void;
+  /** 卡片主体 primary action：打开只读详情；菜单内动作保持独立。 */
+  onViewDetails?: (id: string) => void;
   /** 用户 IANA 时区，用于续费/试用提示窗口。 */
   timeZone: string;
   /** 分类配置查找表由页面级容器构建，避免虚拟列表 item 重复订阅全局配置。 */
@@ -77,15 +85,6 @@ interface SubscriptionCardProps {
   inheritedReminderDays?: number | undefined;
 }
 
-/** 状态配色：用于 trial/active 等视觉提示。 */
-const statusStyles: Record<SubscriptionStatus, string> = {
-  trial: 'bg-warning/10 text-warning border-warning/20',
-  active: 'bg-success/10 text-success border-success/20',
-  expired: 'bg-destructive/10 text-destructive border-destructive/20',
-  paused: 'bg-muted text-muted-foreground border-muted',
-  cancelled: 'bg-destructive/10 text-destructive border-destructive/20',
-};
-
 const DEFAULT_BADGE_COLOR = "hsl(var(--primary))";
 
 /** 订阅卡片。 */
@@ -95,6 +94,9 @@ export function SubscriptionCard({
   onEdit,
   onDelete,
   onTogglePinned,
+  onTogglePublicHidden,
+  onRenew,
+  onViewDetails,
   timeZone,
   categoryByValue,
   paymentMethodByValue,
@@ -116,11 +118,21 @@ export function SubscriptionCard({
   const daysUntilRenewal = daysBetweenDateOnly(today, subscription.nextBillingDate);
   const daysUntilTrialEnd = subscription.trialEndDate ? daysBetweenDateOnly(today, subscription.trialEndDate) : null;
   const isOneTime = subscription.billingCycle === "one-time";
+  const isBuyout = isOneTimeBuyout(subscription);
+  const isFixedTermOneTime = isOneTimeFixedTerm(subscription);
+  const hasCalendarEvent = !isBuyout;
+  const canManualRenew = Boolean(onRenew) && isManualRenewEligible(subscription);
+  const billingCycleLabel = formatBillingCycleLabel(subscription, locale);
+  const renewalBadgeLabel = isOneTime
+    ? localizedLabel(CYCLE_LABELS["one-time"], locale)
+    : subscription.autoRenew
+      ? t("subscription.renewal.auto")
+      : t("subscription.renewal.manual");
   // 卡片是用户最先看到的状态入口，必须用有效状态，避免旧 active/trial 过期数据同时显示“活跃”和“即将续费”。
   const effectiveStatus = getEffectiveSubscriptionStatus(subscription, today);
   const isExpired = effectiveStatus === "expired";
   // 这里是展示提示窗口，不等同于 Cron 通知窗口；不要把两者的阈值混用。
-  const isRenewingSoon = !isOneTime && !isExpired && daysUntilRenewal <= 7 && daysUntilRenewal >= 0;
+  const isRenewingSoon = !isExpired && !isBuyout && daysUntilRenewal <= 7 && daysUntilRenewal >= 0;
   const isTrialEndingSoon = !isExpired && subscription.status === 'trial' && daysUntilTrialEnd !== null &&
     daysUntilTrialEnd <= 3 && daysUntilTrialEnd >= 0;
 
@@ -129,6 +141,9 @@ export function SubscriptionCard({
     onDelete?.(subscription.id);
     setShowDeleteDialog(false);
   };
+  const handleViewDetails = () => {
+    onViewDetails?.(subscription.id);
+  };
 
   return (
     <>
@@ -136,12 +151,22 @@ export function SubscriptionCard({
       data-testid="subscription-card"
       className={cn(
         "group relative h-full overflow-hidden rounded-xl border border-border bg-card p-5 shadow-card transition-all duration-300 hover:bg-card-hover",
+        onViewDetails && "cursor-pointer",
         isExpired && "border-destructive/40",
         isRenewingSoon && "border-warning/40",
         isTrialEndingSoon && "animate-pulse-glow"
       )}
     >
-      <div className="relative z-10 flex items-start gap-4">
+      {onViewDetails ? (
+        <button
+          type="button"
+          aria-label={t("subscription.viewDetailsLabel", { name: subscription.name })}
+          className="absolute inset-0 z-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          onClick={handleViewDetails}
+          data-testid="subscription-card-primary-action"
+        />
+      ) : null}
+      <div className={cn("relative z-10 flex items-start gap-4", onViewDetails && "pointer-events-none")}>
         <SubscriptionLogo name={subscription.name} logo={subscription.logo} fallbackColor={categoryColor} size="md" />
 
         <div className="min-w-0 flex-1 grid gap-3">
@@ -165,7 +190,7 @@ export function SubscriptionCard({
                 {formatCurrency(subscription.price, subscription.currency)}
               </p>
               <p className="text-xs text-muted-foreground">
-                {localizedLabel(CYCLE_LABELS[subscription.billingCycle], locale)}
+                {billingCycleLabel}
               </p>
             </div>
 
@@ -174,21 +199,29 @@ export function SubscriptionCard({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+                  className="pointer-events-auto h-8 w-8 shrink-0 text-muted-foreground transition-colors hover:text-foreground"
                   aria-label={t("subscription.moreActions")}
                 >
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuContent align="end" className="pointer-events-auto w-40">
                 <DropdownMenuItem className="gap-2.5 px-2.5 py-2 text-sm" onClick={() => onEdit?.(subscription.id)}>
                   <Pencil className="h-4 w-4 shrink-0 text-muted-foreground" />
                   {t("common.edit")}
                 </DropdownMenuItem>
-                <DropdownMenuItem className="gap-2.5 px-2.5 py-2 text-sm" onClick={() => setShowAddToCalendarDialog(true)}>
-                  <CalendarPlus className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  {t("subscription.addToCalendar")}
-                </DropdownMenuItem>
+                {hasCalendarEvent ? (
+                  <DropdownMenuItem className="gap-2.5 px-2.5 py-2 text-sm" onClick={() => setShowAddToCalendarDialog(true)}>
+                    <CalendarPlus className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    {t("subscription.addToCalendar")}
+                  </DropdownMenuItem>
+                ) : null}
+                {canManualRenew ? (
+                  <DropdownMenuItem className="gap-2.5 px-2.5 py-2 text-sm" onClick={() => onRenew?.(subscription.id)}>
+                    <RotateCw className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    {t("subscription.renew")}
+                  </DropdownMenuItem>
+                ) : null}
                 {onTogglePinned ? (
                   <DropdownMenuItem className="gap-2.5 px-2.5 py-2 text-sm" onClick={() => onTogglePinned(subscription.id)}>
                     {subscription.pinned ? (
@@ -197,6 +230,16 @@ export function SubscriptionCard({
                       <Pin className="h-4 w-4 shrink-0 text-muted-foreground" />
                     )}
                     {subscription.pinned ? t("subscription.unpin") : t("subscription.pin")}
+                  </DropdownMenuItem>
+                ) : null}
+                {onTogglePublicHidden ? (
+                  <DropdownMenuItem className="gap-2.5 px-2.5 py-2 text-sm" onClick={() => onTogglePublicHidden(subscription.id)}>
+                    {subscription.publicHidden ? (
+                      <Eye className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <EyeOff className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    )}
+                    {subscription.publicHidden ? t("subscription.publicShow") : t("subscription.publicHide")}
                   </DropdownMenuItem>
                 ) : null}
                 <DropdownMenuSeparator />
@@ -218,17 +261,10 @@ export function SubscriptionCard({
               >
                 <TruncatedTooltipText text={categoryLabel} className="block max-w-full" />
               </Badge>
-              <Badge
-                variant="outline"
-                className={cn("shrink-0 whitespace-nowrap text-xs", statusStyles[effectiveStatus])}
-              >
-                {localizedLabel(STATUS_LABELS[effectiveStatus], locale)}
+              <SubscriptionStatusBadge status={effectiveStatus} />
+              <Badge variant={isOneTime ? "secondary" : subscription.autoRenew ? "outline" : "secondary"} className="shrink-0 whitespace-nowrap text-xs">
+                {renewalBadgeLabel}
               </Badge>
-              {isOneTime && (
-                <Badge variant="secondary" className="shrink-0 whitespace-nowrap text-xs">
-                  {localizedLabel(CYCLE_LABELS["one-time"], locale)}
-                </Badge>
-              )}
             </div>
           </div>
 
@@ -246,8 +282,18 @@ export function SubscriptionCard({
             )}>
               <Calendar className="h-3.5 w-3.5" />
               <span className="text-xs">
-                {isOneTime ? (
-                  t("subscription.card.oneTimeDate", { date: formatDateOnly(subscription.nextBillingDate) })
+                {isBuyout ? (
+                  t("subscription.card.oneTimeDate", { date: formatDateOnly(subscription.startDate) })
+                ) : isFixedTermOneTime ? (
+                  isExpired
+                    ? daysUntilRenewal < 0
+                      ? t("subscription.card.expiredDays", { days: Math.abs(daysUntilRenewal) })
+                      : t("subscription.card.expired")
+                    : daysUntilRenewal === 0
+                      ? t("subscription.card.expiresToday")
+                      : daysUntilRenewal <= 7
+                        ? t("subscription.card.expiresInDays", { days: daysUntilRenewal })
+                        : t("subscription.card.expiresPrefix", { date: formatDateOnly(subscription.nextBillingDate) })
                 ) : isExpired ? (
                   daysUntilRenewal < 0
                     ? t("subscription.card.expiredDays", { days: Math.abs(daysUntilRenewal) })
@@ -274,11 +320,13 @@ export function SubscriptionCard({
               );
             })()}
 
-            {viewMode === 'list' && !isOneTime && (
+            {viewMode === 'list' && !isBuyout && (
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <Bell className="h-3.5 w-3.5" />
                 <span className="text-xs">
-                  {subscription.reminderDays === INHERIT_REMINDER_DAYS
+                  {subscription.reminderDays === DISABLED_REMINDER_DAYS
+                    ? t("subscription.card.reminderDisabled")
+                    : subscription.reminderDays === INHERIT_REMINDER_DAYS
                     ? t("subscription.card.reminderInherit", { days: inheritedReminderDays })
                     : t("subscription.card.reminderDays", { days: subscription.reminderDays })}
                 </span>

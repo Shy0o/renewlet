@@ -47,11 +47,12 @@ function localLocators(page: Page) {
     cta: page.locator('[data-section="cta"]'),
     footer: page.locator('[data-section="footer"]'),
     cards: [
+      page.locator('[data-card="ai-recognition"]'),
       page.locator('[data-card="subscriptions"]'),
+      page.locator('[data-card="public-status"]'),
       page.locator('[data-card="reminders"]'),
       page.locator('[data-card="calendar"]'),
       page.locator('[data-card="statistics"]'),
-      page.locator('[data-card="hosting"]'),
     ],
     runtimeCards: [
       page.locator('[data-card="docker"]'),
@@ -106,6 +107,14 @@ test.describe('website visual coverage', () => {
     await page.getByRole('banner').getByRole('button', { name: /Switch to English/i }).click()
     await stabilizePage(page)
     await expectSectionScreenshot(local.hero, `renewlet-hero-en-${suffix}.png`)
+    await expectSectionScreenshot(local.intro, `renewlet-intro-en-${suffix}.png`)
     await expectSectionScreenshot(local.features, `renewlet-features-en-${suffix}.png`)
+    await expectSectionScreenshot(local.runtime, `renewlet-runtime-en-${suffix}.png`)
+    await expectSectionScreenshot(local.cta, `renewlet-cta-en-${suffix}.png`)
+    await expect.soft(page).toHaveScreenshot(`renewlet-home-en-${suffix}.png`, {
+      animations: 'disabled',
+      fullPage: true,
+      maxDiffPixelRatio: 0.02,
+    })
   })
 })

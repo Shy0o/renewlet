@@ -23,6 +23,7 @@ const (
 	legacyWebhookHeadersExample = `{"Authorization": "Bearer your-token", "Content-Type": "application/json"}`
 	legacyWebhookPayloadExample = `{"title": "{title}", "content": "{content}", "timestamp": "{timestamp}"}`
 
+	disabledReminderDays            = -2
 	inheritReminderDays             = -1
 	defaultNotificationReminderDays = 3
 	maxReminderDays                 = 3650
@@ -31,12 +32,13 @@ const (
 var (
 	notificationCronMu sync.Mutex
 	knownChannels      = map[string]struct{}{
-		"telegram": {},
-		"notifyx":  {},
-		"webhook":  {},
-		"wechat":   {},
-		"email":    {},
-		"bark":     {},
+		"telegram":   {},
+		"notifyx":    {},
+		"webhook":    {},
+		"wechat":     {},
+		"email":      {},
+		"bark":       {},
+		"serverchan": {},
 	}
 )
 
@@ -50,8 +52,10 @@ type appSettings struct {
 	ShowExpired              bool                      `json:"showExpired"`
 	Locale                   string                    `json:"locale"`
 	DefaultCurrency          string                    `json:"defaultCurrency"`
+	PublicStatusCurrency     string                    `json:"publicStatusCurrency"`
 	ExchangeRateProvider     string                    `json:"exchangeRateProvider"`
 	BuiltInIconSources       builtInIconSourceSettings `json:"builtInIconSources"`
+	AIRecognition            aiRecognitionSettings     `json:"aiRecognition"`
 	MonthlyBudget            float64                   `json:"monthlyBudget"`
 	Timezone                 string                    `json:"timezone"`
 	NotificationTimeLocal    string                    `json:"notificationTimeLocal"`
@@ -82,6 +86,7 @@ type appSettings struct {
 	BarkServerURL            string                    `json:"barkServerUrl"`
 	BarkDeviceKey            string                    `json:"barkDeviceKey"`
 	BarkSilentPush           bool                      `json:"barkSilentPush"`
+	ServerChanSendKey        string                    `json:"serverchanSendKey"`
 }
 
 type themeCustomColor struct {
@@ -100,6 +105,8 @@ type notificationSubscription struct {
 	Currency               string  `json:"currency"`
 	Status                 string  `json:"status"`
 	BillingCycle           string  `json:"billingCycle"`
+	OneTimeTermCount       int     `json:"oneTimeTermCount,omitempty"`
+	OneTimeTermUnit        string  `json:"oneTimeTermUnit,omitempty"`
 	NextBillingDate        string  `json:"nextBillingDate"`
 	TrialEndDate           string  `json:"trialEndDate,omitempty"`
 	ReminderDays           int     `json:"reminderDays"`
@@ -358,17 +365,38 @@ type webhookDefaultPayload struct {
 	Timestamp string `json:"timestamp"`
 }
 
+type serverChanSendRequest struct {
+	Title string `json:"title"`
+	Desp  string `json:"desp"`
+}
+
+type serverChanSendResponse struct {
+	Code    *int   `json:"code"`
+	Message string `json:"message"`
+	Detail  string `json:"detail"`
+}
+
 func defaultAppSettings() appSettings {
 	return appSettings{
-		AdminUsername:            "admin",
-		ThemeMode:                "dark",
-		ThemeVariant:             "emerald",
-		ThemeCustomColor:         themeCustomColor{H: 160, S: 84, L: 39},
-		ShowExpired:              true,
-		Locale:                   string(defaultAppLocale),
-		DefaultCurrency:          "CNY",
-		ExchangeRateProvider:     "floatrates",
-		BuiltInIconSources:       defaultBuiltInIconSourceSettings(),
+		AdminUsername:        "admin",
+		ThemeMode:            "dark",
+		ThemeVariant:         "emerald",
+		ThemeCustomColor:     themeCustomColor{H: 160, S: 84, L: 39},
+		ShowExpired:          true,
+		Locale:               string(defaultAppLocale),
+		DefaultCurrency:      "CNY",
+		PublicStatusCurrency: "inherit",
+		ExchangeRateProvider: "floatrates",
+		BuiltInIconSources:   defaultBuiltInIconSourceSettings(),
+		AIRecognition: aiRecognitionSettings{
+			ProviderType:           aiProviderTypeOpenAI,
+			TransportProtocol:      aiProtocolOpenAIChat,
+			Model:                  "",
+			ModelInputMode:         "select",
+			BaseURL:                "",
+			APIKey:                 "",
+			DefaultThinkingControl: nil,
+		},
 		MonthlyBudget:            1500,
 		Timezone:                 "UTC",
 		NotificationTimeLocal:    "08:00",

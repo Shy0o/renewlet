@@ -36,7 +36,7 @@ export const localScheduleOccurrenceResponseSchema = z.object({
 }).strict();
 
 export const notificationContentItemResponseSchema = z.object({
-  type: z.enum(["renewal", "trial", "expired"]),
+  type: z.enum(["renewal", "trial", "expired", "expiry"]),
   subscriptionId: z.string(),
   name: z.string(),
   price: z.number(),

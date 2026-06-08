@@ -53,12 +53,26 @@
       "viewport": "desktop",
       "path": "/",
       "waitFor": {
-        "zh": "月度支出",
+        "zh": "月均支出",
         "en": "Monthly spend"
       },
       "website": true,
       "readme": true,
       "hero": true
+    },
+    {
+      "key": "ai-recognition",
+      "viewport": "desktop",
+      "path": "/subscriptions",
+      "waitFor": {
+        "zh": "订阅列表",
+        "en": "Subscriptions"
+      },
+      "prepareScenario": "ai-recognition-input",
+      "website": true,
+      "readme": true,
+      "featureScene": "ai-recognition",
+      "sizesKey": "featureWide"
     },
     {
       "key": "subscriptions",
@@ -73,12 +87,27 @@
       "featureScene": "subscriptions"
     },
     {
+      "key": "public-status",
+      "viewport": "desktop",
+      "path": "/",
+      "waitFor": {
+        "zh": "月均支出",
+        "en": "Monthly spend"
+      },
+      "prepareScenario": "public-status-page",
+      "assertStableVersion": false,
+      "website": true,
+      "readme": true,
+      "featureScene": "public-status",
+      "sizesKey": "featureWide"
+    },
+    {
       "key": "calendar",
       "viewport": "desktop",
       "path": "/calendar",
       "waitFor": {
-        "zh": "续费日历",
-        "en": "Renewal calendar"
+        "zh": "续费/到期日历",
+        "en": "Renewal / expiry calendar"
       },
       "website": true,
       "readme": true,
@@ -118,8 +147,8 @@
       "viewport": "mobile",
       "path": "/subscriptions",
       "waitFor": {
-        "zh": "Linear Business",
-        "en": "Linear Business"
+        "zh": "订阅列表",
+        "en": "Subscriptions"
       },
       "website": true,
       "readme": true
@@ -145,10 +174,20 @@
   ],
   "visualSnapshots": [
     "apps/website/tests/__screenshots__/local-desktop/renewlet-feature-card-5-desktop.png",
+    "apps/website/tests/__screenshots__/local-desktop/renewlet-feature-card-6-desktop.png",
     "apps/website/tests/__screenshots__/local-mobile/renewlet-feature-card-5-mobile.png",
+    "apps/website/tests/__screenshots__/local-mobile/renewlet-feature-card-6-mobile.png",
     "apps/website/tests/__screenshots__/local-desktop/renewlet-hero-en-desktop.png",
     "apps/website/tests/__screenshots__/local-mobile/renewlet-hero-en-mobile.png",
+    "apps/website/tests/__screenshots__/local-desktop/renewlet-intro-en-desktop.png",
+    "apps/website/tests/__screenshots__/local-mobile/renewlet-intro-en-mobile.png",
     "apps/website/tests/__screenshots__/local-desktop/renewlet-features-en-desktop.png",
-    "apps/website/tests/__screenshots__/local-mobile/renewlet-features-en-mobile.png"
+    "apps/website/tests/__screenshots__/local-mobile/renewlet-features-en-mobile.png",
+    "apps/website/tests/__screenshots__/local-desktop/renewlet-runtime-en-desktop.png",
+    "apps/website/tests/__screenshots__/local-mobile/renewlet-runtime-en-mobile.png",
+    "apps/website/tests/__screenshots__/local-desktop/renewlet-cta-en-desktop.png",
+    "apps/website/tests/__screenshots__/local-mobile/renewlet-cta-en-mobile.png",
+    "apps/website/tests/__screenshots__/local-desktop/renewlet-home-en-desktop.png",
+    "apps/website/tests/__screenshots__/local-mobile/renewlet-home-en-mobile.png"
   ]
 }
