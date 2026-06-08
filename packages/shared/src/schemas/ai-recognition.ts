@@ -255,6 +255,59 @@ export const aiRecognizeResponseSchema = z.object({
 }).strict();
 export type AiRecognizeResponse = z.infer<typeof aiRecognizeResponseSchema>;
 
+export const aiRecognitionStreamStageSchema = z.enum([
+  "input-read",
+  "model-start",
+  "model-stream",
+  "repair-start",
+  "validating",
+  "finalizing",
+]);
+export type AiRecognitionStreamStage = z.infer<typeof aiRecognitionStreamStageSchema>;
+
+const aiRecognitionStreamProgressEventSchema = z.object({
+  type: z.literal("recognition/progress"),
+  stage: aiRecognitionStreamStageSchema,
+}).strict();
+
+const aiRecognitionStreamPartialEventSchema = z.object({
+  type: z.literal("recognition/partial"),
+  subscriptionsSeen: z.number().int().nonnegative().max(AI_RECOGNITION_MAX_SUBSCRIPTIONS),
+  warningsSeen: z.number().int().nonnegative().max(20),
+}).strict();
+
+const aiRecognitionStreamTextDeltaEventSchema = z.object({
+  type: z.literal("recognition/text-delta"),
+  delta: z.string().max(AI_RECOGNITION_DIAGNOSTIC_TEXT_MAX_CHARS),
+}).strict();
+
+const aiRecognitionStreamReasoningDeltaEventSchema = z.object({
+  type: z.literal("recognition/reasoning-delta"),
+  delta: z.string().max(AI_RECOGNITION_DIAGNOSTIC_TEXT_MAX_CHARS),
+}).strict();
+
+const aiRecognitionStreamFinalEventSchema = z.object({
+  type: z.literal("recognition/final"),
+  response: aiRecognizeResponseSchema,
+}).strict();
+
+const aiRecognitionStreamErrorEventSchema = z.object({
+  type: z.literal("recognition/error"),
+  message: z.string().trim().min(1).max(1000),
+  code: z.string().trim().min(1).max(120),
+  details: aiRecognitionErrorDetailsSchema.optional(),
+}).strict();
+
+export const aiRecognitionStreamEventSchema = z.discriminatedUnion("type", [
+  aiRecognitionStreamProgressEventSchema,
+  aiRecognitionStreamPartialEventSchema,
+  aiRecognitionStreamTextDeltaEventSchema,
+  aiRecognitionStreamReasoningDeltaEventSchema,
+  aiRecognitionStreamFinalEventSchema,
+  aiRecognitionStreamErrorEventSchema,
+]);
+export type AiRecognitionStreamEvent = z.infer<typeof aiRecognitionStreamEventSchema>;
+
 export const aiGeneratedSubscriptionDraftSchema = z.object({
   name: z.string().trim().max(120),
   price: generatedNumberSchema,

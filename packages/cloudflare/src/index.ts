@@ -25,7 +25,7 @@ import {
 import { readCustomConfig, readSettings, updateCustomConfig, updateSettings } from "./settings";
 import { createSubscription, deleteSubscription, readSubscriptions, renewSubscription, updateSubscription } from "./subscriptions";
 import { applyImport, previewImport } from "./import-export";
-import { recognizeSubscriptions, testAIRecognitionConnection } from "./ai-recognition";
+import { recognizeSubscriptions, recognizeSubscriptionsStream, testAIRecognitionConnection } from "./ai-recognition";
 import { listAIModels } from "./ai-models";
 import { mediaCandidates } from "./search";
 import { notificationHistory, notificationRun, notificationTest, runScheduledNotifications } from "./notifications";
@@ -104,7 +104,7 @@ async function routePublic(request: Request, env: Env, url: URL): Promise<Respon
 
 async function routeApp(request: Request, env: Env, url: URL): Promise<Response> {
   const segments = pathSegments(url);
-  const [head, second, third] = segments;
+  const [head, second, third, fourth, fifth] = segments;
 
   // Worker 只实现 Renewlet 产品 API，不模拟 PocketBase REST；路由表越显式，运行面漂移越早暴露。
   if (head === "auth" && second === "login") return routeMethods(request, { POST: () => login(request, env) });
@@ -168,7 +168,10 @@ async function routeApp(request: Request, env: Env, url: URL): Promise<Response>
 
   if (head === "import" && second === "preview") return routeMethods(request, { POST: () => previewImport(request, env) });
   if (head === "import" && second === "apply") return routeMethods(request, { POST: () => applyImport(request, env) });
-  if (head === "ai" && second === "subscriptions" && third === "recognize") {
+  if (head === "ai" && second === "subscriptions" && third === "recognize" && fourth === "stream" && !fifth) {
+    return routeMethods(request, { POST: () => recognizeSubscriptionsStream(request, env) });
+  }
+  if (head === "ai" && second === "subscriptions" && third === "recognize" && !fourth) {
     return routeMethods(request, { POST: () => recognizeSubscriptions(request, env) });
   }
   if (head === "ai" && second === "subscriptions" && third === "test") {

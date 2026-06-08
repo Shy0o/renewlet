@@ -21,6 +21,7 @@ type aiRecognitionGeneration struct {
 }
 
 var generateAIRecognitionObjectForRunner = generateAIRecognitionObject
+var streamAIRecognitionObjectForRunner = streamAIRecognitionObject
 var newAIRecognitionModelForConnection = newAIRecognitionModel
 
 func (goaiRecognitionRunner) Recognize(
@@ -72,8 +73,106 @@ func (goaiRecognitionRunner) Recognize(
 	return response, nil
 }
 
+func (goaiRecognitionRunner) Stream(
+	ctx context.Context,
+	settings aiRecognitionSettings,
+	input aiRecognitionInput,
+	locale appLocale,
+	timezone string,
+	defaultCurrency string,
+	configContext aiRecognitionConfigContext,
+	sink aiRecognitionStreamSink,
+) error {
+	if err := validateAIRecognitionSettings(settings, locale); err != nil {
+		return err
+	}
+	model, err := newAIRecognitionModel(settings)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, aiRecognitionProviderTimeout)
+	defer cancel()
+
+	systemPrompt := buildAIRecognitionSystemPrompt()
+	userPrompt := buildAIRecognitionUserPrompt(input.Text, timezone, defaultCurrency, len(input.Images), locale, configContext)
+	if err := sink.Progress(aiRecognitionStreamStageModelStart); err != nil {
+		return err
+	}
+	generation, err := streamAIRecognitionObjectForRunner(ctx, model, input, systemPrompt, userPrompt, sink)
+	if err != nil {
+		if generation.capture.rawModelText == "" {
+			generation.capture.rawModelText = aiRecognitionRawTextFromError(err)
+		}
+		diagnostics := buildAIRecognitionDiagnostics(settings, input, systemPrompt, userPrompt, generation.capture.rawModelText, nil, generation.capture.usage, generation.capture.finishReason, generation.capture.providerMetadata)
+		return &aiRecognitionRunError{cause: err, diagnostics: diagnostics}
+	}
+	if err := sink.Progress(aiRecognitionStreamStageValidating); err != nil {
+		return err
+	}
+	diagnostics := buildAIRecognitionDiagnosticsForGeneration(settings, input, systemPrompt, userPrompt, generation)
+	response, err := normalizeAIGeneratedRecognizeResponse(generation.result.Object, settings.ProviderType, settings.TransportProtocol, settings.Model, diagnostics, configContext)
+	if err != nil {
+		return &aiRecognitionRunError{cause: err, diagnostics: diagnostics}
+	}
+	if missingNames := missingDescribableAINoteNames(response.Subscriptions); len(missingNames) > 0 {
+		if err := sink.Progress(aiRecognitionStreamStageRepairStart); err != nil {
+			return err
+		}
+		repairPrompt := buildAIRecognitionRepairUserPrompt(userPrompt, generation.result.Object, missingNames)
+		if repairedGeneration, repairErr := streamAIRecognitionObjectForRunner(ctx, model, input, systemPrompt, repairPrompt, sink); repairErr == nil {
+			repairDiagnostics := buildAIRecognitionDiagnosticsForGeneration(settings, input, systemPrompt, repairPrompt, repairedGeneration)
+			if repairedResponse, normalizeErr := normalizeAIGeneratedRecognizeResponse(repairedGeneration.result.Object, settings.ProviderType, settings.TransportProtocol, settings.Model, repairDiagnostics, configContext); normalizeErr == nil {
+				diagnostics = repairDiagnostics
+				response = repairedResponse
+			}
+		}
+		response.Diagnostics = diagnostics
+		response = fillMissingAINotesWithDynamicFallback(response, locale, configContext)
+	}
+	if err := sink.Progress(aiRecognitionStreamStageFinalizing); err != nil {
+		return err
+	}
+	return sink.Final(response)
+}
+
 func generateAIRecognitionObject(ctx context.Context, model provider.LanguageModel, input aiRecognitionInput, systemPrompt string, userPrompt string) (aiRecognitionGeneration, error) {
 	capture := aiRecognitionCapture{}
+	result, err := goai.GenerateObject[aiGeneratedRecognizeResponse](ctx, model, aiRecognitionObjectOptions(model, input, systemPrompt, userPrompt, &capture)...)
+	if err == nil && result == nil {
+		err = errAIRecognitionEmptyObject
+	}
+	return aiRecognitionGeneration{result: result, capture: capture}, err
+}
+
+func streamAIRecognitionObject(ctx context.Context, model provider.LanguageModel, input aiRecognitionInput, systemPrompt string, userPrompt string, sink aiRecognitionStreamSink) (aiRecognitionGeneration, error) {
+	capture := aiRecognitionCapture{}
+	stream, err := goai.StreamObject[aiGeneratedRecognizeResponse](ctx, model, aiRecognitionObjectOptions(model, input, systemPrompt, userPrompt, &capture)...)
+	if err != nil {
+		return aiRecognitionGeneration{capture: capture}, err
+	}
+	streamStarted := false
+	for partial := range stream.PartialObjectStream() {
+		if partial == nil {
+			continue
+		}
+		if !streamStarted {
+			streamStarted = true
+			if err := sink.Progress(aiRecognitionStreamStageModelStream); err != nil {
+				return aiRecognitionGeneration{capture: capture}, err
+			}
+		}
+		if err := sink.Partial(len(partial.Subscriptions), len(partial.Warnings)); err != nil {
+			return aiRecognitionGeneration{capture: capture}, err
+		}
+	}
+	result, err := stream.Result()
+	if err == nil && result == nil {
+		err = errAIRecognitionEmptyObject
+	}
+	return aiRecognitionGeneration{result: result, capture: capture}, err
+}
+
+func aiRecognitionObjectOptions(model provider.LanguageModel, input aiRecognitionInput, systemPrompt string, userPrompt string, capture *aiRecognitionCapture) []goai.Option {
 	userParts := []provider.Part{{
 		Type: provider.PartText,
 		Text: userPrompt,
@@ -93,17 +192,18 @@ func generateAIRecognitionObject(ctx context.Context, model provider.LanguageMod
 		goai.WithExplicitSchema(aiRecognitionGeneratedSchema),
 		goai.WithSchemaName(aiRecognitionPrompt.SchemaName),
 		goai.WithOnStepFinish(func(step goai.StepResult) {
-			capture.rawModelText = step.Text
-			capture.usage = step.Usage
-			capture.finishReason = string(step.FinishReason)
-			capture.providerMetadata = step.ProviderMetadata
+			if capture != nil {
+				capture.rawModelText = step.Text
+				capture.usage = step.Usage
+				capture.finishReason = string(step.FinishReason)
+				capture.providerMetadata = step.ProviderMetadata
+			}
 		}),
 	}
 	if providerOptions := aiRecognitionProviderOptions(modelProviderType(model), modelTransportProtocol(model), input.ThinkingControl); len(providerOptions) > 0 {
 		options = append(options, goai.WithProviderOptions(providerOptions))
 	}
-	result, err := goai.GenerateObject[aiGeneratedRecognizeResponse](ctx, model, options...)
-	return aiRecognitionGeneration{result: result, capture: capture}, err
+	return options
 }
 
 func buildAIRecognitionDiagnosticsForGeneration(settings aiRecognitionSettings, input aiRecognitionInput, systemPrompt string, userPrompt string, generation aiRecognitionGeneration) aiRecognitionDiagnostics {

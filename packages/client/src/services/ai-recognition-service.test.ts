@@ -4,10 +4,25 @@ import { aiRecognitionService } from "./ai-recognition-service";
 
 const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
+  apiFetchStream: vi.fn(),
 }));
 
 vi.mock("@/lib/api-client", () => ({
   apiFetch: mocks.apiFetch,
+  apiFetchStream: mocks.apiFetchStream,
+  ApiError: class ApiError extends Error {
+    status: number;
+    details: unknown;
+    code: string | undefined;
+
+    constructor(message: string, status: number, details?: unknown, code?: string) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+      this.details = details;
+      this.code = code;
+    }
+  },
 }));
 
 const response = {
@@ -48,7 +63,14 @@ const response = {
 describe("aiRecognitionService", () => {
   beforeEach(() => {
     mocks.apiFetch.mockReset();
+    mocks.apiFetchStream.mockReset();
     mocks.apiFetch.mockResolvedValue(response);
+    mocks.apiFetchStream.mockImplementation(async (_input: string, _init: RequestInit, consume: (response: Response) => Promise<unknown>) => (
+      await consume(new Response([
+        `data: ${JSON.stringify({ type: "recognition/final", response })}`,
+        "",
+      ].join("\n")))
+    ));
   });
 
   it("omits thinkingControl from multipart requests when no control is selected", async () => {
@@ -74,6 +96,61 @@ describe("aiRecognitionService", () => {
     const init = mocks.apiFetch.mock.calls[0]?.[2] as RequestInit;
     const body = init.body as FormData;
     expect(body.get("thinkingControl")).toBe(JSON.stringify({ provider: "openai", effort: "high" }));
+  });
+
+  it("streams recognition events through the authenticated app API", async () => {
+    const events: unknown[] = [];
+    const controller = new AbortController();
+
+    await expect(aiRecognitionService.recognizeSubscriptionsStream({
+      text: "github copilot 20刀 一个月",
+      images: [],
+      thinkingControl: null,
+    }, {
+      onEvent: (event) => events.push(event),
+    }, {
+      signal: controller.signal,
+    })).resolves.toEqual(response);
+
+    expect(mocks.apiFetchStream.mock.calls[0]?.[0]).toBe("/api/app/ai/subscriptions/recognize/stream");
+    const init = mocks.apiFetchStream.mock.calls[0]?.[1] as RequestInit & { timeoutMs: number };
+    expect(init).toMatchObject({ method: "POST", timeoutMs: 120_000 });
+    expect(init.signal).toBe(controller.signal);
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).get("text")).toBe("github copilot 20刀 一个月");
+    expect(events).toEqual([{ type: "recognition/final", response }]);
+  });
+
+  it("parses split SSE chunks and surfaces stream errors", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder();
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "recognition/progress", stage: "model-start" })}\n\n`));
+        controller.enqueue(encoder.encode("data: {\"type\":\"recognition/error\",\"message\":\"bad key\","));
+        controller.enqueue(encoder.encode("\"code\":\"AI_RECOGNITION_FAILED\"}\n\n"));
+        controller.close();
+      },
+    });
+    mocks.apiFetchStream.mockImplementationOnce(async (_input: string, _init: RequestInit, consume: (response: Response) => Promise<unknown>) => (
+      await consume(new Response(stream))
+    ));
+    const events: unknown[] = [];
+
+    await expect(aiRecognitionService.recognizeSubscriptionsStream({
+      text: "github copilot 20刀 一个月",
+      images: [],
+      thinkingControl: null,
+    }, {
+      onEvent: (event) => events.push(event),
+    })).rejects.toMatchObject({
+      message: "bad key",
+      code: "AI_RECOGNITION_FAILED",
+    });
+
+    expect(events).toEqual([
+      { type: "recognition/progress", stage: "model-start" },
+      { type: "recognition/error", message: "bad key", code: "AI_RECOGNITION_FAILED" },
+    ]);
   });
 
   it("loads provider models through the authenticated app API", async () => {

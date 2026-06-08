@@ -10,6 +10,7 @@ import {
   type AIRecognitionStep,
 } from "@/components/ai-recognition/ai-recognition-dialog-layout";
 import { AIRecognitionInputTabs } from "@/components/ai-recognition/ai-recognition-input-tabs";
+import { AIRecognitionStreamPanel } from "@/components/ai-recognition/ai-recognition-stream-panel";
 import type { AIDraftListItem, AIRecognitionImageItem, AIRecognitionInputMode } from "@/components/ai-recognition/ai-recognition-dialog-types";
 import Link from "@/components/router-link";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,8 @@ import {
   AI_RECOGNITION_MAX_IMAGE_BYTES,
   AI_RECOGNITION_MAX_IMAGES,
   type AiRecognizedSubscriptionDraft,
+  type AiRecognitionStreamEvent,
+  type AiRecognitionStreamStage,
   type AiThinkingControl,
 } from "@/lib/api/schemas/ai-recognition";
 import { cn } from "@/lib/utils";
@@ -50,7 +53,10 @@ interface AIRecognizeSubscriptionDialogProps {
 }
 
 type AIRecognitionStage = "input" | "draft" | "preview";
+type AIRecognitionStreamStatus = "running" | "complete" | "error" | "stopped";
 const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const AI_RECOGNITION_TEXT_PREVIEW_MAX_CHARS = 360;
+const AI_RECOGNITION_REASONING_PREVIEW_MAX_CHARS = 1600;
 const AI_BLOCKING_IMPORT_WARNING_CODES = new Set<string>([
   IMPORT_MESSAGE_CODES.aiBillingCycleDefaulted,
   IMPORT_MESSAGE_CODES.aiCurrencyDefaulted,
@@ -73,6 +79,7 @@ export function AIRecognizeSubscriptionDialog({
   const imageIdRef = useRef(0);
   const draftIdRef = useRef(0);
   const recognitionRunRef = useRef(0);
+  const recognitionAbortRef = useRef<AbortController | null>(null);
   const [inputMode, setInputMode] = useState<AIRecognitionInputMode>("text");
   const [text, setText] = useState("");
   const [images, setImages] = useState<AIRecognitionImageItem[]>([]);
@@ -84,6 +91,12 @@ export function AIRecognizeSubscriptionDialog({
   const [previewingDrafts, setPreviewingDrafts] = useState(false);
   const [stage, setStage] = useState<AIRecognitionStage>("input");
   const [draftsStale, setDraftsStale] = useState(false);
+  const [streamStage, setStreamStage] = useState<AiRecognitionStreamStage | null>(null);
+  const [streamStatus, setStreamStatus] = useState<AIRecognitionStreamStatus | null>(null);
+  const [streamSubscriptionsSeen, setStreamSubscriptionsSeen] = useState(0);
+  const [streamWarningsSeen, setStreamWarningsSeen] = useState(0);
+  const [streamTextPreview, setStreamTextPreview] = useState("");
+  const [streamReasoningText, setStreamReasoningText] = useState("");
   const today = todayDateOnlyInTimeZone(new Date(), settings.timezone);
   const aiSettings = settings.aiRecognition;
   const settingsBlocker = getAIRecognitionSettingsBlocker(aiSettings);
@@ -142,14 +155,23 @@ export function AIRecognizeSubscriptionDialog({
     imageItemsRef.current = images;
   }, [images]);
 
-  useEffect(() => () => revokeImageItems(imageItemsRef.current), []);
+  useEffect(() => () => {
+    recognitionAbortRef.current?.abort();
+    revokeImageItems(imageItemsRef.current);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
     setThinkingControl(normalizeAIThinkingControl(aiSettings.providerType, aiSettings.transportProtocol, aiSettings.model, aiSettings.defaultThinkingControl));
   }, [aiSettings.defaultThinkingControl, aiSettings.model, aiSettings.providerType, aiSettings.transportProtocol, open]);
 
+  function cancelActiveRecognitionRun() {
+    recognitionAbortRef.current?.abort();
+    recognitionAbortRef.current = null;
+  }
+
   function reset() {
+    cancelActiveRecognitionRun();
     recognitionRunRef.current += 1;
     revokeImageItems(imageItemsRef.current);
     imageItemsRef.current = [];
@@ -165,6 +187,7 @@ export function AIRecognizeSubscriptionDialog({
     setPreviewingDrafts(false);
     setStage("input");
     setDraftsStale(false);
+    resetStreamState();
     setError(null);
     resetImportPreview();
   }
@@ -230,6 +253,12 @@ export function AIRecognizeSubscriptionDialog({
   }
 
   function markDraftsStaleFromInputChange() {
+    if (recognitionAbortRef.current) {
+      cancelActiveRecognitionRun();
+      recognitionRunRef.current += 1;
+      setRecognizing(false);
+      setStreamStatus("stopped");
+    }
     if (drafts.length === 0) return;
     // 输入、图片和思考控制是草稿生成的事实源；返回输入后改动任一项，都必须让旧 preview 失效。
     setDraftsStale(true);
@@ -249,19 +278,33 @@ export function AIRecognizeSubscriptionDialog({
 
   const handleRecognize = async () => {
     if (!canGenerate) return;
+    // runId 与 AbortController 共同保护 SSE 竞态：旧流即使晚到，也不能覆盖新一轮输入状态。
     const runId = recognitionRunRef.current + 1;
     recognitionRunRef.current = runId;
+    cancelActiveRecognitionRun();
+    const controller = new AbortController();
+    recognitionAbortRef.current = controller;
     setRecognizing(true);
     setError(null);
     setRecognitionWarnings([]);
+    resetStreamState();
+    setStreamStatus("running");
     resetImportPreview();
     try {
-      const response = await aiRecognitionService.recognizeSubscriptions({
-        text: inputMode === "text" ? text : "",
-        images: inputMode === "image" ? images.map((image) => image.file) : [],
-        thinkingControl,
-      });
+      const response = await aiRecognitionService.recognizeSubscriptionsStream(
+        {
+          text: inputMode === "text" ? text : "",
+          images: inputMode === "image" ? images.map((image) => image.file) : [],
+          thinkingControl,
+        },
+        {
+          onEvent: (event) => handleRecognitionStreamEvent(runId, event),
+        },
+        { signal: controller.signal },
+      );
       if (recognitionRunRef.current !== runId) return;
+      // final 事件是唯一可信草稿来源；partial/text/reasoning 只驱动上方状态面板，不能进入导入预览。
+      resetStreamState();
       const nextDrafts = response.subscriptions.map((draft) => ({
         id: nextDraftId(draftIdRef),
         draft,
@@ -273,11 +316,52 @@ export function AIRecognizeSubscriptionDialog({
       setStage("draft");
     } catch (err) {
       if (recognitionRunRef.current !== runId) return;
+      const aborted = isAbortedApiError(err);
+      setStreamStatus(aborted ? "stopped" : "error");
+      if (aborted) return;
       setError(getDisplayErrorMessage(err, t("aiRecognition.recognizeFailedDescription")));
     } finally {
-      if (recognitionRunRef.current === runId) setRecognizing(false);
+      if (recognitionRunRef.current === runId) {
+        setRecognizing(false);
+        recognitionAbortRef.current = null;
+      }
     }
   };
+
+  function resetStreamState() {
+    setStreamStage(null);
+    setStreamStatus(null);
+    setStreamSubscriptionsSeen(0);
+    setStreamWarningsSeen(0);
+    setStreamTextPreview("");
+    setStreamReasoningText("");
+  }
+
+  function handleRecognitionStreamEvent(runId: number, event: AiRecognitionStreamEvent) {
+    if (recognitionRunRef.current !== runId) return;
+    switch (event.type) {
+      case "recognition/progress":
+        setStreamStage(event.stage);
+        break;
+      case "recognition/partial":
+        setStreamSubscriptionsSeen(event.subscriptionsSeen);
+        setStreamWarningsSeen(event.warningsSeen);
+        break;
+      case "recognition/text-delta":
+        setStreamTextPreview((current) => appendLimitedText(current, event.delta, AI_RECOGNITION_TEXT_PREVIEW_MAX_CHARS));
+        break;
+      case "recognition/reasoning-delta":
+        setStreamReasoningText((current) => appendLimitedText(current, event.delta, AI_RECOGNITION_REASONING_PREVIEW_MAX_CHARS));
+        break;
+      case "recognition/final":
+        setStreamStatus("complete");
+        setStreamStage("finalizing");
+        break;
+      case "recognition/error":
+        setStreamStatus("error");
+        break;
+    }
+  }
 
   const handleBuildPreview = async () => {
     if (drafts.length === 0 || draftsStale) return;
@@ -347,12 +431,24 @@ export function AIRecognizeSubscriptionDialog({
       onThinkingChange={handleThinkingChange}
     />
   );
+  const streamPanel = streamStatus ? (
+    <AIRecognitionStreamPanel
+      stage={streamStage}
+      status={streamStatus}
+      subscriptionsSeen={streamSubscriptionsSeen}
+      warningsSeen={streamWarningsSeen}
+      textPreview={streamTextPreview}
+      reasoningText={streamReasoningText}
+      errorMessage={streamStatus === "error" ? error : null}
+      mobile={isMobile}
+    />
+  ) : null;
 
   const body = (
     <div
       data-testid="ai-recognition-dialog-body"
       className={cn(
-        "min-h-0",
+        "h-full min-h-0",
         isMobile ? "px-3 py-2" : "px-4 py-4 sm:px-6",
         inputStageVisible || draftStageVisible
           ? cn("flex flex-col overflow-hidden", isMobile ? "gap-2" : "gap-4")
@@ -391,7 +487,9 @@ export function AIRecognizeSubscriptionDialog({
               ) : (
                 <>
                   {inputTabs}
-                  {runSettingsPanel}
+                  <div className="min-h-0 space-y-3 overflow-y-auto">
+                    {runSettingsPanel}
+                  </div>
                 </>
               )}
             </section>
@@ -570,7 +668,17 @@ export function AIRecognizeSubscriptionDialog({
           />
         ) : null}
 
-        {body}
+        <div data-testid="ai-recognition-dialog-workspace" className="relative min-h-0 flex-1 overflow-hidden">
+          {body}
+          {streamPanel ? (
+            <div
+              data-testid="ai-recognition-stream-overlay"
+              className="absolute inset-0 z-20 flex items-center justify-center overflow-y-auto bg-card/75 px-3 py-4 backdrop-blur-[2px] sm:px-6"
+            >
+              {streamPanel}
+            </div>
+          ) : null}
+        </div>
         {isMobile ? mobileFooter : desktopFooter}
       </DialogContent>
     </Dialog>
@@ -606,6 +714,22 @@ function revokeImageItems(images: readonly AIRecognitionImageItem[]) {
   for (const image of images) {
     revokeImageItem(image);
   }
+}
+
+function appendLimitedText(current: string, delta: string, maxChars: number): string {
+  const next = `${current}${delta}`;
+  const chars = [...next];
+  if (chars.length <= maxChars) return next;
+  return `...${chars.slice(chars.length - maxChars).join("")}`;
+}
+
+function isAbortedApiError(error: unknown): boolean {
+  return Boolean(
+    error
+    && typeof error === "object"
+    && "code" in error
+    && (error as { code?: unknown }).code === "aborted",
+  );
 }
 
 function hasBlockingAIImportWarnings(warnings: readonly string[]): boolean {

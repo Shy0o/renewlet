@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { AI_RECOGNITION_MAX_IMAGES } from "@renewlet/shared/schemas/ai-recognition";
-import { recognizeSubscriptions, testAIRecognitionConnection } from "./ai-recognition";
+import { AI_RECOGNITION_MAX_IMAGES, type AiRecognitionStreamEvent } from "@renewlet/shared/schemas/ai-recognition";
+import { recognizeSubscriptions, recognizeSubscriptionsStream, testAIRecognitionConnection } from "./ai-recognition";
+import { generatedDraft } from "./ai-recognition.test-utils";
 import type { Env } from "./types";
 
 const authMocks = vi.hoisted(() => ({
@@ -16,6 +17,8 @@ const dbMocks = vi.hoisted(() => ({
 const aiMocks = vi.hoisted(() => ({
   generateObject: vi.fn(),
   generateText: vi.fn(),
+  streamText: vi.fn(),
+  outputObject: vi.fn((options: unknown) => options),
   wrapLanguageModel: vi.fn(({ model }: { model: unknown }) => model),
   isNoObjectGeneratedError: vi.fn((error: unknown) => Boolean(error && typeof error === "object" && "__noObjectGenerated" in error)),
 }));
@@ -33,6 +36,10 @@ vi.mock("./db", () => ({
 vi.mock("ai", () => ({
   generateObject: aiMocks.generateObject,
   generateText: aiMocks.generateText,
+  streamText: aiMocks.streamText,
+  Output: {
+    object: aiMocks.outputObject,
+  },
   wrapLanguageModel: aiMocks.wrapLanguageModel,
   NoObjectGeneratedError: {
     isInstance: aiMocks.isNoObjectGeneratedError,
@@ -133,34 +140,49 @@ function testConnectionRequestFor(settings: unknown): Request {
   });
 }
 
-function generatedDraft(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    name: "dmit",
-    price: 15,
-    currency: "CNY",
-    billingCycle: "monthly",
-    customDays: null,
-    customCycleUnit: null,
-    oneTimeTermCount: null,
-    oneTimeTermUnit: null,
-    category: null,
-    status: "active",
-    paymentMethod: null,
-    startDate: null,
-    nextBillingDate: null,
-    autoCalculateNextBillingDate: true,
-    trialEndDate: null,
-    website: null,
-    notes: { value: "DMIT 是提供 VPS 和云服务器相关产品或服务的订阅服务。", source: "suggested" },
-    tags: [],
-    reminderDays: null,
-    repeatReminderEnabled: null,
-    repeatReminderInterval: null,
-    repeatReminderWindow: null,
-    confidence: "high",
+function streamTextResult({
+  object = {
+    subscriptions: [generatedDraft()],
     warnings: [],
-    ...overrides,
+  },
+  outputError,
+  fullStream = [],
+  partialOutputStream = [],
+}: {
+  object?: unknown;
+  outputError?: unknown;
+  fullStream?: unknown[];
+  partialOutputStream?: unknown[];
+}) {
+  return {
+    output: outputError ? Promise.reject(outputError) : Promise.resolve(object),
+    fullStream: asyncIterable(fullStream),
+    partialOutputStream: asyncIterable(partialOutputStream),
+    usage: Promise.resolve({ inputTokens: 5, outputTokens: 7, totalTokens: 12 }),
+    finishReason: Promise.resolve("stop"),
+    providerMetadata: Promise.resolve({ openai: { responseId: "resp_stream" } }),
   };
+}
+
+async function* asyncIterable(values: unknown[]): AsyncIterable<unknown> {
+  for (const value of values) {
+    yield value;
+  }
+}
+
+async function readSSEEvents(response: Response): Promise<AiRecognitionStreamEvent[]> {
+  const text = await response.text();
+  return text
+    .replace(/\r\n/g, "\n")
+    .split("\n\n")
+    .filter((frame) => frame.trim().length > 0)
+    .map((frame) => {
+      const data = frame.split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trimStart())
+        .join("\n");
+      return JSON.parse(data) as AiRecognitionStreamEvent;
+    });
 }
 
 describe("Cloudflare AI recognition", () => {
@@ -170,6 +192,8 @@ describe("Cloudflare AI recognition", () => {
     dbMocks.listSubscriptionTags.mockReset();
     aiMocks.generateObject.mockReset();
     aiMocks.generateText.mockReset();
+    aiMocks.streamText.mockReset();
+    aiMocks.outputObject.mockClear();
     aiMocks.wrapLanguageModel.mockClear();
     aiMocks.isNoObjectGeneratedError.mockClear();
     authMocks.requireAuth.mockResolvedValue({ user: authUser, session: { id: "ses" }, token: "test" });
@@ -288,6 +312,61 @@ describe("Cloudflare AI recognition", () => {
     expect(body.diagnostics.output.rawObjectJson?.value).toContain("\"name\": \"dmit\"");
     expect(body.diagnostics.request).toMatchObject({ providerType: "openai", transportProtocol: "openai-chat", model: "gpt-5.1", textCharCount: 12, images: [] });
     expect(body.diagnostics.response.finishReason).toBe("stop");
+  });
+
+  it("streams progress, partial counts, real deltas and final drafts", async () => {
+    aiMocks.streamText.mockReturnValue(streamTextResult({
+      object: {
+        subscriptions: [generatedDraft()],
+        warnings: [],
+      },
+      fullStream: [
+        { type: "reasoning-delta", delta: "checking input" },
+        { type: "text-delta", delta: "{\"subscriptions\"" },
+        { type: "finish", finishReason: "stop", usage: { inputTokens: 5, outputTokens: 7 }, providerMetadata: { openai: { responseId: "resp_stream" } } },
+      ],
+      partialOutputStream: [
+        { subscriptions: [generatedDraft()], warnings: ["AI_WARNING_LOW_CONFIDENCE"] },
+      ],
+    }));
+
+    const response = await recognizeSubscriptionsStream(requestForText("dmit 15元 1个月"), envFixture());
+    const events = await readSSEEvents(response);
+    const types = events.map((event) => event.type);
+    const final = events.find((event): event is Extract<AiRecognitionStreamEvent, { type: "recognition/final" }> => event.type === "recognition/final");
+
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    expect(types).toContain("recognition/progress");
+    expect(types).toContain("recognition/partial");
+    expect(types).toContain("recognition/text-delta");
+    expect(types).toContain("recognition/reasoning-delta");
+    expect(types.at(-1)).toBe("recognition/final");
+    expect(events).toContainEqual({ type: "recognition/progress", stage: "input-read" });
+    expect(events).toContainEqual({ type: "recognition/progress", stage: "model-start" });
+    expect(events).toContainEqual({ type: "recognition/partial", subscriptionsSeen: 1, warningsSeen: 1 });
+    expect(events).toContainEqual({ type: "recognition/reasoning-delta", delta: "checking input" });
+    expect(final?.response.subscriptions[0]?.name).toBe("dmit");
+    expect(JSON.stringify(events)).not.toContain("sk-test");
+    expect(aiMocks.outputObject).toHaveBeenCalledWith(expect.objectContaining({ name: "renewlet_ai_subscription_recognition" }));
+  });
+
+  it("streams sanitized error events when provider streaming fails", async () => {
+    aiMocks.streamText.mockReturnValue(streamTextResult({
+      outputError: new Error("provider failed sk-stream-secret123"),
+      fullStream: [],
+      partialOutputStream: [],
+    }));
+
+    const response = await recognizeSubscriptionsStream(requestForText("dmit 15元 1个月"), envFixture());
+    const events = await readSSEEvents(response);
+    const error = events.find((event): event is Extract<AiRecognitionStreamEvent, { type: "recognition/error" }> => event.type === "recognition/error");
+    const payload = JSON.stringify(events);
+
+    expect(response.status).toBe(200);
+    expect(error?.code).toBe("AI_RECOGNITION_FAILED");
+    expect(error?.details?.providerMessage).toContain("[redacted]");
+    expect(payload).not.toContain("sk-test");
+    expect(payload).not.toContain("sk-stream-secret123");
   });
 
   it("does not apply saved default thinking when the multipart field is absent", async () => {

@@ -1,11 +1,13 @@
-import { apiFetch } from "@/lib/api-client";
+import { ApiError, apiFetch, apiFetchStream } from "@/lib/api-client";
 import {
   aiModelListResponseSchema,
+  aiRecognitionStreamEventSchema,
   aiRecognitionTestResponseSchema,
   aiRecognizeResponseSchema,
   type AiModelListRequest,
   type AiModelListResponse,
   type AiRecognitionSettings,
+  type AiRecognitionStreamEvent,
   type AiRecognitionTestResponse,
   type AiRecognizeResponse,
   type AiThinkingControl,
@@ -15,6 +17,14 @@ interface RecognizeSubscriptionsInput {
   text: string;
   images: File[];
   thinkingControl: AiThinkingControl | null;
+}
+
+interface RecognizeSubscriptionsStreamHandlers {
+  onEvent?: (event: AiRecognitionStreamEvent) => void;
+}
+
+interface RecognizeSubscriptionsStreamOptions {
+  signal?: AbortSignal;
 }
 
 export const aiRecognitionService = {
@@ -27,19 +37,28 @@ export const aiRecognitionService = {
   },
 
   async recognizeSubscriptions(input: RecognizeSubscriptionsInput): Promise<AiRecognizeResponse> {
-    const formData = new FormData();
-    formData.set("text", input.text);
-    if (input.thinkingControl) {
-      formData.set("thinkingControl", JSON.stringify(input.thinkingControl));
-    }
-    for (const image of input.images) {
-      formData.append("images[]", image, image.name);
-    }
     return await apiFetch("/api/app/ai/subscriptions/recognize", aiRecognizeResponseSchema, {
       method: "POST",
-      body: formData,
+      body: createRecognizeSubscriptionsFormData(input),
       timeoutMs: 120_000,
     });
+  },
+
+  async recognizeSubscriptionsStream(
+    input: RecognizeSubscriptionsInput,
+    handlers: RecognizeSubscriptionsStreamHandlers = {},
+    options: RecognizeSubscriptionsStreamOptions = {},
+  ): Promise<AiRecognizeResponse> {
+    return await apiFetchStream(
+      "/api/app/ai/subscriptions/recognize/stream",
+      {
+        method: "POST",
+        body: createRecognizeSubscriptionsFormData(input),
+        timeoutMs: 120_000,
+        ...(options.signal ? { signal: options.signal } : {}),
+      },
+      (response) => consumeRecognitionEventStream(response, handlers.onEvent),
+    );
   },
 
   async testConnection(settings: AiRecognitionSettings): Promise<AiRecognitionTestResponse> {
@@ -50,3 +69,83 @@ export const aiRecognitionService = {
     });
   },
 };
+
+function createRecognizeSubscriptionsFormData(input: RecognizeSubscriptionsInput): FormData {
+  const formData = new FormData();
+  formData.set("text", input.text);
+  if (input.thinkingControl) {
+    formData.set("thinkingControl", JSON.stringify(input.thinkingControl));
+  }
+  for (const image of input.images) {
+    formData.append("images[]", image, image.name);
+  }
+  return formData;
+}
+
+async function consumeRecognitionEventStream(
+  response: Response,
+  onEvent: ((event: AiRecognitionStreamEvent) => void) | undefined,
+): Promise<AiRecognizeResponse> {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new ApiError("Invalid stream response", response.status, undefined, "invalid_response");
+  }
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalResponse: AiRecognizeResponse | null = null;
+
+  const readFrame = (frame: string) => {
+    const data = frame.split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).replace(/^ /, ""))
+      .join("\n")
+      .trim();
+    if (!data) return;
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(data) as unknown;
+    } catch {
+      throw new ApiError("Invalid stream response", response.status, data, "invalid_response");
+    }
+    const parsed = aiRecognitionStreamEventSchema.safeParse(payload);
+    if (!parsed.success) {
+      throw new ApiError("Invalid stream response", response.status, parsed.error.flatten(), "invalid_response");
+    }
+    const event = parsed.data;
+    onEvent?.(event);
+    if (event.type === "recognition/error") {
+      throw new ApiError(event.message, response.status, event.details, event.code);
+    }
+    if (event.type === "recognition/final") {
+      finalResponse = event.response;
+    }
+  };
+
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      let separator = buffer.indexOf("\n\n");
+      while (separator >= 0) {
+        const frame = buffer.slice(0, separator);
+        buffer = buffer.slice(separator + 2);
+        readFrame(frame);
+        separator = buffer.indexOf("\n\n");
+      }
+      if (done) break;
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+  const tail = buffer.trim();
+  if (tail) readFrame(tail);
+  if (!finalResponse) {
+    throw new ApiError("Invalid stream response", response.status, undefined, "invalid_response");
+  }
+  return finalResponse;
+}

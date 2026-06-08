@@ -1,30 +1,24 @@
-import { generateObject, generateText, NoObjectGeneratedError, wrapLanguageModel, type JSONValue, type ModelMessage, type UserContent } from "ai";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { generateObject, Output, streamText, type JSONValue } from "ai";
 import {
-  AI_RECOGNITION_DIAGNOSTIC_JSON_MAX_CHARS,
-  AI_RECOGNITION_DIAGNOSTIC_TEXT_MAX_CHARS,
   AI_RECOGNITION_MAX_IMAGES,
   AI_RECOGNITION_MAX_IMAGE_BYTES,
   AI_RECOGNITION_MAX_TEXT_CHARS,
   aiGeneratedRecognizeObjectSchema,
-  aiRecognitionDiagnosticsSchema,
   aiRecognitionErrorDetailsSchema,
   aiRecognitionSettingsSchema,
+  aiRecognitionStreamEventSchema,
   aiRecognitionTestRequestSchema,
   aiRecognitionTestResponseSchema,
   aiThinkingControlSchema,
   type AiGeneratedRecognizeObject,
   type AiRecognitionDiagnostics,
   type AiRecognitionSettings,
+  type AiRecognitionStreamEvent,
   type AiThinkingControl,
   type AiRecognizeResponse,
 } from "@renewlet/shared/schemas/ai-recognition";
 import { resolveAIProviderEndpoint } from "@renewlet/shared/ai-provider-endpoints";
 import {
-  AI_RECOGNITION_PROMPT_VERSION,
   AI_RECOGNITION_SCHEMA_NAME,
   type AIRecognitionPromptConfigContext,
   buildAIRecognitionSystemPrompt,
@@ -42,31 +36,54 @@ import {
   missingDescribableNoteNames,
   normalizeGeneratedAIRecognizeObject,
 } from "./ai-recognition-normalize";
+import { normalizeAIImageType } from "./ai-recognition-input";
+import {
+  aiRecognitionErrorDetails,
+  buildAIRecognitionDiagnostics,
+  finishReasonText,
+  noObjectGeneratedFinishReason,
+  noObjectGeneratedText,
+  noObjectGeneratedUsage,
+  safeAIRecognitionError,
+} from "./ai-recognition-diagnostics";
+import {
+  buildAIRecognitionMessages,
+  createAIRecognitionLanguageModel,
+  createAIRecognitionModel,
+  providerOptionsForThinking,
+  runAIRecognitionConnectionTest,
+  thinkingControlMatchesSettings,
+  todayDateOnly,
+  type AIRecognitionCapture,
+} from "./ai-recognition-runtime";
 
 const AI_RECOGNITION_MULTIPART_OVERHEAD = 1024 * 1024;
 const AI_RECOGNITION_MAX_BODY_BYTES =
   AI_RECOGNITION_MAX_TEXT_CHARS * 4
   + AI_RECOGNITION_MAX_IMAGES * AI_RECOGNITION_MAX_IMAGE_BYTES
   + AI_RECOGNITION_MULTIPART_OVERHEAD;
-const AI_SECRET_PATTERN = /(sk-[A-Za-z0-9_-]{8,}|AIza[0-9A-Za-z_-]{8,}|sk-ant-[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9._-]{8,}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|(?:api[_-]?key|authorization|cookie|set-cookie|access[_-]?token|refresh[_-]?token)["'\s:=]+[A-Za-z0-9._~+/=-]{8,})/gi;
-const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
-const AI_RECOGNITION_TEST_TEXT = "Reply with OK.";
-
 type AIRecognitionInput = {
   text: string;
   images: Array<{ data: Uint8Array; mediaType: string }>;
   thinkingControl: AiThinkingControl | null;
 };
 
-type AIRecognitionCapture = {
-  rawModelText: string | null;
-  usage: unknown | null;
-  finishReason: string | null;
-  providerMetadata: unknown | null;
-};
-
 type AIRecognitionGeneration = AIRecognitionCapture & {
   object: AiGeneratedRecognizeObject;
+};
+
+type AIRecognitionRunContext = {
+  locale: AppLocale;
+  settings: AiRecognitionSettings;
+  input: AIRecognitionInput;
+  thinkingControl: AiThinkingControl | null;
+  timezone: string;
+  defaultCurrency: string;
+  configContext: AIRecognitionPromptConfigContext;
+};
+
+type AIRecognitionStreamSink = {
+  emit: (event: AiRecognitionStreamEvent) => void;
 };
 
 class AIRecognitionRunError extends Error {
@@ -95,6 +112,96 @@ class AIRecognitionGenerationError extends Error {
  * 真正写库仍必须由前端把草稿转成 import payload 后走 preview/apply，避免第三方模型输出绕过用户确认。
  */
 export async function recognizeSubscriptions(request: Request, env: Env): Promise<Response> {
+  const runContext = await prepareAIRecognitionRun(request, env);
+
+  try {
+    const response = await runAIRecognition({
+      settings: runContext.settings,
+      input: runContext.input,
+      locale: runContext.locale,
+      timezone: runContext.timezone,
+      defaultCurrency: runContext.defaultCurrency,
+      configContext: runContext.configContext,
+      thinkingControl: runContext.thinkingControl,
+      maxOutputTokens: 12000,
+    });
+    if (response.subscriptions.length === 0) {
+      throw new HttpError(400, serverText(runContext.locale, "aiRecognition.noSubscriptions"), "AI_RECOGNITION_EMPTY", aiRecognitionErrorDetails("empty", null, response.diagnostics));
+    }
+    return json(response);
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    const diagnostics = aiRecognitionDiagnosticsFromError(error);
+    const cause = aiRecognitionCauseFromError(error);
+    if (isAIRecognitionSchemaMismatch(error)) {
+      throw new HttpError(
+        400,
+        serverText(runContext.locale, "aiRecognition.schemaMismatch"),
+        "AI_RECOGNITION_SCHEMA_MISMATCH",
+        diagnostics ? aiRecognitionErrorDetails("schema_mismatch", cause, diagnostics) : safeAIRecognitionError(cause),
+      );
+    }
+    throw new HttpError(
+      400,
+      serverText(runContext.locale, "aiRecognition.failed"),
+      "AI_RECOGNITION_FAILED",
+      diagnostics ? aiRecognitionErrorDetails("provider_failed", cause, diagnostics) : safeAIRecognitionError(cause),
+    );
+  }
+}
+
+export async function recognizeSubscriptionsStream(request: Request, env: Env): Promise<Response> {
+  const runContext = await prepareAIRecognitionRun(request, env);
+  const encoder = new TextEncoder();
+  let closed = false;
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const emit = (event: AiRecognitionStreamEvent) => {
+        if (closed) return;
+        // Worker 与 Go 必须发同构事件；每个事件先过 shared schema，防止调试原文或图片内容意外进入 SSE。
+        const safeEvent = aiRecognitionStreamEventSchema.parse(event);
+        controller.enqueue(encoder.encode(`event: ${safeEvent.type}\ndata: ${JSON.stringify(safeEvent)}\n\n`));
+      };
+      void (async () => {
+        try {
+          emit({ type: "recognition/progress", stage: "input-read" });
+          const response = await runAIRecognitionStream({
+            ...runContext,
+            maxOutputTokens: 12000,
+            abortSignal: request.signal,
+            sink: { emit },
+          });
+          if (response.subscriptions.length === 0) {
+            throw new HttpError(400, serverText(runContext.locale, "aiRecognition.noSubscriptions"), "AI_RECOGNITION_EMPTY", aiRecognitionErrorDetails("empty", null, response.diagnostics));
+          }
+          emit({ type: "recognition/final", response });
+        } catch (error) {
+          emit(aiRecognitionStreamErrorEvent(runContext.locale, error));
+        } finally {
+          if (!closed) {
+            closed = true;
+            controller.close();
+          }
+        }
+      })();
+    },
+    cancel() {
+      closed = true;
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      "x-accel-buffering": "no",
+    },
+  });
+}
+
+async function prepareAIRecognitionRun(request: Request, env: Env): Promise<AIRecognitionRunContext> {
   const locale = requestLocale(request);
   const auth = await requireAuth(request, env);
   assertAIRecognitionContentLength(request, locale);
@@ -111,42 +218,15 @@ export async function recognizeSubscriptions(request: Request, env: Env): Promis
     getCustomConfig(env, auth.user.id),
     listSubscriptionTags(env, auth.user.id),
   ]);
-  const configContext = aiRecognitionConfigContext(customConfig, locale, existingTags);
-
-  try {
-    const response = await runAIRecognition({
-      settings: aiSettings,
-      input,
-      locale,
-      timezone: settings.timezone,
-      defaultCurrency: settings.defaultCurrency,
-      configContext,
-      thinkingControl,
-      maxOutputTokens: 12000,
-    });
-    if (response.subscriptions.length === 0) {
-      throw new HttpError(400, serverText(locale, "aiRecognition.noSubscriptions"), "AI_RECOGNITION_EMPTY", aiRecognitionErrorDetails("empty", null, response.diagnostics));
-    }
-    return json(response);
-  } catch (error) {
-    if (error instanceof HttpError) throw error;
-    const diagnostics = aiRecognitionDiagnosticsFromError(error);
-    const cause = aiRecognitionCauseFromError(error);
-    if (isAIRecognitionSchemaMismatch(error)) {
-      throw new HttpError(
-        400,
-        serverText(locale, "aiRecognition.schemaMismatch"),
-        "AI_RECOGNITION_SCHEMA_MISMATCH",
-        diagnostics ? aiRecognitionErrorDetails("schema_mismatch", cause, diagnostics) : safeAIRecognitionError(cause),
-      );
-    }
-    throw new HttpError(
-      400,
-      serverText(locale, "aiRecognition.failed"),
-      "AI_RECOGNITION_FAILED",
-      diagnostics ? aiRecognitionErrorDetails("provider_failed", cause, diagnostics) : safeAIRecognitionError(cause),
-    );
-  }
+  return {
+    locale,
+    settings: aiSettings,
+    input,
+    thinkingControl,
+    timezone: settings.timezone,
+    defaultCurrency: settings.defaultCurrency,
+    configContext: aiRecognitionConfigContext(customConfig, locale, existingTags),
+  };
 }
 
 /** testAIRecognitionConnection 使用当前表单配置做一次最小文本调用；它不读取/写入持久设置。 */
@@ -354,6 +434,115 @@ async function runAIRecognition({
   }
 }
 
+async function runAIRecognitionStream({
+  settings,
+  input,
+  locale,
+  timezone,
+  defaultCurrency,
+  configContext,
+  thinkingControl,
+  maxOutputTokens,
+  abortSignal,
+  sink,
+}: {
+  settings: AiRecognitionSettings;
+  input: AIRecognitionInput;
+  locale: AppLocale;
+  timezone: string;
+  defaultCurrency: string;
+  configContext: AIRecognitionPromptConfigContext;
+  thinkingControl: AiThinkingControl | null;
+  maxOutputTokens: number;
+  abortSignal: AbortSignal;
+  sink: AIRecognitionStreamSink;
+}): Promise<AiRecognizeResponse> {
+  const providerOptions = providerOptionsForThinking(settings, thinkingControl);
+  const systemPrompt = buildAIRecognitionSystemPrompt();
+  const userPrompt = buildAIRecognitionUserPrompt({
+    text: input.text,
+    timezone,
+    defaultCurrency,
+    currentDate: todayDateOnly(timezone),
+    imageCount: input.images.length,
+    locale,
+    configContext,
+  });
+  const capture: AIRecognitionCapture = {
+    rawModelText: null,
+    usage: null,
+    finishReason: null,
+    providerMetadata: null,
+  };
+
+  try {
+    sink.emit({ type: "recognition/progress", stage: "model-start" });
+    const initialGeneration = await generateAIRecognitionObjectStream({
+      settings,
+      input,
+      systemPrompt,
+      userPrompt,
+      providerOptions,
+      maxOutputTokens,
+      abortSignal,
+      sink,
+    });
+    let finalGeneration = initialGeneration;
+    sink.emit({ type: "recognition/progress", stage: "validating" });
+    let diagnostics = diagnosticsFromGeneration(settings, input, thinkingControl, maxOutputTokens, systemPrompt, userPrompt, finalGeneration);
+    let response = normalizeGeneratedAIRecognizeObject(finalGeneration.object, settings.providerType, settings.transportProtocol, settings.model, diagnostics, configContext);
+    const missingNames = missingDescribableNoteNames(response.subscriptions);
+    if (missingNames.length > 0) {
+      sink.emit({ type: "recognition/progress", stage: "repair-start" });
+      const repairPrompt = buildAIRecognitionRepairUserPrompt({
+        originalUserPrompt: userPrompt,
+        previousObject: finalGeneration.object,
+        missingNoteNames: missingNames,
+      });
+      try {
+        finalGeneration = await generateAIRecognitionObjectStream({
+          settings,
+          input,
+          systemPrompt,
+          userPrompt: repairPrompt,
+          providerOptions,
+          maxOutputTokens,
+          abortSignal,
+          sink,
+        });
+        diagnostics = diagnosticsFromGeneration(settings, input, thinkingControl, maxOutputTokens, systemPrompt, repairPrompt, finalGeneration);
+        const repairedResponse = normalizeGeneratedAIRecognizeObject(finalGeneration.object, settings.providerType, settings.transportProtocol, settings.model, diagnostics, configContext);
+        if (repairedResponse.subscriptions.length > 0) response = repairedResponse;
+      } catch {
+        finalGeneration = initialGeneration;
+        diagnostics = diagnosticsFromGeneration(settings, input, thinkingControl, maxOutputTokens, systemPrompt, userPrompt, finalGeneration);
+        response = normalizeGeneratedAIRecognizeObject(finalGeneration.object, settings.providerType, settings.transportProtocol, settings.model, diagnostics, configContext);
+      }
+      response = fillMissingNotesWithDynamicFallback(response, locale, configContext);
+    }
+    sink.emit({ type: "recognition/progress", stage: "finalizing" });
+    return response;
+  } catch (error) {
+    const cause = error instanceof AIRecognitionGenerationError ? error.causeError : error;
+    const errorCapture = error instanceof AIRecognitionGenerationError ? error.capture : capture;
+    const rawModelText = noObjectGeneratedText(cause) ?? errorCapture.rawModelText;
+    const diagnostics = buildAIRecognitionDiagnostics({
+      settings,
+      input,
+      thinkingControl,
+      maxOutputTokens,
+      systemPrompt,
+      userPrompt,
+      rawModelText,
+      rawObject: null,
+      usage: noObjectGeneratedUsage(cause) ?? errorCapture.usage,
+      finishReason: noObjectGeneratedFinishReason(cause) ?? errorCapture.finishReason,
+      providerMetadata: errorCapture.providerMetadata,
+    });
+    throw new AIRecognitionRunError(cause, diagnostics);
+  }
+}
+
 async function generateAIRecognitionObject({
   settings,
   input,
@@ -398,6 +587,123 @@ async function generateAIRecognitionObject({
   }
 }
 
+async function generateAIRecognitionObjectStream({
+  settings,
+  input,
+  systemPrompt,
+  userPrompt,
+  providerOptions,
+  maxOutputTokens,
+  abortSignal,
+  sink,
+}: {
+  settings: AiRecognitionSettings;
+  input: AIRecognitionInput;
+  systemPrompt: string;
+  userPrompt: string;
+  providerOptions: Record<string, Record<string, JSONValue>> | undefined;
+  maxOutputTokens: number;
+  abortSignal: AbortSignal;
+  sink: AIRecognitionStreamSink;
+}): Promise<AIRecognitionGeneration> {
+  const capture: AIRecognitionCapture = {
+    rawModelText: null,
+    usage: null,
+    finishReason: null,
+    providerMetadata: null,
+  };
+  try {
+    const result = streamText({
+      model: createAIRecognitionLanguageModel(settings, resolveAIProviderEndpoint(settings).runtimeBaseUrl),
+      system: systemPrompt,
+      messages: buildAIRecognitionMessages(input, userPrompt),
+      output: Output.object({
+        schema: aiGeneratedRecognizeObjectSchema,
+        name: AI_RECOGNITION_SCHEMA_NAME,
+      }),
+      maxOutputTokens,
+      abortSignal,
+      ...(providerOptions ? { providerOptions } : {}),
+      maxRetries: 1,
+    });
+    const outputPromise = Promise.resolve(result.output);
+    await Promise.all([
+      outputPromise,
+      consumeAIRecognitionFullStream(result.fullStream, sink, capture),
+      consumeAIRecognitionPartialStream(result.partialOutputStream, sink),
+    ]);
+    const object = await outputPromise;
+    return {
+      object,
+      rawModelText: capture.rawModelText,
+      usage: await Promise.resolve(result.usage).catch(() => capture.usage),
+      finishReason: finishReasonText(await Promise.resolve(result.finishReason).catch(() => capture.finishReason)) ?? capture.finishReason,
+      providerMetadata: await Promise.resolve(result.providerMetadata).catch(() => capture.providerMetadata),
+    };
+  } catch (error) {
+    throw new AIRecognitionGenerationError(error, capture);
+  }
+}
+
+async function consumeAIRecognitionFullStream(
+  fullStream: AsyncIterable<unknown>,
+  sink: AIRecognitionStreamSink,
+  capture: AIRecognitionCapture,
+): Promise<void> {
+  let rawModelText = "";
+  for await (const part of fullStream) {
+    if (!isRecord(part)) continue;
+    switch (part["type"]) {
+      case "text-delta": {
+        const text = typeof part["delta"] === "string" ? part["delta"] : "";
+        if (text) {
+          rawModelText += text;
+          capture.rawModelText = rawModelText;
+          sink.emit({ type: "recognition/text-delta", delta: text });
+          sink.emit({ type: "recognition/progress", stage: "model-stream" });
+        }
+        break;
+      }
+      case "reasoning-delta": {
+        const text = typeof part["delta"] === "string" ? part["delta"] : "";
+        if (text) {
+          sink.emit({ type: "recognition/reasoning-delta", delta: text });
+        }
+        break;
+      }
+      case "finish-step":
+      case "finish": {
+        capture.usage = part["usage"] ?? capture.usage;
+        capture.finishReason = finishReasonText(part["finishReason"]) ?? capture.finishReason;
+        capture.providerMetadata = part["providerMetadata"] ?? capture.providerMetadata;
+        break;
+      }
+      case "error":
+        throw part["error"];
+    }
+  }
+}
+
+async function consumeAIRecognitionPartialStream(
+  partialOutputStream: AsyncIterable<unknown>,
+  sink: AIRecognitionStreamSink,
+): Promise<void> {
+  for await (const partial of partialOutputStream) {
+    const { subscriptionsSeen, warningsSeen } = partialAIRecognitionCounts(partial);
+    sink.emit({ type: "recognition/partial", subscriptionsSeen, warningsSeen });
+  }
+}
+
+function partialAIRecognitionCounts(value: unknown): { subscriptionsSeen: number; warningsSeen: number } {
+  if (!isRecord(value)) return { subscriptionsSeen: 0, warningsSeen: 0 };
+  const subscriptions = value["subscriptions"];
+  const warnings = value["warnings"];
+  return {
+    subscriptionsSeen: Array.isArray(subscriptions) ? subscriptions.length : 0,
+    warningsSeen: Array.isArray(warnings) ? warnings.length : 0,
+  };
+}
+
 function diagnosticsFromGeneration(
   settings: AiRecognitionSettings,
   input: AIRecognitionInput,
@@ -422,25 +728,6 @@ function diagnosticsFromGeneration(
   });
 }
 
-function normalizeAIImageType(type: string, data: Uint8Array, locale: AppLocale): string {
-  const normalized = type.split(";")[0]?.trim().toLowerCase() ?? "";
-  if (ALLOWED_IMAGE_TYPES.has(normalized)) return normalized;
-  const detected = detectAIImageType(data);
-  if (detected) return detected;
-  throw new HttpError(400, serverText(locale, "aiRecognition.imageTypeInvalid"), "AI_IMAGE_TYPE_INVALID");
-}
-
-function detectAIImageType(data: Uint8Array): string | null {
-  if (data.length >= 4 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) return "image/png";
-  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return "image/jpeg";
-  if (
-    data.length >= 12
-    && String.fromCharCode(...data.slice(0, 4)) === "RIFF"
-    && String.fromCharCode(...data.slice(8, 12)) === "WEBP"
-  ) return "image/webp";
-  return null;
-}
-
 function assertAIRecognitionSettings(settings: AiRecognitionSettings, locale: AppLocale): void {
   if (!settings.model.trim()) {
     throw new HttpError(400, serverText(locale, "aiRecognition.modelRequired"), "AI_MODEL_REQUIRED");
@@ -454,111 +741,32 @@ function assertAIRecognitionSettings(settings: AiRecognitionSettings, locale: Ap
   }
 }
 
-function createAIRecognitionModel(settings: AiRecognitionSettings, capture: AIRecognitionCapture) {
-  const canonicalSettings = aiRecognitionSettingsSchema.parse(settings);
-  const endpoint = resolveAIProviderEndpoint(canonicalSettings);
-  const model = createAIRecognitionLanguageModel(canonicalSettings, endpoint.runtimeBaseUrl);
-
-  return wrapLanguageModel({
-    model,
-    middleware: {
-      specificationVersion: "v3",
-      async wrapGenerate({ doGenerate }) {
-        const result = await doGenerate();
-        capture.rawModelText = extractAIModelText(result.content) ?? capture.rawModelText;
-        capture.usage = result.usage ?? capture.usage;
-        capture.finishReason = finishReasonText(result.finishReason) ?? capture.finishReason;
-        capture.providerMetadata = result.providerMetadata ?? capture.providerMetadata;
-        return result;
-      },
-    },
+function aiRecognitionStreamErrorEvent(locale: AppLocale, error: unknown): AiRecognitionStreamEvent {
+  if (error instanceof HttpError) {
+    const parsedDetails = aiRecognitionErrorDetailsSchema.safeParse(error.details);
+    return aiRecognitionStreamEventSchema.parse({
+      type: "recognition/error",
+      message: error.message,
+      code: error.code ?? "AI_RECOGNITION_FAILED",
+      ...(parsedDetails.success ? { details: parsedDetails.data } : {}),
+    });
+  }
+  const diagnostics = aiRecognitionDiagnosticsFromError(error);
+  const cause = aiRecognitionCauseFromError(error);
+  if (diagnostics && isAIRecognitionSchemaMismatch(error)) {
+    return aiRecognitionStreamEventSchema.parse({
+      type: "recognition/error",
+      message: serverText(locale, "aiRecognition.schemaMismatch"),
+      code: "AI_RECOGNITION_SCHEMA_MISMATCH",
+      details: aiRecognitionErrorDetails("schema_mismatch", cause, diagnostics),
+    });
+  }
+  return aiRecognitionStreamEventSchema.parse({
+    type: "recognition/error",
+    message: serverText(locale, "aiRecognition.failed"),
+    code: "AI_RECOGNITION_FAILED",
+    ...(diagnostics ? { details: aiRecognitionErrorDetails("provider_failed", cause, diagnostics) } : {}),
   });
-}
-
-function createAIRecognitionLanguageModel(settings: AiRecognitionSettings, runtimeBaseUrl: string) {
-  if (settings.transportProtocol === "anthropic-messages") {
-    return createAnthropic({
-      apiKey: settings.apiKey,
-      baseURL: runtimeBaseUrl,
-    })(settings.model);
-  }
-  if (settings.transportProtocol === "gemini-generate-content") {
-    return createGoogleGenerativeAI({
-      apiKey: settings.apiKey,
-      baseURL: runtimeBaseUrl,
-    })(settings.model);
-  }
-  if (settings.providerType === "openai") {
-    return createOpenAI({ apiKey: settings.apiKey, baseURL: runtimeBaseUrl }).chat(settings.model);
-  }
-  return createOpenAICompatible({
-    name: settings.providerType,
-    baseURL: runtimeBaseUrl,
-    ...(settings.apiKey ? { apiKey: settings.apiKey } : {}),
-    supportsStructuredOutputs: true,
-  })(settings.model);
-}
-
-async function runAIRecognitionConnectionTest(settings: AiRecognitionSettings): Promise<void> {
-  const canonicalSettings = aiRecognitionSettingsSchema.parse(settings);
-  // 连接测试刻意绕开 schema/repair/thinking/retry，只验证当前协议能完成最小文本生成。
-  await generateText({
-    model: createAIRecognitionLanguageModel(canonicalSettings, resolveAIProviderEndpoint(canonicalSettings).runtimeBaseUrl),
-    prompt: AI_RECOGNITION_TEST_TEXT,
-    maxOutputTokens: 16,
-    maxRetries: 0,
-  });
-}
-
-function thinkingControlMatchesSettings(settings: AiRecognitionSettings, control: AiThinkingControl): boolean {
-  if (settings.transportProtocol === "openai-chat") return settings.providerType === "openai" && control.provider === "openai";
-  if (settings.transportProtocol === "anthropic-messages") return settings.providerType === "anthropic" && control.provider === "anthropic";
-  return settings.providerType === "gemini" && control.provider === "gemini";
-}
-
-function providerOptionsForThinking(settings: AiRecognitionSettings, control: AiThinkingControl | null): Record<string, Record<string, JSONValue>> | undefined {
-  if (!control) return undefined;
-  if (control.provider === "openai") {
-    if (settings.providerType !== "openai" || settings.transportProtocol !== "openai-chat") return undefined;
-    return { openai: { reasoningEffort: control.effort } };
-  }
-  if (control.provider === "gemini") {
-    if (settings.providerType !== "gemini" || settings.transportProtocol !== "gemini-generate-content") return undefined;
-    if (control.mode === "off") return { google: { thinkingConfig: { thinkingBudget: 0 } } };
-    if (control.mode === "dynamic") return { google: { thinkingConfig: { thinkingBudget: -1 } } };
-    if (control.mode === "budget") return { google: { thinkingConfig: { thinkingBudget: control.budget } } };
-    return { google: { thinkingConfig: { thinkingLevel: control.level } } };
-  }
-  if (settings.providerType !== "anthropic" || settings.transportProtocol !== "anthropic-messages") return undefined;
-  if (control.mode === "effort") {
-    return { anthropic: { effort: control.effort } };
-  }
-  return { anthropic: { thinking: { type: "enabled", budgetTokens: control.budgetTokens } } };
-}
-
-function buildAIRecognitionMessages(input: AIRecognitionInput, userPrompt: string): ModelMessage[] {
-  const content: UserContent = [
-    { type: "text", text: userPrompt },
-    ...input.images.map((image) => ({ type: "image" as const, image: image.data, mediaType: image.mediaType })),
-  ];
-  return [{ role: "user", content }];
-}
-
-function todayDateOnly(timezone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone || "UTC",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-  const year = parts.find((part) => part.type === "year")?.value ?? "1970";
-  const month = parts.find((part) => part.type === "month")?.value ?? "01";
-  const day = parts.find((part) => part.type === "day")?.value ?? "01";
-  return `${year}-${month}-${day}`;
-}
-
-function safeAIRecognitionError(error: unknown): string {
-  return redactAIRecognitionSecrets(error instanceof Error ? error.message : String(error)).slice(0, 500);
 }
 
 function isAIRecognitionSchemaMismatch(error: unknown): boolean {
@@ -570,148 +778,12 @@ function isAIRecognitionSchemaMismatch(error: unknown): boolean {
     || message.includes("invalid object");
 }
 
-function buildAIRecognitionDiagnostics({
-  settings,
-  input,
-  thinkingControl,
-  maxOutputTokens,
-  systemPrompt,
-  userPrompt,
-  rawModelText,
-  rawObject,
-  usage,
-  finishReason,
-  providerMetadata,
-}: {
-  settings: AiRecognitionSettings;
-  input: AIRecognitionInput;
-  thinkingControl: AiThinkingControl | null;
-  maxOutputTokens: number;
-  systemPrompt: string;
-  userPrompt: string;
-  rawModelText: string | null;
-  rawObject: unknown;
-  usage: unknown;
-  finishReason: string | null;
-  providerMetadata: unknown;
-}): AiRecognitionDiagnostics {
-  // diagnostics 只进入当前 API 响应，不能入库；这里集中截断/脱敏，避免模型平台原文泄漏密钥。
-  return aiRecognitionDiagnosticsSchema.parse({
-    schemaVersion: "1",
-    promptVersion: AI_RECOGNITION_PROMPT_VERSION,
-    schemaName: AI_RECOGNITION_SCHEMA_NAME,
-    prompt: {
-      system: diagnosticText(systemPrompt, AI_RECOGNITION_DIAGNOSTIC_TEXT_MAX_CHARS),
-      user: diagnosticText(userPrompt, AI_RECOGNITION_DIAGNOSTIC_TEXT_MAX_CHARS),
-    },
-    output: {
-      rawModelText: rawModelText === null ? null : diagnosticText(rawModelText, AI_RECOGNITION_DIAGNOSTIC_TEXT_MAX_CHARS),
-      rawObjectJson: rawObject === null ? null : diagnosticText(safeJsonStringify(rawObject), AI_RECOGNITION_DIAGNOSTIC_JSON_MAX_CHARS),
-    },
-    request: {
-      providerType: settings.providerType,
-      transportProtocol: settings.transportProtocol,
-      model: settings.model,
-      thinkingControl,
-      maxOutputTokens,
-      textCharCount: [...input.text].length,
-      images: input.images.map((image) => ({ mediaType: image.mediaType, sizeBytes: image.data.byteLength })),
-    },
-    response: {
-      usage: sanitizeDiagnosticJson(usage),
-      finishReason,
-      providerMetadata: sanitizeDiagnosticJson(providerMetadata),
-    },
-  });
-}
-
-function diagnosticText(value: string, maxChars: number) {
-  const safe = redactAIRecognitionSecrets(value);
-  const chars = [...safe];
-  return {
-    value: chars.slice(0, maxChars).join(""),
-    truncated: chars.length > maxChars,
-  };
-}
-
-function sanitizeDiagnosticJson(value: unknown): unknown | null {
-  if (value === undefined || value === null) return null;
-  const text = diagnosticText(safeJsonStringify(value), AI_RECOGNITION_DIAGNOSTIC_JSON_MAX_CHARS);
-  if (text.truncated) return text;
-  try {
-    return JSON.parse(text.value) as unknown;
-  } catch {
-    return text;
-  }
-}
-
-function safeJsonStringify(value: unknown): string {
-  const seen = new WeakSet<object>();
-  try {
-    return JSON.stringify(value, (_key, item: unknown) => {
-      if (typeof item === "bigint") return item.toString();
-      if (item && typeof item === "object") {
-        if (seen.has(item)) return "[Circular]";
-        seen.add(item);
-      }
-      return item;
-    }, 2);
-  } catch (error) {
-    return error instanceof Error ? error.message : String(error);
-  }
-}
-
-function redactAIRecognitionSecrets(value: string): string {
-  return value.replace(AI_SECRET_PATTERN, "[redacted]");
-}
-
-function aiRecognitionErrorDetails(reason: string, error: unknown, diagnostics: AiRecognitionDiagnostics) {
-  return aiRecognitionErrorDetailsSchema.parse({
-    reason,
-    providerMessage: error === null ? null : safeAIRecognitionError(error),
-    diagnostics,
-  });
-}
-
 function aiRecognitionDiagnosticsFromError(error: unknown): AiRecognitionDiagnostics | null {
   return error instanceof AIRecognitionRunError ? error.diagnostics : null;
 }
 
 function aiRecognitionCauseFromError(error: unknown): unknown {
   return error instanceof AIRecognitionRunError ? error.causeError : error;
-}
-
-function noObjectGeneratedText(error: unknown): string | null {
-  return NoObjectGeneratedError.isInstance(error) && typeof error.text === "string" ? error.text : null;
-}
-
-function noObjectGeneratedUsage(error: unknown): unknown | null {
-  return NoObjectGeneratedError.isInstance(error) ? error.usage ?? null : null;
-}
-
-function noObjectGeneratedFinishReason(error: unknown): string | null {
-  return NoObjectGeneratedError.isInstance(error) ? finishReasonText(error.finishReason) : null;
-}
-
-function finishReasonText(value: unknown): string | null {
-  if (typeof value === "string" && value.trim()) return value;
-  if (isRecord(value)) {
-    const unified = value["unified"];
-    if (typeof unified === "string" && unified.trim()) return unified;
-    const raw = value["raw"];
-    if (typeof raw === "string" && raw.trim()) return raw;
-  }
-  return null;
-}
-
-function extractAIModelText(content: unknown): string | null {
-  if (!Array.isArray(content)) return null;
-  const text = content.map((part) => {
-    if (!isRecord(part) || part["type"] !== "text") return "";
-    const value = part["text"];
-    return typeof value === "string" ? value : "";
-  }).join("");
-  return text || null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

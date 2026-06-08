@@ -217,6 +217,7 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 	auth.POST("/import/preview", func(e *core.RequestEvent) error { return handleImportPreview(app, e) })
 	auth.POST("/import/apply", func(e *core.RequestEvent) error { return handleImportApply(app, e) })
 	// AI 识别只生成导入草稿，不直接写 subscriptions；最终仍必须走 import preview/apply 的用户确认链路。
+	auth.POST("/ai/subscriptions/recognize/stream", func(e *core.RequestEvent) error { return handleAIRecognizeSubscriptionsStream(app, e) })
 	auth.POST("/ai/subscriptions/recognize", func(e *core.RequestEvent) error { return handleAIRecognizeSubscriptions(app, e) })
 	auth.POST("/ai/subscriptions/test", func(e *core.RequestEvent) error { return handleAIRecognitionTestConnection(app, e) })
 	auth.POST("/ai/models/list", func(e *core.RequestEvent) error { return handleAIModelsList(app, e) })

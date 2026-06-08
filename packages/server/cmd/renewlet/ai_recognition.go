@@ -32,6 +32,7 @@ var (
 	errAIRecognitionInputEmpty      = errors.New("AI_RECOGNITION_INPUT_EMPTY")
 	errAIRecognitionNoSubscriptions = errors.New("AI_RECOGNITION_NO_SUBSCRIPTIONS")
 	errAIRecognitionProviderInvalid = errors.New("AI_PROVIDER_INVALID")
+	errAIRecognitionEmptyObject     = errors.New("AI_RECOGNITION_EMPTY_OBJECT")
 )
 
 type aiRecognitionSettings struct {
@@ -149,75 +150,92 @@ type aiRecognitionErrorDetails struct {
 
 type aiRecognitionRunner interface {
 	Recognize(ctx context.Context, settings aiRecognitionSettings, input aiRecognitionInput, locale appLocale, timezone string, defaultCurrency string, configContext aiRecognitionConfigContext) (aiRecognizeResponse, error)
+	Stream(ctx context.Context, settings aiRecognitionSettings, input aiRecognitionInput, locale appLocale, timezone string, defaultCurrency string, configContext aiRecognitionConfigContext, sink aiRecognitionStreamSink) error
 }
 
 type goaiRecognitionRunner struct{}
 
 var defaultAIRecognitionRunner aiRecognitionRunner = goaiRecognitionRunner{}
 
-func handleAIRecognizeSubscriptions(app core.App, e *core.RequestEvent) error {
+type aiRecognitionRunContext struct {
+	Locale        appLocale
+	Settings      appSettings
+	AISettings    aiRecognitionSettings
+	Input         aiRecognitionInput
+	ConfigContext aiRecognitionConfigContext
+}
+
+func prepareAIRecognitionRunContext(app core.App, e *core.RequestEvent) (aiRecognitionRunContext, error) {
 	locale := requestLocale(e.Request)
 	if e.Auth == nil {
-		return e.UnauthorizedError(serverText(locale, "auth.loginRequired"), nil)
+		return aiRecognitionRunContext{}, e.UnauthorizedError(serverText(locale, "auth.loginRequired"), nil)
 	}
 	settings, err := currentUserSettings(app, e.Auth, nil)
 	if err != nil {
-		return e.BadRequestError(validationErrorMessage(locale, "notification.settingsInvalid", err), err)
+		return aiRecognitionRunContext{}, e.BadRequestError(validationErrorMessage(locale, "notification.settingsInvalid", err), err)
 	}
 	input, err := readAIRecognitionMultipart(e, locale)
 	if err != nil {
 		if errors.Is(err, errAIRecognitionBodyTooLarge) {
-			return e.JSON(http.StatusRequestEntityTooLarge, rateLimitedResponse{
+			return aiRecognitionRunContext{}, e.JSON(http.StatusRequestEntityTooLarge, rateLimitedResponse{
 				Code:    "BODY_TOO_LARGE",
 				Message: serverText(locale, "common.requestBodyTooLarge"),
 			})
 		}
 		if errors.Is(err, errAIRecognitionInputEmpty) {
-			return e.BadRequestError(serverText(locale, "aiRecognition.inputRequired"), err)
+			return aiRecognitionRunContext{}, e.BadRequestError(serverText(locale, "aiRecognition.inputRequired"), err)
 		}
 		if strings.Contains(err.Error(), "AI_RECOGNITION_IMAGE_TYPE_INVALID") {
-			return e.BadRequestError(serverText(locale, "aiRecognition.imageTypeInvalid"), err)
+			return aiRecognitionRunContext{}, e.BadRequestError(serverText(locale, "aiRecognition.imageTypeInvalid"), err)
 		}
-		return e.BadRequestError(validationErrorMessage(locale, "common.invalidRequestBody", err), err)
+		return aiRecognitionRunContext{}, e.BadRequestError(validationErrorMessage(locale, "common.invalidRequestBody", err), err)
 	}
 	aiSettings := sanitizeAIRecognitionSettings(settings.AIRecognition)
 	if input.ThinkingControl != nil && !aiThinkingControlMatchesSettings(aiSettings, input.ThinkingControl) {
-		return e.BadRequestError(serverText(locale, "aiRecognition.thinkingProviderMismatch"), nil)
+		return aiRecognitionRunContext{}, e.BadRequestError(serverText(locale, "aiRecognition.thinkingProviderMismatch"), nil)
 	}
 	if err := validateAIRecognitionSettings(aiSettings, locale); err != nil {
-		return e.BadRequestError(err.Error(), err)
+		return aiRecognitionRunContext{}, e.BadRequestError(err.Error(), err)
 	}
 	// 配置项只作为模型上下文和响应归一化依据；新增分类/支付方式仍必须走 import preview/apply 用户确认链路。
 	configContext, err := aiRecognitionConfigContextForUser(app, e.Auth.Id, locale)
 	if err != nil {
-		return e.InternalServerError(serverText(locale, "common.internalError"), err)
+		return aiRecognitionRunContext{}, e.InternalServerError(serverText(locale, "common.internalError"), err)
+	}
+	return aiRecognitionRunContext{Locale: locale, Settings: settings, AISettings: aiSettings, Input: input, ConfigContext: configContext}, nil
+}
+
+func handleAIRecognizeSubscriptions(app core.App, e *core.RequestEvent) error {
+	runContext, err := prepareAIRecognitionRunContext(app, e)
+	if err != nil {
+		return err
 	}
 	response, err := defaultAIRecognitionRunner.Recognize(
 		e.Request.Context(),
-		aiSettings,
-		input,
-		locale,
-		settings.Timezone,
-		settings.DefaultCurrency,
-		configContext,
+		runContext.AISettings,
+		runContext.Input,
+		runContext.Locale,
+		runContext.Settings.Timezone,
+		runContext.Settings.DefaultCurrency,
+		runContext.ConfigContext,
 	)
 	if err != nil {
 		if diagnostics := aiRecognitionDiagnosticsFromError(err); diagnostics != nil {
 			if errors.Is(err, errAIRecognitionNoSubscriptions) {
-				return aiRecognitionJSONError(e, http.StatusBadRequest, serverText(locale, "aiRecognition.noSubscriptions"), "AI_RECOGNITION_EMPTY", "empty", nil, diagnostics)
+				return aiRecognitionJSONError(e, http.StatusBadRequest, serverText(runContext.Locale, "aiRecognition.noSubscriptions"), "AI_RECOGNITION_EMPTY", "empty", nil, diagnostics)
 			}
 			if isAIRecognitionSchemaMismatchError(err) {
-				return aiRecognitionJSONError(e, http.StatusBadRequest, serverText(locale, "aiRecognition.schemaMismatch"), "AI_RECOGNITION_SCHEMA_MISMATCH", "schema_mismatch", aiRecognitionCauseError(err), diagnostics)
+				return aiRecognitionJSONError(e, http.StatusBadRequest, serverText(runContext.Locale, "aiRecognition.schemaMismatch"), "AI_RECOGNITION_SCHEMA_MISMATCH", "schema_mismatch", aiRecognitionCauseError(err), diagnostics)
 			}
-			return aiRecognitionJSONError(e, http.StatusBadRequest, serverText(locale, "aiRecognition.failed"), "AI_RECOGNITION_FAILED", "provider_failed", aiRecognitionCauseError(err), diagnostics)
+			return aiRecognitionJSONError(e, http.StatusBadRequest, serverText(runContext.Locale, "aiRecognition.failed"), "AI_RECOGNITION_FAILED", "provider_failed", aiRecognitionCauseError(err), diagnostics)
 		}
 		if errors.Is(err, errAIRecognitionNoSubscriptions) {
-			return e.BadRequestError(serverText(locale, "aiRecognition.noSubscriptions"), nil)
+			return e.BadRequestError(serverText(runContext.Locale, "aiRecognition.noSubscriptions"), nil)
 		}
 		if isAIRecognitionSchemaMismatchError(err) {
-			return e.BadRequestError(serverText(locale, "aiRecognition.schemaMismatch"), nil)
+			return e.BadRequestError(serverText(runContext.Locale, "aiRecognition.schemaMismatch"), nil)
 		}
-		return e.BadRequestError(serverText(locale, "aiRecognition.failed"), safeAIRecognitionError(err))
+		return e.BadRequestError(serverText(runContext.Locale, "aiRecognition.failed"), safeAIRecognitionError(err))
 	}
 	return e.JSON(http.StatusOK, response)
 }

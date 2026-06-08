@@ -1,18 +1,23 @@
 import type { ReactNode } from "react";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VirtualItem } from "@tanstack/react-virtual";
-import type { AiRecognizedSubscriptionDraft, AiRecognizeResponse } from "@/lib/api/schemas/ai-recognition";
-import type { ImportPreviewResponse } from "@/lib/api/schemas/import-export";
+import type { AiRecognitionStreamEvent, AiRecognizeResponse } from "@/lib/api/schemas/ai-recognition";
 import type { PreparedImport } from "@/modules/import-export/domain/import-export-model";
-import { DEFAULT_CUSTOM_CONFIG } from "@/types/config";
-import { DEFAULT_SETTINGS, type AppSettings } from "@/types/subscription";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { AIRecognizeSubscriptionDialog } from "./ai-recognize-subscription-dialog";
+import {
+  clipboardDataWithFiles,
+  clipboardDataWithItems,
+  configuredSettings,
+  makeDraft,
+  makePreview,
+  makeResponse,
+  mockMobile,
+  renderDialog,
+} from "./ai-recognize-subscription-dialog.test-utils";
 
 const mocks = vi.hoisted(() => ({
-  recognizeSubscriptions: vi.fn(),
+  recognizeSubscriptionsStream: vi.fn(),
   previewPrepared: vi.fn(),
   resetImportPreview: vi.fn(),
   setError: vi.fn(),
@@ -31,7 +36,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/services/ai-recognition-service", () => ({
   aiRecognitionService: {
-    recognizeSubscriptions: mocks.recognizeSubscriptions,
+    recognizeSubscriptionsStream: mocks.recognizeSubscriptionsStream,
   },
 }));
 
@@ -91,166 +96,24 @@ vi.mock("@/components/ui/virtualized-list", () => ({
   ),
 }));
 
-function configuredSettings(): AppSettings {
-  return {
-    ...DEFAULT_SETTINGS,
-    aiRecognition: {
-      providerType: "openai",
-      transportProtocol: "openai-chat",
-      model: "gpt-5-mini",
-      modelInputMode: "select",
-      baseUrl: "",
-      apiKey: "sk-test",
-      defaultThinkingControl: null,
-    },
-  };
-}
+function expectRecognizeStreamCalledWith(input: {
+  text: string;
+  images: File[];
+  thinkingControl: unknown;
+}) {
+  const streamHandlerMatcher = expect.any(Function) as unknown as (event: AiRecognitionStreamEvent) => void;
+  const abortSignalMatcher = expect.any(Object) as unknown as AbortSignal;
 
-function makeDraft(overrides: Partial<AiRecognizedSubscriptionDraft> = {}): AiRecognizedSubscriptionDraft {
-  return {
-    name: "Apple Music",
-    price: 50,
-    currency: "USD",
-    billingCycle: "annual",
-    customDays: null,
-    customCycleUnit: null,
-    oneTimeTermCount: null,
-    oneTimeTermUnit: null,
-    category: "music",
-    status: "active",
-    paymentMethod: null,
-    startDate: "2026-01-01",
-    nextBillingDate: "2027-01-01",
-    autoCalculateNextBillingDate: true,
-    trialEndDate: null,
-    website: { value: "https://www.apple.com/", source: "suggested" },
-    notes: { value: "Apple subscription, service needs user confirmation.", source: "suggested" },
-    tags: ["Apple", "Music"],
-    reminderDays: null,
-    repeatReminderEnabled: null,
-    repeatReminderInterval: null,
-    repeatReminderWindow: null,
-    confidence: "high",
-    warnings: [],
-    ...overrides,
-  };
-}
-
-function makeResponse(subscriptions: AiRecognizedSubscriptionDraft[]): AiRecognizeResponse {
-  return {
-    providerType: "openai",
-    transportProtocol: "openai-chat",
-    model: "gpt-5-mini",
-    subscriptions,
-    warnings: [],
-    diagnostics: {
-      schemaVersion: "1",
-      promptVersion: "test",
-      schemaName: "test",
-      prompt: {
-        system: { value: "", truncated: false },
-        user: { value: "", truncated: false },
-      },
-      output: {
-        rawModelText: null,
-        rawObjectJson: null,
-      },
-      request: {
-        providerType: "openai",
-        transportProtocol: "openai-chat",
-        model: "gpt-5-mini",
-        thinkingControl: null,
-        maxOutputTokens: 4096,
-        textCharCount: 0,
-        images: [],
-      },
-      response: {
-        usage: null,
-        finishReason: null,
-        providerMetadata: null,
-      },
-    },
-  };
-}
-
-function makePreview(): ImportPreviewResponse {
-  return {
-    summary: {
-      total: 1,
-      creates: 1,
-      replaces: 0,
-      skips: 0,
-      errors: 0,
-      warnings: 0,
-    },
-    items: [
-      {
-        index: 0,
-        name: "Apple Music",
-        source: "ai",
-        sourceId: "apple-music",
-        action: "create",
-        warnings: [],
-        errors: [],
-      },
-    ],
-    includesSettings: false,
-    includesCustomConfig: false,
-  };
-}
-
-function renderDialog(settings: AppSettings = configuredSettings()) {
-  return render(
-    <TooltipProvider delayDuration={0}>
-      <AIRecognizeSubscriptionDialog
-        open
-        onOpenChange={vi.fn()}
-        settings={settings}
-        config={DEFAULT_CUSTOM_CONFIG}
-        availableTags={["Work", "Streaming"]}
-      />
-    </TooltipProvider>,
+  expect(mocks.recognizeSubscriptionsStream).toHaveBeenCalledWith(
+    input,
+    { onEvent: streamHandlerMatcher },
+    { signal: abortSignalMatcher },
   );
-}
-
-function mockMobile(matches = true) {
-  Object.defineProperty(window, "matchMedia", {
-    configurable: true,
-    writable: true,
-    value: vi.fn().mockImplementation((query: string) => ({
-      matches: query === "(max-width: 639px)" ? matches : false,
-      media: query,
-      onchange: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })),
-  });
-}
-
-function clipboardDataWithItems(items: Array<{ file: File; kind?: string; type?: string }>): DataTransfer {
-  return {
-    items: items.map(({ file, kind = "file", type = file.type }) => ({
-      kind,
-      type,
-      getAsFile: () => file,
-    })),
-    files: [],
-  } as unknown as DataTransfer;
-}
-
-function clipboardDataWithFiles(files: File[]): DataTransfer {
-  return {
-    items: [],
-    files,
-  } as unknown as DataTransfer;
 }
 
 describe("AIRecognizeSubscriptionDialog", () => {
   beforeEach(() => {
-    mocks.recognizeSubscriptions.mockReset();
+    mocks.recognizeSubscriptionsStream.mockReset();
     mocks.previewPrepared.mockReset();
     mocks.resetImportPreview.mockReset();
     mocks.setError.mockReset();
@@ -469,7 +332,7 @@ describe("AIRecognizeSubscriptionDialog", () => {
     const firstImage = new File(["first"], "first.png", { type: "image/png" });
     const pastedImage = new File(["pasted"], "disabled.png", { type: "image/png" });
     let resolveRecognition: (response: AiRecognizeResponse) => void = () => undefined;
-    mocks.recognizeSubscriptions.mockReturnValue(new Promise<AiRecognizeResponse>((resolve) => {
+    mocks.recognizeSubscriptionsStream.mockReturnValue(new Promise<AiRecognizeResponse>((resolve) => {
       resolveRecognition = resolve;
     }));
     renderDialog();
@@ -487,9 +350,99 @@ describe("AIRecognizeSubscriptionDialog", () => {
     resolveRecognition(makeResponse([makeDraft()]));
   });
 
+  it("生成时显示工作区遮罩，partial 和真实 reasoning 事件更新后由 final 进入草稿", async () => {
+    const user = userEvent.setup();
+    let streamHandlers: { onEvent?: (event: AiRecognitionStreamEvent) => void } | undefined;
+    let resolveRecognition: (response: AiRecognizeResponse) => void = () => undefined;
+    mocks.recognizeSubscriptionsStream.mockImplementation((
+      _input: unknown,
+      handlers?: { onEvent?: (event: AiRecognitionStreamEvent) => void },
+    ) => {
+      streamHandlers = handlers;
+      return new Promise<AiRecognizeResponse>((resolve) => {
+        resolveRecognition = resolve;
+      });
+    });
+    renderDialog();
+
+    await user.type(screen.getByPlaceholderText("粘贴记事本、备忘录或从 Excel 复制出的订阅列表..."), "apple 50刀 1年");
+    await user.click(screen.getByRole("button", { name: "生成订阅草稿" }));
+
+    const overlay = await screen.findByTestId("ai-recognition-stream-overlay");
+    const panel = within(overlay).getByTestId("ai-recognition-stream-panel");
+    const body = screen.getByTestId("ai-recognition-dialog-body");
+    const workspace = screen.getByTestId("ai-recognition-dialog-workspace");
+
+    expect(workspace).toHaveClass("relative", "overflow-hidden");
+    expect(overlay).toHaveClass("absolute", "inset-0", "z-20", "bg-card/75", "backdrop-blur-[2px]");
+    expect(overlay).toContainElement(panel);
+    expect(body).not.toContainElement(panel);
+    expect(screen.getByPlaceholderText("粘贴记事本、备忘录或从 Excel 复制出的订阅列表...")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "取消" })).toBeEnabled();
+    expect(within(screen.getByRole("dialog")).getByRole("button", { name: "关闭" })).toBeEnabled();
+    expect(panel).toHaveTextContent("识别进度");
+    expect(panel).toHaveTextContent("生成中");
+    expect(panel).toHaveTextContent("等待模型返回");
+    expect(panel).not.toHaveTextContent("思考过程");
+
+    await act(async () => {
+      streamHandlers?.onEvent?.({ type: "recognition/progress", stage: "model-start" });
+      streamHandlers?.onEvent?.({ type: "recognition/partial", subscriptionsSeen: 1, warningsSeen: 2 });
+      streamHandlers?.onEvent?.({ type: "recognition/text-delta", delta: "{\"subscriptions\"" });
+    });
+    expect(panel).toHaveTextContent("连接模型");
+    expect(panel).toHaveTextContent("已看到草稿");
+    expect(panel).toHaveTextContent("2");
+    expect(panel).toHaveTextContent("可见输出");
+    expect(panel).toHaveTextContent("{\"subscriptions\"");
+    expect(panel).not.toHaveTextContent("思考过程");
+
+    await act(async () => {
+      streamHandlers?.onEvent?.({ type: "recognition/reasoning-delta", delta: "先确认服务名称" });
+    });
+    expect(panel).toHaveTextContent("思考过程");
+    expect(panel).toHaveTextContent("先确认服务名称");
+
+    await act(async () => {
+      streamHandlers?.onEvent?.({ type: "recognition/final", response: makeResponse([makeDraft()]) });
+      resolveRecognition(makeResponse([makeDraft()]));
+    });
+
+    expect(await screen.findByText("Apple Music")).toBeInTheDocument();
+    expect(screen.queryByTestId("ai-recognition-stream-overlay")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ai-recognition-stream-panel")).not.toBeInTheDocument();
+  });
+
+  it("H5 生成时遮罩只覆盖工作区，不覆盖底部操作区", async () => {
+    const user = userEvent.setup();
+    let resolveRecognition: (response: AiRecognizeResponse) => void = () => undefined;
+    mockMobile();
+    mocks.recognizeSubscriptionsStream.mockReturnValue(new Promise<AiRecognizeResponse>((resolve) => {
+      resolveRecognition = resolve;
+    }));
+    renderDialog();
+
+    await user.type(screen.getByPlaceholderText("粘贴记事本、备忘录或从 Excel 复制出的订阅列表..."), "apple 50刀 1年");
+    await user.click(screen.getByRole("button", { name: "生成订阅草稿" }));
+
+    const overlay = await screen.findByTestId("ai-recognition-stream-overlay");
+    const footer = screen.getByTestId("ai-recognition-mobile-footer");
+
+    expect(overlay).toHaveClass("absolute", "inset-0", "z-20");
+    expect(overlay).not.toContainElement(footer);
+    expect(within(overlay).getByTestId("ai-recognition-stream-panel")).toBeInTheDocument();
+    expect(within(footer).getByRole("button", { name: "识别中..." })).toBeDisabled();
+    expect(within(screen.getByRole("dialog")).getByRole("button", { name: "关闭" })).toBeEnabled();
+
+    await act(async () => {
+      resolveRecognition(makeResponse([makeDraft()]));
+    });
+    expect(await screen.findByText("Apple Music")).toBeInTheDocument();
+  });
+
   it("草稿阶段由内部工作区滚动，外层弹窗 body 不滚动", async () => {
     const user = userEvent.setup();
-    mocks.recognizeSubscriptions.mockResolvedValue(makeResponse([makeDraft()]));
+    mocks.recognizeSubscriptionsStream.mockResolvedValue(makeResponse([makeDraft()]));
     renderDialog();
 
     await user.type(screen.getByPlaceholderText("粘贴记事本、备忘录或从 Excel 复制出的订阅列表..."), "apple 50刀 1年");
@@ -506,7 +459,7 @@ describe("AIRecognizeSubscriptionDialog", () => {
   it("H5 草稿和预览阶段只保留必要返回动作和主动作", async () => {
     const user = userEvent.setup();
     mockMobile();
-    mocks.recognizeSubscriptions.mockResolvedValue(makeResponse([makeDraft()]));
+    mocks.recognizeSubscriptionsStream.mockResolvedValue(makeResponse([makeDraft()]));
     renderDialog();
 
     await user.type(screen.getByPlaceholderText("粘贴记事本、备忘录或从 Excel 复制出的订阅列表..."), "apple 50刀 1年");
@@ -531,7 +484,7 @@ describe("AIRecognizeSubscriptionDialog", () => {
 
   it("草稿缺少日期时在草稿阶段拦截导入预览", async () => {
     const user = userEvent.setup();
-    mocks.recognizeSubscriptions.mockResolvedValue(makeResponse([
+    mocks.recognizeSubscriptionsStream.mockResolvedValue(makeResponse([
       makeDraft({
         startDate: null,
         nextBillingDate: null,
@@ -561,7 +514,7 @@ describe("AIRecognizeSubscriptionDialog", () => {
 
   it("可用当前表单默认值确认 AI 未返回的货币和周期", async () => {
     const user = userEvent.setup();
-    mocks.recognizeSubscriptions.mockResolvedValue(makeResponse([
+    mocks.recognizeSubscriptionsStream.mockResolvedValue(makeResponse([
       makeDraft({
         currency: null,
         billingCycle: null,
@@ -592,7 +545,7 @@ describe("AIRecognizeSubscriptionDialog", () => {
   it("文本模式只提交文本，不混入已保留的图片", async () => {
     const user = userEvent.setup();
     const image = new File(["image"], "subscriptions.png", { type: "image/png" });
-    mocks.recognizeSubscriptions.mockResolvedValue(makeResponse([makeDraft()]));
+    mocks.recognizeSubscriptionsStream.mockResolvedValue(makeResponse([makeDraft()]));
     renderDialog();
 
     await user.click(screen.getByRole("tab", { name: "图片" }));
@@ -601,8 +554,8 @@ describe("AIRecognizeSubscriptionDialog", () => {
     await user.type(screen.getByPlaceholderText("粘贴记事本、备忘录或从 Excel 复制出的订阅列表..."), "apple 50刀 1年");
     await user.click(screen.getByRole("button", { name: "生成订阅草稿" }));
 
-    await waitFor(() => expect(mocks.recognizeSubscriptions).toHaveBeenCalledTimes(1));
-    expect(mocks.recognizeSubscriptions).toHaveBeenCalledWith({
+    await waitFor(() => expect(mocks.recognizeSubscriptionsStream).toHaveBeenCalledTimes(1));
+    expectRecognizeStreamCalledWith({
       text: "apple 50刀 1年",
       images: [],
       thinkingControl: null,
@@ -612,7 +565,7 @@ describe("AIRecognizeSubscriptionDialog", () => {
   it("图片模式只提交图片，并在删除缩略图时释放 object URL", async () => {
     const user = userEvent.setup();
     const image = new File(["image"], "subscriptions.png", { type: "image/png" });
-    mocks.recognizeSubscriptions.mockResolvedValue(makeResponse([makeDraft()]));
+    mocks.recognizeSubscriptionsStream.mockResolvedValue(makeResponse([makeDraft()]));
     renderDialog();
 
     await user.type(screen.getByPlaceholderText("粘贴记事本、备忘录或从 Excel 复制出的订阅列表..."), "apple 50刀 1年");
@@ -624,8 +577,8 @@ describe("AIRecognizeSubscriptionDialog", () => {
     await user.upload(screen.getByLabelText("添加订阅图片"), image);
     await user.click(screen.getByRole("button", { name: "生成订阅草稿" }));
 
-    await waitFor(() => expect(mocks.recognizeSubscriptions).toHaveBeenCalledTimes(1));
-    expect(mocks.recognizeSubscriptions).toHaveBeenCalledWith({
+    await waitFor(() => expect(mocks.recognizeSubscriptionsStream).toHaveBeenCalledTimes(1));
+    expectRecognizeStreamCalledWith({
       text: "",
       images: [image],
       thinkingControl: null,
@@ -634,7 +587,7 @@ describe("AIRecognizeSubscriptionDialog", () => {
 
   it("按当前模型的思考控制选项传入本次识别请求", async () => {
     const user = userEvent.setup();
-    mocks.recognizeSubscriptions.mockResolvedValue(makeResponse([makeDraft()]));
+    mocks.recognizeSubscriptionsStream.mockResolvedValue(makeResponse([makeDraft()]));
     const settings = configuredSettings();
     renderDialog({
       ...settings,
@@ -648,8 +601,8 @@ describe("AIRecognizeSubscriptionDialog", () => {
     await user.type(screen.getByPlaceholderText("粘贴记事本、备忘录或从 Excel 复制出的订阅列表..."), "apple 50刀 1年");
     await user.click(screen.getByRole("button", { name: "生成订阅草稿" }));
 
-    await waitFor(() => expect(mocks.recognizeSubscriptions).toHaveBeenCalledTimes(1));
-    expect(mocks.recognizeSubscriptions).toHaveBeenCalledWith({
+    await waitFor(() => expect(mocks.recognizeSubscriptionsStream).toHaveBeenCalledTimes(1));
+    expectRecognizeStreamCalledWith({
       text: "apple 50刀 1年",
       images: [],
       thinkingControl: { provider: "openai", effort: "high" },
@@ -658,7 +611,7 @@ describe("AIRecognizeSubscriptionDialog", () => {
 
   it("支持筛选、编辑选中草稿并复用导入预览构建", async () => {
     const user = userEvent.setup();
-    mocks.recognizeSubscriptions.mockResolvedValue(makeResponse([
+    mocks.recognizeSubscriptionsStream.mockResolvedValue(makeResponse([
       makeDraft(),
       makeDraft({
         name: "Netflix",
@@ -698,7 +651,7 @@ describe("AIRecognizeSubscriptionDialog", () => {
 
   it("草稿阶段可以返回输入，修改输入后需要重新生成草稿", async () => {
     const user = userEvent.setup();
-    mocks.recognizeSubscriptions
+    mocks.recognizeSubscriptionsStream
       .mockResolvedValueOnce(makeResponse([makeDraft()]))
       .mockResolvedValueOnce(makeResponse([makeDraft({ name: "Spotify" })]));
     renderDialog();
@@ -720,12 +673,12 @@ describe("AIRecognizeSubscriptionDialog", () => {
     await user.click(screen.getByRole("button", { name: "重新生成草稿" }));
 
     await screen.findByText("Spotify");
-    expect(mocks.recognizeSubscriptions).toHaveBeenCalledTimes(2);
+    expect(mocks.recognizeSubscriptionsStream).toHaveBeenCalledTimes(2);
   });
 
   it("草稿编辑器不把 AI 返回的新配置名塞进下拉，导入预览仍会创建新项", async () => {
     const user = userEvent.setup();
-    mocks.recognizeSubscriptions.mockResolvedValue(makeResponse([
+    mocks.recognizeSubscriptionsStream.mockResolvedValue(makeResponse([
       makeDraft({
         category: "Cloud lab",
         paymentMethod: "Personal card",
@@ -757,7 +710,7 @@ describe("AIRecognizeSubscriptionDialog", () => {
 
   it("AI 识别预览隐藏通用导入设置并静默使用 skip 冲突策略", async () => {
     const user = userEvent.setup();
-    mocks.recognizeSubscriptions.mockResolvedValue(makeResponse([makeDraft()]));
+    mocks.recognizeSubscriptionsStream.mockResolvedValue(makeResponse([makeDraft()]));
     renderDialog();
 
     await user.type(screen.getByPlaceholderText("粘贴记事本、备忘录或从 Excel 复制出的订阅列表..."), "apple 50刀 1年");

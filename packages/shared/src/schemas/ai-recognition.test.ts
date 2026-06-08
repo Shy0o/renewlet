@@ -10,6 +10,7 @@ import {
   aiModelListResponseSchema,
   aiRecognitionDiagnosticsSchema,
   aiRecognitionSettingsSchema,
+  aiRecognitionStreamEventSchema,
 } from "./ai-recognition";
 
 function generatedDraft(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -135,6 +136,66 @@ describe("AI recognition diagnostics schema", () => {
         ...diagnostics.request,
         images: [...diagnostics.request.images, { mediaType: "image/png", sizeBytes: 4 }],
       },
+    }).success).toBe(false);
+  });
+});
+
+describe("AI recognition stream event schema", () => {
+  it("accepts progress, partial, text, reasoning and final stream events", () => {
+    const diagnostics = {
+      schemaVersion: "1",
+      promptVersion: "test",
+      schemaName: "renewlet_ai_subscription_recognition",
+      prompt: {
+        system: { value: "system", truncated: false },
+        user: { value: "user", truncated: false },
+      },
+      output: {
+        rawModelText: null,
+        rawObjectJson: null,
+      },
+      request: {
+        providerType: "openai",
+        transportProtocol: "openai-chat",
+        model: "gpt-5.1",
+        thinkingControl: null,
+        maxOutputTokens: 12000,
+        textCharCount: 12,
+        images: [],
+      },
+      response: {
+        usage: null,
+        finishReason: null,
+        providerMetadata: null,
+      },
+    };
+    const response = {
+      providerType: "openai",
+      transportProtocol: "openai-chat",
+      model: "gpt-5.1",
+      subscriptions: [generatedDraft()],
+      warnings: [],
+      diagnostics,
+    };
+
+    expect(aiRecognitionStreamEventSchema.safeParse({ type: "recognition/progress", stage: "model-start" }).success).toBe(true);
+    expect(aiRecognitionStreamEventSchema.safeParse({ type: "recognition/partial", subscriptionsSeen: 1, warningsSeen: 0 }).success).toBe(true);
+    expect(aiRecognitionStreamEventSchema.safeParse({ type: "recognition/text-delta", delta: "{\"subscriptions\"" }).success).toBe(true);
+    expect(aiRecognitionStreamEventSchema.safeParse({ type: "recognition/reasoning-delta", delta: "checking rows" }).success).toBe(true);
+    expect(aiRecognitionStreamEventSchema.safeParse({ type: "recognition/final", response }).success).toBe(true);
+  });
+
+  it("rejects unexpected stream event fields and invalid stages", () => {
+    expect(aiRecognitionStreamEventSchema.safeParse({
+      type: "recognition/progress",
+      stage: "fake-thinking",
+    }).success).toBe(false);
+
+    expect(aiRecognitionStreamEventSchema.safeParse({
+      type: "recognition/partial",
+      subscriptionsSeen: 1,
+      warningsSeen: 0,
+      rawObjectJson: "{}",
     }).success).toBe(false);
   });
 });

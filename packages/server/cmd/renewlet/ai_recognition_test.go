@@ -190,6 +190,102 @@ func TestGoAIRecognitionRunnerFallsBackWhenRepairStillMissesNotes(t *testing.T) 
 	}
 }
 
+func TestGoAIRecognitionRunnerStreamsProgressPartialAndFinal(t *testing.T) {
+	restore := stubAIRecognitionStreamGeneration(t, []aiGeneratedRecognizeResponse{
+		aiGeneratedResponseForTest(aiGeneratedDraftForTest(
+			"HostDZire CloudVPS",
+			aiGeneratedNotesField{Value: stringRef("HostDZire CloudVPS 是提供 VPS 和云主机相关产品或服务的订阅服务。"), Source: "suggested"},
+			[]string{"VPS", "云主机"},
+		)),
+	})
+	defer restore()
+	sink := &recordingAIRecognitionStreamSink{}
+
+	err := goaiRecognitionRunner{}.Stream(
+		context.Background(),
+		aiRecognitionSettings{ProviderType: aiProviderTypeOpenAI, TransportProtocol: aiProtocolOpenAIChat, Model: "gpt-5.1", APIKey: "sk-test"},
+		aiRecognitionInput{Text: "HostDZire CloudVPS 15元 1个月", MaxOutputTokens: 12000},
+		localeZhCN,
+		"Asia/Shanghai",
+		"CNY",
+		aiRecognitionConfigContext{},
+		sink,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(sink.progress, []string{
+		aiRecognitionStreamStageModelStart,
+		aiRecognitionStreamStageModelStream,
+		aiRecognitionStreamStageValidating,
+		aiRecognitionStreamStageFinalizing,
+	}) {
+		t.Fatalf("stream progress mismatch: %#v", sink.progress)
+	}
+	if !reflect.DeepEqual(sink.partials, []aiRecognitionStreamPartialEvent{{Type: "recognition/partial", SubscriptionsSeen: 1, WarningsSeen: 0}}) {
+		t.Fatalf("stream partials mismatch: %#v", sink.partials)
+	}
+	if sink.final == nil || sink.final.Subscriptions[0].Name != "HostDZire CloudVPS" {
+		t.Fatalf("stream final response missing: %#v", sink.final)
+	}
+}
+
+func TestAIRecognitionSSEWriterHeadersEventsAndSanitizedError(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	writer := aiRecognitionSSEWriter{
+		response:   recorder,
+		controller: http.NewResponseController(recorder),
+	}
+	writer.prepareHeaders()
+	if err := writer.Progress(aiRecognitionStreamStageInputRead); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Partial(2, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Final(aiRecognizeResponse{
+		ProviderType:      aiProviderTypeOpenAI,
+		TransportProtocol: aiProtocolOpenAIChat,
+		Model:             "gpt-5.1",
+		Subscriptions:     []aiRecognizedSubscriptionDraft{{Name: "dmit", Confidence: "high"}},
+		Warnings:          []string{},
+		Diagnostics:       testAIRecognitionDiagnostics(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	streamErr := aiRecognitionStreamErrorForError(localeZhCN, &aiRecognitionRunError{
+		cause:       errors.New("provider failed sk-stream-secret123"),
+		diagnostics: testAIRecognitionDiagnostics(),
+	})
+	if err := writer.Error(streamErr); err != nil {
+		t.Fatal(err)
+	}
+
+	if contentType := recorder.Header().Get("content-type"); !strings.Contains(contentType, "text/event-stream") {
+		t.Fatalf("content-type should be SSE, got %q", contentType)
+	}
+	if recorder.Header().Get("x-content-type-options") != "nosniff" || recorder.Header().Get("cache-control") != "no-store" {
+		t.Fatalf("SSE safety headers missing: %#v", recorder.Header())
+	}
+	body := recorder.Body.String()
+	for _, want := range []string{
+		"event: recognition/progress",
+		`"stage":"input-read"`,
+		"event: recognition/partial",
+		`"subscriptionsSeen":2`,
+		"event: recognition/final",
+		"event: recognition/error",
+		"[redacted]",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("SSE body missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "sk-stream-secret123") {
+		t.Fatalf("SSE error leaked provider secret:\n%s", body)
+	}
+}
+
 func TestReadAIRecognitionMultipartThinkingControl(t *testing.T) {
 	missing := readAIRecognitionMultipartForTest(t, map[string]string{"text": "dmit 15元 1个月"})
 	if missing.ThinkingControl != nil {
@@ -463,254 +559,6 @@ func TestAIRecognitionDiagnosticsRedactsSecretsAndImageData(t *testing.T) {
 	}
 }
 
-func TestNormalizeAIRecognizeResponse(t *testing.T) {
-	price := -1.0
-	currency := "usd"
-	billingCycle := "bad"
-	date := "2026-99-99"
-	response, err := normalizeAIRecognizeResponse(aiRecognizeResponse{
-		Subscriptions: []aiRecognizedSubscriptionDraft{{
-			Name:            "  Netflix  ",
-			Price:           &price,
-			Currency:        &currency,
-			BillingCycle:    &billingCycle,
-			StartDate:       &date,
-			NextBillingDate: &date,
-			Confidence:      "unknown",
-			Warnings:        []string{"", "manual warning", "manual warning"},
-		}},
-		Diagnostics: testAIRecognitionDiagnostics(),
-	}, aiProviderTypeOpenAI, aiProtocolOpenAIChat, "gpt-5.1", aiRecognitionConfigContext{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	draft := response.Subscriptions[0]
-	if response.ProviderType != aiProviderTypeOpenAI || response.TransportProtocol != aiProtocolOpenAIChat || response.Model != "gpt-5.1" {
-		t.Fatalf("provider/protocol/model not attached: %#v", response)
-	}
-	if draft.Name != "Netflix" || draft.Price != nil || draft.BillingCycle != nil || draft.Confidence != "low" {
-		t.Fatalf("draft was not normalized: %#v", draft)
-	}
-	if draft.Currency == nil || *draft.Currency != "USD" {
-		t.Fatalf("currency should normalize to USD: %#v", draft.Currency)
-	}
-	if !slices.Contains(draft.Warnings, "AI_WARNING_PRICE_INVALID") || !slices.Contains(draft.Warnings, "AI_WARNING_DATE_INVALID:startDate") {
-		t.Fatalf("expected validation warnings, got %#v", draft.Warnings)
-	}
-}
-
-func TestNormalizeAIGeneratedRecognizeResponse(t *testing.T) {
-	currency := "元"
-	billingCycle := "1个月"
-	category := "数字服务"
-	paymentMethod := "Crypto"
-	website := aiSuggestedTextField{Value: "https://www.apple.com/", Source: "suggested"}
-	notesValue := "DMIT 是提供 VPS、云服务器和网络线路服务的主机商。"
-	notes := aiGeneratedNotesField{Value: &notesValue, Source: "suggested"}
-	configContext := aiRecognitionConfigContext{
-		Categories: []aiRecognitionConfigOption{{
-			Value: "digital_services",
-			Label: "数字服务",
-			ZhCN:  "数字服务",
-			EnUS:  "Digital services",
-		}},
-		PaymentMethods: []aiRecognitionConfigOption{{
-			Value: "crypto",
-			Label: "加密货币",
-			ZhCN:  "加密货币",
-			EnUS:  "Crypto",
-		}},
-		Tags: []string{"数字服务", "云服务"},
-	}
-	response, err := normalizeAIGeneratedRecognizeResponse(aiGeneratedRecognizeResponse{
-		Subscriptions: []aiGeneratedSubscriptionDraft{{
-			Name:          "dmit",
-			Price:         "15元",
-			Currency:      &currency,
-			BillingCycle:  &billingCycle,
-			Category:      &category,
-			PaymentMethod: &paymentMethod,
-			Website:       &website,
-			Notes:         &notes,
-			Tags:          []string{"数字服务", "数字服务", "  云服务  "},
-		}},
-		Warnings: []string{},
-	}, aiProviderTypeOpenAI, aiProtocolOpenAIChat, "gpt-5.1", testAIRecognitionDiagnostics(), configContext)
-	if err != nil {
-		t.Fatal(err)
-	}
-	draft := response.Subscriptions[0]
-	if response.ProviderType != aiProviderTypeOpenAI || response.TransportProtocol != aiProtocolOpenAIChat || response.Model != "gpt-5.1" {
-		t.Fatalf("provider/protocol/model not attached: %#v", response)
-	}
-	if draft.Name != "dmit" || draft.Price == nil || *draft.Price != 15 {
-		t.Fatalf("generated draft price not normalized: %#v", draft)
-	}
-	if draft.Currency == nil || *draft.Currency != "CNY" {
-		t.Fatalf("currency should normalize to CNY: %#v", draft.Currency)
-	}
-	if draft.BillingCycle == nil || *draft.BillingCycle != "monthly" {
-		t.Fatalf("billing cycle should normalize to monthly: %#v", draft.BillingCycle)
-	}
-	if draft.Category == nil || *draft.Category != "digital_services" || draft.PaymentMethod == nil || *draft.PaymentMethod != "crypto" || draft.Website == nil || draft.Website.Source != "suggested" || draft.Notes == nil || draft.Notes.Source != "suggested" {
-		t.Fatalf("suggested metadata should be preserved: %#v", draft)
-	}
-	if !reflect.DeepEqual(draft.Tags, []string{"数字服务", "云服务"}) {
-		t.Fatalf("tags should be compacted: %#v", draft.Tags)
-	}
-}
-
-func TestNormalizeAITagsReusesExistingAndKeepsStableGeneratedTags(t *testing.T) {
-	response, err := normalizeAIRecognizeResponse(aiRecognizeResponse{
-		Subscriptions: []aiRecognizedSubscriptionDraft{{
-			Name:       "HostDZire IN CloudVPS #5 (FAT32 Special)",
-			Tags:       []string{"vps", "孟买", "Debian 12"},
-			Confidence: "high",
-		}},
-		Diagnostics: testAIRecognitionDiagnostics(),
-	}, aiProviderTypeOpenAI, aiProtocolOpenAIChat, "gpt-5.1", aiRecognitionConfigContext{Tags: []string{"VPS", "云服务器"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(response.Subscriptions[0].Tags, []string{"VPS"}) {
-		t.Fatalf("expected existing tag reuse and one-off attribute filtering, got %#v", response.Subscriptions[0].Tags)
-	}
-
-	response, err = normalizeAIRecognizeResponse(aiRecognizeResponse{
-		Subscriptions: []aiRecognizedSubscriptionDraft{{
-			Name:       "DMIT",
-			Tags:       []string{"VPS", "云服务器", "Debian 12"},
-			Confidence: "high",
-		}},
-		Diagnostics: testAIRecognitionDiagnostics(),
-	}, aiProviderTypeOpenAI, aiProtocolOpenAIChat, "gpt-5.1", aiRecognitionConfigContext{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(response.Subscriptions[0].Tags, []string{"VPS", "云服务器"}) {
-		t.Fatalf("expected stable generated tags to remain, got %#v", response.Subscriptions[0].Tags)
-	}
-
-	response, err = normalizeAIRecognizeResponse(aiRecognizeResponse{
-		Subscriptions: []aiRecognizedSubscriptionDraft{{
-			Name:       "HostDZire IN CloudVPS #5 (FAT32 Special)",
-			Tags:       []string{"孟买", "Debian 12", "FAT32 Special"},
-			Confidence: "high",
-		}},
-		Diagnostics: testAIRecognitionDiagnostics(),
-	}, aiProviderTypeOpenAI, aiProtocolOpenAIChat, "gpt-5.1", aiRecognitionConfigContext{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(response.Subscriptions[0].Tags) != 0 {
-		t.Fatalf("expected one-off generated attributes to be dropped, got %#v", response.Subscriptions[0].Tags)
-	}
-}
-
-func TestNormalizeAINotesDropsRecognitionProcessText(t *testing.T) {
-	notes := aiSuggestedTextField{Value: "输入没有提供官网或更多上下文，AI 未能高置信识别该服务。", Source: "suggested"}
-	response, err := normalizeAIRecognizeResponse(aiRecognizeResponse{
-		Subscriptions: []aiRecognizedSubscriptionDraft{{
-			Name:       "unknown app",
-			Notes:      &notes,
-			Warnings:   []string{"AI_WARNING_WEBSITE_UNCERTAIN"},
-			Confidence: "low",
-		}},
-		Diagnostics: testAIRecognitionDiagnostics(),
-	}, aiProviderTypeOpenAI, aiProtocolOpenAIChat, "gpt-5.1", aiRecognitionConfigContext{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	draft := response.Subscriptions[0]
-	if draft.Notes != nil {
-		t.Fatalf("process note should be dropped: %#v", draft.Notes)
-	}
-	if !slices.Contains(draft.Warnings, "AI_WARNING_WEBSITE_UNCERTAIN") {
-		t.Fatalf("warning should be preserved: %#v", draft.Warnings)
-	}
-}
-
-func TestNormalizeAINotesRemovesRenewletAdvice(t *testing.T) {
-	notes := aiSuggestedTextField{Value: "LOCVPS 提供 VPS、云服务器和服务器托管相关服务，适合记录主机或服务器套餐订阅。", Source: "suggested"}
-	response, err := normalizeAIRecognizeResponse(aiRecognizeResponse{
-		Subscriptions: []aiRecognizedSubscriptionDraft{{
-			Name:       "locvps",
-			Notes:      &notes,
-			Confidence: "high",
-		}},
-		Diagnostics: testAIRecognitionDiagnostics(),
-	}, aiProviderTypeOpenAI, aiProtocolOpenAIChat, "gpt-5.1", aiRecognitionConfigContext{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	draft := response.Subscriptions[0]
-	if draft.Notes == nil || draft.Notes.Value != "LOCVPS 提供 VPS、云服务器和服务器托管服务" {
-		t.Fatalf("service note should remove Renewlet-facing advice: %#v", draft.Notes)
-	}
-}
-
-func TestFillMissingAINotesWithDynamicFallback(t *testing.T) {
-	website := aiSuggestedTextField{Value: "https://hostdzire.com/", Source: "suggested"}
-	response, err := normalizeAIRecognizeResponse(aiRecognizeResponse{
-		Subscriptions: []aiRecognizedSubscriptionDraft{{
-			Name:       "HostDZire CloudVPS",
-			Website:    &website,
-			Notes:      nil,
-			Tags:       []string{"VPS", "云主机"},
-			Warnings:   []string{"AI_WARNING_NOTES_MISSING"},
-			Confidence: "high",
-		}},
-		Diagnostics: testAIRecognitionDiagnostics(),
-	}, aiProviderTypeOpenAI, aiProtocolOpenAIChat, "gpt-5.1", aiRecognitionConfigContext{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	response = fillMissingAINotesWithDynamicFallback(response, localeZhCN, aiRecognitionConfigContext{})
-	draft := response.Subscriptions[0]
-	if draft.Notes == nil || draft.Notes.Value != "HostDZire CloudVPS 是提供 VPS、云主机相关产品或服务的订阅服务。" || draft.Notes.Source != "suggested" {
-		t.Fatalf("missing notes should get dynamic fallback: %#v", draft.Notes)
-	}
-	if slices.Contains(draft.Warnings, "AI_WARNING_NOTES_MISSING") {
-		t.Fatalf("fallback should remove stale missing-notes warning, got %#v", draft.Warnings)
-	}
-}
-
-func TestNormalizeAIConfigValueKeepsUnknownNamesForImportCreation(t *testing.T) {
-	category := "Cloud lab"
-	response, err := normalizeAIRecognizeResponse(aiRecognizeResponse{
-		Subscriptions: []aiRecognizedSubscriptionDraft{{
-			Name:       "Lab",
-			Category:   &category,
-			Confidence: "high",
-		}},
-		Diagnostics: testAIRecognitionDiagnostics(),
-	}, aiProviderTypeOpenAI, aiProtocolOpenAIChat, "gpt-5.1", aiRecognitionConfigContext{
-		Categories: []aiRecognitionConfigOption{{
-			Value: "hosting_domains",
-			Label: "域名与托管",
-			ZhCN:  "域名与托管",
-			EnUS:  "Domains & Hosting",
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := response.Subscriptions[0].Category; got == nil || *got != "Cloud lab" {
-		t.Fatalf("unknown category should be preserved for import config creation, got %#v", got)
-	}
-}
-
-func TestAIRecognitionSchemaMismatchError(t *testing.T) {
-	for _, err := range []error{
-		errors.New("No object generated: response did not match schema."),
-		errors.New("parsing structured output: invalid character 'o' looking for beginning of value (raw: ok)"),
-	} {
-		if !isAIRecognitionSchemaMismatchError(err) {
-			t.Fatalf("expected schema mismatch error for %q", err.Error())
-		}
-	}
-}
-
 func testAIRecognitionDiagnostics() aiRecognitionDiagnostics {
 	return buildAIRecognitionDiagnostics(
 		aiRecognitionSettings{ProviderType: aiProviderTypeOpenAI, TransportProtocol: aiProtocolOpenAIChat, Model: "gpt-5.1"},
@@ -824,6 +672,61 @@ func stubAIRecognitionGeneration(t *testing.T, responses []aiGeneratedRecognizeR
 	return func() {
 		generateAIRecognitionObjectForRunner = previous
 	}
+}
+
+func stubAIRecognitionStreamGeneration(t *testing.T, responses []aiGeneratedRecognizeResponse) func() {
+	t.Helper()
+	previous := streamAIRecognitionObjectForRunner
+	index := 0
+	streamAIRecognitionObjectForRunner = func(_ context.Context, _ provider.LanguageModel, _ aiRecognitionInput, _ string, _ string, sink aiRecognitionStreamSink) (aiRecognitionGeneration, error) {
+		t.Helper()
+		if index >= len(responses) {
+			t.Fatalf("unexpected AI stream generation call %d", index+1)
+		}
+		response := responses[index]
+		index++
+		if err := sink.Progress(aiRecognitionStreamStageModelStream); err != nil {
+			return aiRecognitionGeneration{}, err
+		}
+		if err := sink.Partial(len(response.Subscriptions), len(response.Warnings)); err != nil {
+			return aiRecognitionGeneration{}, err
+		}
+		return aiRecognitionGeneration{
+			result: &goai.ObjectResult[aiGeneratedRecognizeResponse]{Object: response},
+			capture: aiRecognitionCapture{
+				rawModelText: resultStringFromAIObject(response),
+				finishReason: "stop",
+			},
+		}, nil
+	}
+	return func() {
+		streamAIRecognitionObjectForRunner = previous
+	}
+}
+
+type recordingAIRecognitionStreamSink struct {
+	progress []string
+	partials []aiRecognitionStreamPartialEvent
+	final    *aiRecognizeResponse
+}
+
+func (sink *recordingAIRecognitionStreamSink) Progress(stage string) error {
+	sink.progress = append(sink.progress, stage)
+	return nil
+}
+
+func (sink *recordingAIRecognitionStreamSink) Partial(subscriptionsSeen int, warningsSeen int) error {
+	sink.partials = append(sink.partials, aiRecognitionStreamPartialEvent{
+		Type:              "recognition/partial",
+		SubscriptionsSeen: subscriptionsSeen,
+		WarningsSeen:      warningsSeen,
+	})
+	return nil
+}
+
+func (sink *recordingAIRecognitionStreamSink) Final(response aiRecognizeResponse) error {
+	sink.final = &response
+	return nil
 }
 
 func aiGeneratedResponseForTest(draft aiGeneratedSubscriptionDraft) aiGeneratedRecognizeResponse {
