@@ -37,6 +37,7 @@ function renderLogin() {
 
 describe("Login page", () => {
   beforeEach(() => {
+    mocks.signInEmail.mockReset();
     mocks.usePasswordResetAvailability.mockReturnValue(false);
     mocks.useSetupStatus.mockReturnValue({
       setupRequired: false,
@@ -91,6 +92,18 @@ describe("Login page", () => {
     expect(screen.getByText("请输入密码")).toBeInTheDocument();
     expect(screen.getByLabelText("邮箱")).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByLabelText("密码")).toHaveAttribute("aria-invalid", "true");
+    expect(mocks.signInEmail).not.toHaveBeenCalled();
+  });
+
+  it("does not treat the display name as a login identifier", async () => {
+    const user = userEvent.setup();
+    renderLogin();
+
+    await user.type(screen.getByLabelText("邮箱"), "Admin");
+    await user.type(screen.getByLabelText("密码"), "password123");
+    await user.click(screen.getByRole("button", { name: "登录" }));
+
+    expect(screen.getByText("请输入有效邮箱")).toBeInTheDocument();
     expect(mocks.signInEmail).not.toHaveBeenCalled();
   });
 });
