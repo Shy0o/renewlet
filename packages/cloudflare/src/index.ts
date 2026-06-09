@@ -227,6 +227,7 @@ function health(): Response {
 }
 
 async function ready(env: Env): Promise<Response> {
+  // ready 只验证 D1 binding 可用；R2/第三方 provider 不应拖慢平台健康检查。
   await env.DB.prepare("SELECT 1").first();
   return health();
 }

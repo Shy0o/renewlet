@@ -1,3 +1,4 @@
+// Worker AI 模型列表测试保护认证代理、provider 形状归一和错误脱敏，避免 API key 进入浏览器或测试快照。
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { listAIModels } from "./ai-models";
 import type { Env } from "./types";

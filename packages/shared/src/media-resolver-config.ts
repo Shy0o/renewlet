@@ -1,3 +1,8 @@
+/**
+ * 媒体候选 resolver 配置由 JSON 数据驱动。
+ *
+ * 图标 provider、CDN、预算、降词和限流都必须在这里收敛，避免前端、Go embedded static 和 Worker 各自排序。
+ */
 import { z } from "zod";
 import { BUILT_IN_ICON_PROVIDERS } from "./built-in-icons";
 import mediaResolverConfigJson from "../data/media-resolver-config.json";

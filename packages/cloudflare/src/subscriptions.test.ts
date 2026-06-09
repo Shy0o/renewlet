@@ -149,6 +149,7 @@ describe("Cloudflare subscription mapper", () => {
   });
 
   it("adds custom_cycle_unit through the standalone migration only", () => {
+    // D1 migration 必须保持增量拆分；一键部署和本地 migration 都依赖旧库逐步补列，而不是重建初始表。
     const initialMigration = readFileSync(resolve("migrations/0001_initial.sql"), "utf8");
     const customUnitMigration = readFileSync(resolve("migrations/0007_subscription_custom_cycle_unit.sql"), "utf8");
     const oneTimeTermMigration = readFileSync(resolve("migrations/0008_subscription_one_time_term.sql"), "utf8");

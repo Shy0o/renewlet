@@ -1,3 +1,8 @@
+/**
+ * Cloudflare AI 识别 diagnostics 构造与脱敏。
+ *
+ * diagnostics 只允许随当前认证响应返回；prompt、raw 输出、usage/provider metadata 必须在这里截断和脱敏。
+ */
 import { NoObjectGeneratedError } from "ai";
 import {
   AI_RECOGNITION_DIAGNOSTIC_JSON_MAX_CHARS,
@@ -65,6 +70,7 @@ export function buildAIRecognitionDiagnostics({
       thinkingControl,
       maxOutputTokens,
       textCharCount: [...input.text].length,
+      // 图片诊断只暴露类型和大小，绝不返回 bytes/data URL，避免浏览器日志保存用户上传原图。
       images: input.images.map((image) => ({ mediaType: image.mediaType, sizeBytes: image.data.byteLength })),
     },
     response: {

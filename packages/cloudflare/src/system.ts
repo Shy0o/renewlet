@@ -1,3 +1,8 @@
+/**
+ * Cloudflare 系统版本 handler 只提供只读部署状态。
+ *
+ * Worker 不能执行 Docker 式下载、替换二进制或重启；这里仍检查 GitHub Release，让前端能提示用户同步部署。
+ */
 import { systemVersionResponseSchema } from "@renewlet/shared/schemas/app";
 import { z } from "zod";
 import rootPackageJson from "../../../package.json";

@@ -92,6 +92,7 @@ describe("buildNotificationEmail", () => {
   });
 
   it("falls back to compact content when html would exceed the clipping guard", () => {
+    // Worker 和 Go 共用同一体积预算；超长账单列表必须走 compact fallback，避免邮件客户端裁剪关键内容。
     const items = Array.from({ length: 800 }, (_, index) => item("renewal", `Very Long Subscription Name ${index}`, 18, "CNY", "2026-05-17", 3));
     const email = buildNotificationEmail(settings(), {
       title: "Renewlet 订阅提醒",

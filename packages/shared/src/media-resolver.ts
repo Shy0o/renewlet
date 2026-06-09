@@ -252,6 +252,7 @@ export function generateFaviconCandidates(
   website: string,
   limit: number,
 ): MediaCandidate[] {
+  // favicon 候选只生成确定性 URL，不在后端抓取页面或图片；浏览器展示阶段自行决定是否加载成功。
   if (limit <= 0) return [];
   const tlds = resolver.config.favicon.fallbackTlds[kind];
   const domains = candidateDomains(resolver, name, website, tlds).slice(0, resolver.config.limits.maxCandidateDomains);
@@ -274,6 +275,7 @@ export function compactMediaTerm(value: string): string {
   return normalizeMediaTerm(value).replace(/\s+/g, "");
 }
 
+/** 降词只删除套餐/修饰词尾部，保证“Netflix Premium”能回到品牌，但不会把短泛词当候选。 */
 export function reducedMediaQueries(resolver: MediaResolver, name: string): string[] {
   const tokens = normalizeMediaTerm(name).split(/\s+/).filter(Boolean);
   const queries: string[] = [];

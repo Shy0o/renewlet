@@ -1,5 +1,9 @@
 package main
 
+// ai_models.go 是 Docker/Go 运行面的 AI 模型列表代理。
+//
+// 该端点只在用户显式刷新时访问第三方 /models；API key 不入库、不回传浏览器，
+// provider 错误也必须脱敏后才进入前端可见响应。
 import (
 	"context"
 	"encoding/json"
@@ -113,6 +117,7 @@ func handleAIModelsList(app core.App, e *core.RequestEvent) error {
 	if e.Auth == nil {
 		return e.UnauthorizedError(serverText(locale, "auth.loginRequired"), nil)
 	}
+	// 请求体携带临时 provider 配置，必须保持严格 JSON，避免未知字段变成隐式模型代理配置。
 	body, err := decodeStrictJSON[aiModelListRequest](e.Request, locale)
 	if err != nil {
 		return e.BadRequestError(validationErrorMessage(locale, "common.invalidRequestBody", err), err)
@@ -148,6 +153,7 @@ func listAIModels(ctx context.Context, input aiModelListRequest, locale appLocal
 	models := normalizeAIModelList(endpoint.ModelListShape, raw)
 	truncated := len(models) > aiModelListMaxModels
 	if truncated {
+		// 截断只影响下拉候选展示；用户仍可手动输入模型 ID，避免超大 provider 响应拖垮页面。
 		models = models[:aiModelListMaxModels]
 	}
 	return aiModelListResponse{ProviderType: endpoint.ProviderType, TransportProtocol: endpoint.TransportProtocol, Models: models, Truncated: truncated}, nil
@@ -230,6 +236,7 @@ func readAIModelListResponseBody(reader io.Reader, locale appLocale) ([]byte, er
 		return nil, err
 	}
 	if len(data) > aiModelListResponseBytes {
+		// 第三方错误页可能远大于正常模型列表；限制响应体能防止服务端代理变成内存放大器。
 		return nil, &aiModelListHTTPError{
 			status:  http.StatusRequestEntityTooLarge,
 			code:    "AI_MODEL_LIST_RESPONSE_TOO_LARGE",

@@ -1,5 +1,7 @@
 package main
 
+// 续订算法 Go 测试读取 shared JSON fixture；自动/手动续订的 date-only 推进语义必须追随 TypeScript 事实源。
+
 import (
 	"encoding/json"
 	"os"

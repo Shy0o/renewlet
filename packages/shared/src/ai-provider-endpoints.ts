@@ -1,3 +1,8 @@
+/**
+ * AI provider endpoint 解析器是前端设置页、Go 后端和 Cloudflare Worker 的共同网络契约。
+ *
+ * 它集中处理默认 base URL、显式 `#` 逃生阀、模型列表 URL 和鉴权头，避免各运行面拼出不同第三方请求。
+ */
 import {
   canonicalAIRecognitionTransportProtocol,
   type AiRecognitionProviderType,

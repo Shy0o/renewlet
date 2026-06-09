@@ -1,3 +1,9 @@
+/**
+ * Cloudflare AI 模型列表代理只服务“用户主动刷新”场景。
+ *
+ * 这里复用 shared provider endpoint 作为请求事实源，Worker 只负责认证、超时、响应限额和错误脱敏；
+ * 模型候选不会入库，避免把第三方账号能力或 API key 变成 Renewlet 的持久化数据。
+ */
 import {
   AI_RECOGNITION_MAX_MODEL_LIST_MODELS,
   aiModelListRequestSchema,

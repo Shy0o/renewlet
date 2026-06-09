@@ -1,3 +1,4 @@
+// Worker AI SSE 测试保护 final-only 草稿事实源、diagnostics 脱敏和流式事件契约。
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiRecognitionStreamEvent } from "@renewlet/shared/schemas/ai-recognition";
 import { recognizeSubscriptionsStream } from "./ai-recognition";
@@ -134,6 +135,7 @@ async function* asyncIterable(values: unknown[]): AsyncIterable<unknown> {
 
 async function readSSEEvents(response: Response): Promise<AiRecognitionStreamEvent[]> {
   const text = await response.text();
+  // 只解析 SSE 的 data frame；heartbeat/comment 等控制帧不能进入 shared schema，避免把传输层噪声当业务事件。
   return text
     .replace(/\r\n/g, "\n")
     .split("\n\n")

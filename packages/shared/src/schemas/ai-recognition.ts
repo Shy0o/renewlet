@@ -1,3 +1,9 @@
+/**
+ * AI 识别 schema 是 Go、Cloudflare Worker 和前端导入工作台的共同契约。
+ *
+ * 识别结果只生成临时草稿和 diagnostics，不直接写 subscriptions；SSE 中只有 `recognition/final`
+ * 可以进入导入 preview/apply，progress/partial/delta 事件只服务用户感知和排查。
+ */
 import { z } from "zod";
 import {
   BILLING_CYCLES,
@@ -18,6 +24,7 @@ export const AI_RECOGNITION_DIAGNOSTIC_TEXT_MAX_CHARS = 32_000;
 export const AI_RECOGNITION_DIAGNOSTIC_JSON_MAX_CHARS = 32_000;
 export const AI_RECOGNITION_MAX_MODEL_LIST_MODELS = 300;
 
+/** Provider 类型是用户设置的存储值；transport protocol 必须由 provider canonical 派生，不能让历史字段反向影响运行时。 */
 export const aiRecognitionProviderTypeSchema = z.enum(["openai", "anthropic", "gemini", "openai-compatible"]);
 export type AiRecognitionProviderType = z.infer<typeof aiRecognitionProviderTypeSchema>;
 export const aiRecognitionTransportProtocolSchema = z.enum(["openai-chat", "anthropic-messages", "gemini-generate-content"]);
@@ -85,6 +92,7 @@ const optionalProviderBaseUrlSchema = z.string().trim().max(2048).refine((value)
   }
 }, "AI base URL must be empty or an http(s) URL without credentials");
 
+/** canonical transport 是 SDK 分派事实源；OpenAI-compatible 在 Renewlet 内固定走 OpenAI Chat 形状。 */
 export function canonicalAIRecognitionTransportProtocol(providerType: AiRecognitionProviderType): AiRecognitionTransportProtocol {
   if (providerType === "anthropic") return "anthropic-messages";
   if (providerType === "gemini") return "gemini-generate-content";
@@ -134,6 +142,7 @@ const aiRecognitionSettingsBaseSchema = z.object({
 }).strict().transform((settings) => ({
   ...settings,
   transportProtocol: canonicalAIRecognitionTransportProtocol(settings.providerType),
+  // thinking control 是 provider 私有协议，切换 provider 时清空错配值，避免把旧设置发给新模型。
   defaultThinkingControl: aiThinkingControlMatchesProviderType(settings.providerType, settings.defaultThinkingControl)
     ? settings.defaultThinkingControl
     : null,
@@ -179,6 +188,7 @@ export const aiRecognitionDiagnosticsSchema = z.object({
 }).strict();
 export type AiRecognitionDiagnostics = z.infer<typeof aiRecognitionDiagnosticsSchema>;
 
+/** 错误详情只允许携带脱敏 diagnostics；API key、原始图片和 provider 完整 payload 不属于此契约。 */
 export const aiRecognitionErrorDetailsSchema = z.object({
   reason: z.string().trim().min(1).max(120),
   providerMessage: z.string().trim().max(1000).nullable(),
@@ -245,6 +255,7 @@ export const aiRecognizedSubscriptionDraftSchema = z.object({
 }).strict();
 export type AiRecognizedSubscriptionDraft = z.infer<typeof aiRecognizedSubscriptionDraftSchema>;
 
+/** 识别 JSON 响应是非流式和 SSE final 共享的最终事实源。 */
 export const aiRecognizeResponseSchema = z.object({
   providerType: aiRecognitionProviderTypeSchema,
   transportProtocol: aiRecognitionTransportProtocolSchema,
@@ -255,6 +266,7 @@ export const aiRecognizeResponseSchema = z.object({
 }).strict();
 export type AiRecognizeResponse = z.infer<typeof aiRecognizeResponseSchema>;
 
+/** 流式识别事件只暴露 UI 状态和最终响应；partial/delta 不能被前端当成可导入草稿。 */
 export const aiRecognitionStreamStageSchema = z.enum([
   "input-read",
   "model-start",
@@ -308,6 +320,7 @@ export const aiRecognitionStreamEventSchema = z.discriminatedUnion("type", [
 ]);
 export type AiRecognitionStreamEvent = z.infer<typeof aiRecognitionStreamEventSchema>;
 
+/** 模型原始输出 schema 故意更宽，归一化层负责把字符串数字、模糊日期和 null 收敛为导入草稿。 */
 export const aiGeneratedSubscriptionDraftSchema = z.object({
   name: z.string().trim().max(120),
   price: generatedNumberSchema,
@@ -355,6 +368,7 @@ export const aiRecognitionTestResponseSchema = z.object({
 }).strict();
 export type AiRecognitionTestResponse = z.infer<typeof aiRecognitionTestResponseSchema>;
 
+/** 模型列表只用于设置页候选展示；候选上限和 capabilities 允许 null，避免 provider 元数据差异拖垮 UI。 */
 const aiModelCapabilitySchema = z.object({
   textInput: z.boolean().nullable(),
   imageInput: z.boolean().nullable(),

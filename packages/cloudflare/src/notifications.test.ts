@@ -20,6 +20,7 @@ type FakeD1Query = {
   method: "all" | "first" | "run";
 };
 
+// 这个 D1 mock 保留 prepare/bind/all/first/run 形状，让用例能验证 SQL 阶段和参数边界，而不是只测纯函数。
 function fakeEnv(handler: (query: FakeD1Query) => unknown | Promise<unknown>): Env {
   return {
     DB: {
@@ -158,6 +159,7 @@ describe("Cloudflare notifications", () => {
     vi.setSystemTime(new Date("2026-01-09T08:00:00.000Z"));
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const seenSettingsUsers: string[] = [];
+    // Cron 顶层按用户隔离失败；坏用户只写脱敏日志，不能阻断后续用户的通知窗口。
     const env = fakeEnv(({ sql, params, method }) => {
       if (method === "all" && sql.includes("SELECT id FROM users WHERE banned = 0")) {
         return d1All([{ id: "usr_bad" }, { id: "usr_ok" }]);
@@ -195,6 +197,7 @@ describe("Cloudflare notifications", () => {
     }));
     vi.stubGlobal("fetch", fetchMock);
     let finalizeParams: unknown[] | null = null;
+    // 渠道业务失败属于单个 notification_jobs 结果，不能升级成顶层 scheduled failure 或泄露 sendkey。
     const env = fakeEnv(({ sql, params, method }) => {
       if (method === "all" && sql.includes("SELECT id FROM users WHERE banned = 0")) {
         return d1All([{ id: "usr_due" }]);

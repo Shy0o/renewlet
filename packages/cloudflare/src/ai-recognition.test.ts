@@ -1,3 +1,4 @@
+// Worker AI 识别测试覆盖 multipart 输入、provider runtime 分流、schema repair 和 diagnostics 不入库契约。
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { AI_RECOGNITION_MAX_IMAGES } from "@renewlet/shared/schemas/ai-recognition";
 import { recognizeSubscriptions, testAIRecognitionConnection } from "./ai-recognition";
@@ -115,6 +116,7 @@ function requestForTextWithThinking(text: string, thinkingControl: string): Requ
 function requestForImages(count: number): Request {
   const form = new FormData();
   for (let index = 0; index < count; index += 1) {
+    // fixture 用最小 PNG 头触发 Worker 的文件头嗅探；不能只信 Blob.type。
     form.append("images[]", new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: "image/png" }), `image-${index + 1}.png`);
   }
   return new Request("https://renewlet.test/api/app/ai/subscriptions/recognize", {

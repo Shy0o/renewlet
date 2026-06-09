@@ -1,3 +1,4 @@
+// SSRF 策略测试覆盖 URL 解析怪异输入和 DNS 解析到内网的场景，保护通知外部请求边界。
 import { describe, expect, it } from "vitest";
 import { assertSafeOutboundUrl } from "./outbound-url-policy";
 

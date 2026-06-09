@@ -1,5 +1,7 @@
 package main
 
+// AI 模型列表测试保护 Go 代理对 OpenAI/Gemini/Anthropic 三类响应的归一化、超时和脱敏策略。
+// 这些断言要和 Cloudflare Worker 的模型列表测试保持语义一致，避免两端设置页候选行为漂移。
 import (
 	"context"
 	"errors"

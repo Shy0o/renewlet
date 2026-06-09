@@ -1,3 +1,4 @@
+// 续订算法测试读取共享 JSON fixture；同一批样例也由 Go 后端读取，用来锁住跨运行面账单日推进语义。
 import { describe, expect, it } from "vitest";
 import fixtures from "./subscription-renewal-fixtures.json";
 import {

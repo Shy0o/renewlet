@@ -7,8 +7,10 @@ import {
   isValidDateOnly,
 } from "./runtime";
 
+/** 续订模式决定推进阈值：自动维护追到 today，手动续订至少推进一期并严格晚于当前边界。 */
 export type RenewalMode = "auto" | "manual";
 
+/** 续订算法输入是跨 D1、PocketBase 和前端 fixture 的最小字段集，不包含价格、通知或展示字段。 */
 export interface SubscriptionRenewalInput {
   billingCycle: BillingCycle;
   status: SubscriptionStatus;
@@ -20,6 +22,7 @@ export interface SubscriptionRenewalInput {
   customCycleUnit?: CustomCycleUnit | null | undefined;
 }
 
+/** 账单日纯计算入口使用同一字段集，避免表单自动日期与后端续订算法分叉。 */
 export interface AdvanceBillingDateInput {
   billingCycle: BillingCycle;
   startDate: string;
@@ -29,6 +32,7 @@ export interface AdvanceBillingDateInput {
   customCycleUnit?: CustomCycleUnit | null | undefined;
 }
 
+/** 续订结果只返回 date-only 与状态；不会生成付款记录或通知历史。 */
 export interface SubscriptionRenewalResult {
   nextBillingDate: DateOnly;
   status: SubscriptionStatus;

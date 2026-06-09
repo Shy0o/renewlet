@@ -1,5 +1,7 @@
 package main
 
+// AI 识别端到端单测保护 Go provider runner、SSE contract、multipart 输入和 diagnostics 脱敏。
+// 测试里的 fake model 只模拟第三方 SDK 边界，不替代 shared schema 与 Cloudflare Worker 的契约覆盖。
 import (
 	"context"
 	"encoding/json"

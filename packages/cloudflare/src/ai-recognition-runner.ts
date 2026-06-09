@@ -624,6 +624,7 @@ function diagnosticsFromGeneration(
   });
 }
 
+/** 校验用户设置中的模型、base URL 和 API key；真正的 provider 请求只在通过后才会发出。 */
 export function assertAIRecognitionSettings(settings: AiRecognitionSettings, locale: AppLocale): void {
   if (!settings.model.trim()) {
     throw new HttpError(400, serverText(locale, "aiRecognition.modelRequired"), "AI_MODEL_REQUIRED");
@@ -637,6 +638,7 @@ export function assertAIRecognitionSettings(settings: AiRecognitionSettings, loc
   }
 }
 
+/** 把模型/校验异常收敛成 shared SSE error event，避免向前端透传 AI SDK 原始错误对象。 */
 export function aiRecognitionStreamErrorEvent(locale: AppLocale, error: unknown): AiRecognitionStreamEvent {
   if (error instanceof HttpError) {
     const parsedDetails = aiRecognitionErrorDetailsSchema.safeParse(error.details);
@@ -665,6 +667,7 @@ export function aiRecognitionStreamErrorEvent(locale: AppLocale, error: unknown)
   });
 }
 
+/** 超时事件保留 diagnostics 时仍走同一脱敏结构，前端只通过 code 区分可提示文案。 */
 export function aiRecognitionStreamTimeoutErrorEvent(locale: AppLocale, error: unknown): AiRecognitionStreamEvent {
   const diagnostics = aiRecognitionDiagnosticsFromError(error);
   const cause = aiRecognitionCauseFromError(error);
@@ -676,6 +679,7 @@ export function aiRecognitionStreamTimeoutErrorEvent(locale: AppLocale, error: u
   });
 }
 
+/** schema mismatch 是“模型没有产出可用对象”的用户可诊断失败，不等同于 Worker 内部错误。 */
 export function isAIRecognitionSchemaMismatch(error: unknown): boolean {
   const cause = aiRecognitionCauseFromError(error);
   const message = (cause instanceof Error ? cause.message : String(cause)).toLowerCase();
@@ -685,10 +689,12 @@ export function isAIRecognitionSchemaMismatch(error: unknown): boolean {
     || message.includes("invalid object");
 }
 
+/** 只从内部 run error 取 diagnostics，避免任意外部异常伪造调试信息进入响应。 */
 export function aiRecognitionDiagnosticsFromError(error: unknown): AiRecognitionDiagnostics | null {
   return error instanceof AIRecognitionRunError ? error.diagnostics : null;
 }
 
+/** 解除内部错误包装，供脱敏层读取真实 provider/schema 失败原因。 */
 export function aiRecognitionCauseFromError(error: unknown): unknown {
   return error instanceof AIRecognitionRunError ? error.causeError : error;
 }

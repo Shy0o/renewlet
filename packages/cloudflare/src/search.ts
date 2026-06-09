@@ -1,3 +1,8 @@
+/**
+ * Worker 媒体候选搜索是 shared resolver 的运行面适配层。
+ *
+ * 排序、来源预算和候选上限都以 shared config 为事实源；Worker 只增加认证、用户来源设置和轻量限流。
+ */
 import {
   clampMediaCandidateLimit,
   createMediaResolver,

@@ -1,6 +1,6 @@
 package main
 
-// 本文件测试 Go 邮件模板的 HTML/Text fallback、CTA、安全转义和服务端 i18n key 对齐。
+// Go 邮件模板测试保护与 Worker/shared 邮件语义一致的 HTML/Text fallback、CTA、安全转义和服务端 i18n key。
 
 import (
 	"math"
@@ -16,6 +16,7 @@ func TestBuildEmailHTMLMessageRendersCompatibleReminderTemplate(t *testing.T) {
 	settings.Timezone = "Asia/Shanghai"
 	settings.ThemeVariant = "ocean"
 
+	// 邮件 HTML 需要兼容保守客户端，table 布局和内联样式比普通 Web CSS 更重要。
 	message := buildDueNotificationForLocalDate("2026-05-14", time.Date(2026, 5, 14, 1, 2, 3, 0, time.UTC), settings, []notificationSubscription{
 		{ID: "renewal", Name: "Renewal", Price: 18, Currency: "CNY", Status: "active", NextBillingDate: "2026-05-17", ReminderDays: 3},
 		{ID: "trial", Name: "Trial", Price: 9.9, Currency: "USD", Status: "trial", NextBillingDate: "2026-06-01", TrialEndDate: "2026-05-15", ReminderDays: 1},
@@ -191,6 +192,7 @@ func TestBuildEmailHTMLMessageRendersEmptyNotificationContent(t *testing.T) {
 func TestBuildEmailHTMLMessageCapsLargeHTMLBody(t *testing.T) {
 	t.Setenv("APP_URL", "")
 	settings := defaultAppSettings()
+	// 邮件客户端常按体积截断 HTML；超长通知必须降级到 compact 视图，而不是继续膨胀完整列表。
 	items := make([]notificationContentItem, 0, 800)
 	for i := 0; i < 800; i++ {
 		items = append(items, notificationContentItem{
