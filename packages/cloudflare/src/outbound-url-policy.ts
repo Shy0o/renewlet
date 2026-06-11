@@ -111,6 +111,25 @@ function isUnsafeIpv6(value: string): boolean {
   const ip = value.toLowerCase().replace(/^\[|\]$/g, "");
   if (ip === "::1" || ip === "::") return true;
   if (ip.startsWith("fc") || ip.startsWith("fd") || ip.startsWith("fe80:")) return true;
-  if (ip.startsWith("::ffff:")) return isUnsafeOutboundIp(ip.slice("::ffff:".length));
+  const mapped = parseIpv4MappedIpv6(ip);
+  if (mapped) return isUnsafeIpv4(mapped);
   return false;
+}
+
+function parseIpv4MappedIpv6(value: string): Ipv4Octets | null {
+  if (!value.startsWith("::ffff:")) return null;
+  const suffix = value.slice("::ffff:".length);
+  const dotted = parseIpv4Literal(suffix);
+  if (dotted) return dotted;
+  // URL 会把 ::ffff:127.0.0.1 规范化成 ::ffff:7f00:1；这里还原后再走 IPv4 私网判断。
+  const parts = suffix.split(":");
+  if (parts.length !== 2) return null;
+  const words = parts.map((part) => Number.parseInt(part, 16));
+  if (words.some((word) => !Number.isInteger(word) || word < 0 || word > 0xffff)) return null;
+  return [
+    (words[0]! >>> 8) & 0xff,
+    words[0]! & 0xff,
+    (words[1]! >>> 8) & 0xff,
+    words[1]! & 0xff,
+  ];
 }
