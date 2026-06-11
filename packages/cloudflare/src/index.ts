@@ -25,6 +25,16 @@ import {
 import { readCustomConfig, readSettings, updateCustomConfig, updateSettings } from "./settings";
 import { createSubscription, deleteSubscription, readSubscriptions, renewSubscription, updateSubscription } from "./subscriptions";
 import { applyImport, previewImport } from "./import-export";
+import {
+  createCloudBackup,
+  deleteCloudBackup,
+  downloadCloudBackup,
+  listCloudBackups,
+  readCloudBackupConfig,
+  runDueCloudBackups,
+  testCloudBackupConfig,
+  updateCloudBackupConfig,
+} from "./cloud-backup";
 import { recognizeSubscriptions, recognizeSubscriptionsStream, testAIRecognitionConnection } from "./ai-recognition";
 import { listAIModels } from "./ai-models";
 import { mediaCandidates } from "./search";
@@ -63,6 +73,8 @@ const worker: ExportedHandler<Env> = {
     await renewAutoSubscriptionsForAllUsers(env);
     // Cron 顶层失败必须交回平台记录；本地调试通过 `--test-scheduled` 的 `/__scheduled` 绕过 Wrangler Static Assets bug。
     await runScheduledNotifications(env);
+    // 云备份是可恢复快照，不参与通知窗口；放在通知之后，避免慢远端存储拖慢本轮续费提醒。
+    await runDueCloudBackups(env);
   },
 };
 
@@ -168,6 +180,25 @@ async function routeApp(request: Request, env: Env, url: URL): Promise<Response>
 
   if (head === "import" && second === "preview") return routeMethods(request, { POST: () => previewImport(request, env) });
   if (head === "import" && second === "apply") return routeMethods(request, { POST: () => applyImport(request, env) });
+
+  if (head === "cloud-backup" && second === "config" && !third) return routeMethods(request, {
+    GET: () => readCloudBackupConfig(request, env),
+    PUT: () => updateCloudBackupConfig(request, env),
+  });
+  if (head === "cloud-backup" && second === "test" && !third) {
+    return routeMethods(request, { POST: () => testCloudBackupConfig(request, env) });
+  }
+  if (head === "cloud-backups" && !second) return routeMethods(request, {
+    GET: () => listCloudBackups(request, env),
+    POST: () => createCloudBackup(request, env),
+  });
+  if (head === "cloud-backups" && second && third === "download" && !fourth) {
+    return routeMethods(request, { GET: () => downloadCloudBackup(request, env, second) });
+  }
+  if (head === "cloud-backups" && second && !third) {
+    return routeMethods(request, { DELETE: () => deleteCloudBackup(request, env, second) });
+  }
+
   if (head === "ai" && second === "subscriptions" && third === "recognize" && fourth === "stream" && !fifth) {
     return routeMethods(request, { POST: () => recognizeSubscriptionsStream(request, env) });
   }

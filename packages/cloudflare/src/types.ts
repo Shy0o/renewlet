@@ -138,6 +138,25 @@ export interface PublicStatusPageRow {
   updated_at: string;
 }
 
+/** 云同步与备份目标；credential_json 是 provider 级 write-only secret，出站只能暴露 credentialSet。 */
+export interface CloudBackupTargetRow {
+  user_id: string;
+  provider: "webdav" | "s3";
+  config_json: string;
+  credential_json: string;
+  schedule_enabled: number;
+  schedule_frequency: "daily" | "weekly";
+  schedule_time: string;
+  schedule_weekday: "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
+  retention: number;
+  last_backup_at: string | null;
+  last_status: "idle" | "success" | "failed";
+  last_error: string | null;
+  locked_until: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** 已通过 Worker session 校验的请求上下文。 */
 export interface AuthContext {
   token: string;

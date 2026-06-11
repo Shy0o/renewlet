@@ -373,6 +373,24 @@ export async function apiFetch<Schema extends z.ZodType>(
   }
 }
 
+/** 二进制下载也复用 API 认证/错误边界；调用方只接收已经通过 HTTP ok 校验的 Blob。 */
+export async function apiFetchBlob(input: RequestInfo, init?: ApiFetchInit): Promise<Blob> {
+  const { abort, response } = await fetchWithApiBoundary(input, init);
+  try {
+    if (!response.ok) {
+      const json = await parseJsonSafely(response);
+      const message = getErrorMessage(json) || response.statusText || "Request failed";
+      if (shouldClearAuthSession(response.status, json)) {
+        clearAuthSession();
+      }
+      throw new ApiError(message, response.status, json, getErrorCode(json));
+    }
+    return await response.blob();
+  } finally {
+    abort.cleanup();
+  }
+}
+
 export async function apiFetchStream<T>(
   input: RequestInfo,
   init: ApiFetchInit,

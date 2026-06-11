@@ -216,6 +216,14 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 	// 导入预览和应用都要求登录态；冲突判断只在当前用户数据内完成，避免备份里的来源 ID 探测他人订阅。
 	auth.POST("/import/preview", func(e *core.RequestEvent) error { return handleImportPreview(app, e) })
 	auth.POST("/import/apply", func(e *core.RequestEvent) error { return handleImportApply(app, e) })
+	// 云同步与备份只生成可恢复快照；恢复下载后仍必须进入前端 import preview/apply，不直接覆盖数据库。
+	auth.GET("/cloud-backup/config", func(e *core.RequestEvent) error { return handleCloudBackupConfigRead(app, e) })
+	auth.PUT("/cloud-backup/config", func(e *core.RequestEvent) error { return handleCloudBackupConfigUpdate(app, e) })
+	auth.POST("/cloud-backup/test", func(e *core.RequestEvent) error { return handleCloudBackupTest(app, e) })
+	auth.GET("/cloud-backups", func(e *core.RequestEvent) error { return handleCloudBackupsList(app, e) })
+	auth.POST("/cloud-backups", func(e *core.RequestEvent) error { return handleCloudBackupsCreate(app, e) })
+	auth.GET("/cloud-backups/{id}/download", func(e *core.RequestEvent) error { return handleCloudBackupsDownload(app, e) })
+	auth.DELETE("/cloud-backups/{id}", func(e *core.RequestEvent) error { return handleCloudBackupsDelete(app, e) })
 	// AI 识别只生成导入草稿，不直接写 subscriptions；最终仍必须走 import preview/apply 的用户确认链路。
 	auth.POST("/ai/subscriptions/recognize/stream", func(e *core.RequestEvent) error { return handleAIRecognizeSubscriptionsStream(app, e) })
 	auth.POST("/ai/subscriptions/recognize", func(e *core.RequestEvent) error { return handleAIRecognizeSubscriptions(app, e) })

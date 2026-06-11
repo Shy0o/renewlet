@@ -11,6 +11,7 @@
     "./schemas/auth": "./src/schemas/auth.ts",
     "./schemas/ai-recognition": "./src/schemas/ai-recognition.ts",
     "./schemas/calendar-feed": "./src/schemas/calendar-feed.ts",
+    "./schemas/cloud-backup": "./src/schemas/cloud-backup.ts",
     "./schemas/common": "./src/schemas/common.ts",
     "./schemas/custom-config": "./src/schemas/custom-config.ts",
     "./schemas/exchange-rates": "./src/schemas/exchange-rates.ts",
