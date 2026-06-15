@@ -23,6 +23,12 @@ Renewlet is a self-hosted subscription ledger for tracking recurring charges and
 
 It records renewal dates, prices, currencies, categories, payment methods, logos, budgets, notes, and notification settings. It can run as a single Docker container, or on Cloudflare Workers with D1, R2, and Cron Triggers.
 
+## Demo
+
+Try the live demo: <https://renewlet-demo.olyq.org/>
+
+Sign in with `demo@renewlet.local` / `renewlet-demo`. The demo resets regularly, so please do not put real personal data or credentials there.
+
 <p align="center">
   <img src="./docs/screenshots/renewlet-dashboard-en.png" alt="Renewlet dashboard showing monthly spend, upcoming renewals, and spending distribution" width="100%">
 </p>
@@ -73,14 +79,6 @@ If Docker Hub is unavailable, use GHCR:
 ```env
 RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.1.0"
 ```
-
-Demo Mode uses the same image and login page:
-
-```env
-RENEWLET_DEMO_MODE="true"
-```
-
-Visitors sign in with `demo@renewlet.local` / `renewlet-demo`. Demo data resets on startup and every 2 hours, while setup and real external side effects are disabled.
 
 ## Cloudflare Workers
 
