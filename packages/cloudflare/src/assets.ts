@@ -1,6 +1,6 @@
 import { uploadKindSchema } from "@renewlet/shared/schemas/media";
-import { getAsset, listAssets, newId, nowIso } from "./db";
-import { HttpError, json, requestLocale } from "./http";
+import { countAssetReferences, deleteAssetMetadata, getAsset, listAssets, newId, nowIso } from "./db";
+import { HttpError, json, ok, requestLocale } from "./http";
 import { serverText } from "./server-i18n";
 import { requireAuth } from "./auth";
 import type { AssetRow, Env } from "./types";
@@ -90,6 +90,24 @@ export async function listUploadedAssets(request: Request, env: Env): Promise<Re
     page,
     totalPages: Math.ceil(result.total / perPage),
   });
+}
+
+export async function deleteAsset(request: Request, env: Env, id: string): Promise<Response> {
+  const locale = requestLocale(request);
+  const auth = await requireAuth(request, env);
+  const row = await getAsset(env, auth.user.id, id);
+  if (!row) throw new HttpError(404, serverText(locale, "asset.missing"), "NOT_FOUND");
+
+  const usage = await countAssetReferences(env, auth.user.id, id);
+  if (usage.usageCount > 0) {
+    // 订阅 Logo 与支付方式图标都是私有资产持久引用；删除只阻止，不替用户改业务配置。
+    throw new HttpError(409, serverText(locale, "asset.inUse"), "ASSET_IN_USE", usage);
+  }
+
+  // R2 delete 对缺失对象是幂等的；metadata 最后删除，保证失败重试仍能通过 owner 索引定位孤儿对象。
+  await env.ASSETS_BUCKET.delete(row.r2_key);
+  await deleteAssetMetadata(env, auth.user.id, id);
+  return ok();
 }
 
 function toAssetItem(row: AssetRow) {

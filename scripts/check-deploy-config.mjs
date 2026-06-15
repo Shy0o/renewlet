@@ -367,6 +367,17 @@ function checkCloudflareWorkflowBuildMetadata() {
   if (selfHostedWorkflow.includes("RENEWLET_VERSION: 0.0.0-dev")) {
     throw new Error("cloudflare-worker.yml must not deploy the 0.0.0-dev placeholder version.");
   }
+  // 官方 main 是稳定发布线；自管分支部署不能绕过 Release Publish 的 production-cloudflare 审批门。
+  for (const snippet of [
+    "if: ${{ github.repository != 'zhiyingzzhou/renewlet' || github.ref == 'refs/heads/dev' }}",
+    "      - dev",
+    "      - main",
+    "workflow_dispatch:",
+  ]) {
+    if (!selfHostedWorkflow.includes(snippet)) {
+      throw new Error(`cloudflare-worker.yml must keep self-managed deployment guard: ${snippet}`);
+    }
+  }
   for (const snippet of [
     "PACKAGE_VERSION=\"$(node -p \"require('./package.json').version\")\"",
     "SHORT_SHA=\"${GITHUB_SHA::7}\"",

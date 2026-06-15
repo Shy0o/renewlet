@@ -308,6 +308,18 @@ pnpm cloudflare:config:ci
 pnpm exec wrangler d1 migrations apply DB --remote --config wrangler.generated.jsonc
 ```
 
+**Server酱测试通知返回 HTTP 429？**
+
+这是 Server酱上游拒绝请求。Server酱官方 FAQ 写明：`429` 是来源 IP 在 24 小时内调用 API 次数超过限制，处理办法是停止调用 24 小时后再试。
+
+Renewlet 部署在 Cloudflare Workers 后，Server酱请求由 Worker 发出；Server酱统计的是 Worker 出站到 Server酱时的来源 IP。真正原因就是这个 Cloudflare 出站来源 IP 触发了 Server酱的 24 小时限流，不是 Renewlet 的通知参数格式错误。
+
+处理办法：
+
+- 立刻停止连续测试，等 24 小时后再试。
+- 急用通知时，先切到 SMTP、Telegram、Bark 或 Webhook。
+- Renewlet 会按 SendKey 自动选择入口：`sctp...` 会发到 [Server酱³ 官方 API 入口](https://doc2.ft07.com/zh/serverchan3/server/api) `https://<uid>.push.ft07.com/send/<sendkey>.send`；`SCT...` 会发到 Server酱 Turbo 的 `https://sctapi.ftqq.com/<sendkey>.send`。如果你填的是 `sctp...` SendKey，这里已经不是 [SCT 转发](https://doc2.ft07.com/zh/serverchan3/compatibility/sct-forward)入口；继续返回 429，原因仍是 Server酱对 Cloudflare 出站来源 IP 的 24 小时限流。
+
 **旧 `pb_data`？**
 
 走单独导出/导入流程。

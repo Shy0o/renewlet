@@ -38,6 +38,7 @@ import { SearchableSelect, type SearchableSelectOption } from '@/components/ui/s
 import { TimePicker } from '@/components/ui/time-picker';
 import { ConfigManagerDialog } from '@/modules/custom-config/presentation/config-manager-dialog';
 import { ThemeSelector } from '@/components/theme-selector';
+import { RawErrorResponseDialog } from '@/components/raw-error-response-dialog';
 import { NotificationHistoryPanel } from './notification-history-panel';
 import { Settings2, FolderKanban, Activity, CreditCard, Coins, Palette } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -54,12 +55,14 @@ import { NotificationChannelConfigPanel } from './notification-channel-config-pa
 import { NotificationChannelList } from './notification-channel-list';
 import { ExchangeRatesSection } from './exchange-rates-section';
 import { BuiltInIconSourcesSection } from './built-in-icon-sources-section';
+import { UploadedIconsSection } from './uploaded-icons-section';
 import { AIRecognitionSettingsSection } from './ai-recognition-settings-section';
 import { CalendarFeedSection } from './calendar-feed-section';
 import { PublicStatusPageSection } from './public-status-page-section';
 import { CloudBackupSection } from './cloud-backup-section';
 import { CheckboxSettingRow, LoadingButtonContent } from './settings-shared-controls';
 import { useCloudBackupController } from '../application/use-cloud-backup-controller';
+import { useUploadedAssetsManager } from '../application/use-uploaded-assets-manager';
 import {
   DesktopSettingsSectionNav,
   MobileSettingsPageHeader,
@@ -76,6 +79,7 @@ export function SettingsScreen() {
     settings,
     effectiveThemeMode,
     accountEmail,
+    canManageUsers,
     canAccessPocketBaseAdmin,
     customConfig,
     subscriptionsQuery,
@@ -85,6 +89,7 @@ export function SettingsScreen() {
     ratesLoading,
     lastUpdated,
     ratesError,
+    ratesErrorDetails,
     getCurrencySymbol,
     updateCategories,
     updateStatuses,
@@ -106,6 +111,9 @@ export function SettingsScreen() {
     handleThemeCustomColorChange,
     testingChannel,
     handleTestConnection,
+    notificationTestErrorDetails,
+    notificationTestErrorDetailsOpen,
+    setNotificationTestErrorDetailsOpen,
     isSavingSettings,
     notificationHistory,
     calendarFeed,
@@ -113,6 +121,7 @@ export function SettingsScreen() {
     publicStatusPage,
     password,
     passwordResetEnabled,
+    externalIntegrationsDisabled,
   } = useSettingsFormController();
 
   const {
@@ -168,6 +177,7 @@ export function SettingsScreen() {
     setCloudBackupRestoreFile(file);
     setCloudBackupImportOpen(true);
   });
+  const uploadedAssets = useUploadedAssetsManager();
   const activeNotificationChannel = selectedNotificationChannel ?? settings.enabledChannels[0] ?? 'telegram';
   const handleNotificationChannelToggle = (channel: NotificationChannel) => {
     setSelectedNotificationChannel(channel);
@@ -219,6 +229,7 @@ export function SettingsScreen() {
                 id="settings-account"
                 className={SETTINGS_SECTION_SCROLL_CLASS}
                 accountEmail={accountEmail}
+                canManageUsers={canManageUsers}
                 canAccessPocketBaseAdmin={canAccessPocketBaseAdmin}
                 passwordResetEnabled={passwordResetEnabled}
                 passwordDialogOpen={passwordDialogOpen}
@@ -232,6 +243,7 @@ export function SettingsScreen() {
                 setConfirmPassword={setConfirmPassword}
                 isUpdatingPassword={isUpdatingPassword}
                 updatePassword={updatePassword}
+                passwordDisabled={externalIntegrationsDisabled}
               />
 
               {/* 外观设置 */}
@@ -285,11 +297,18 @@ export function SettingsScreen() {
                 iconIndex={builtInIconIndex}
               />
 
+              <UploadedIconsSection
+                id="settings-uploaded-icons"
+                className={SETTINGS_SECTION_SCROLL_CLASS}
+                controller={uploadedAssets}
+              />
+
               <AIRecognitionSettingsSection
                 id="settings-ai-recognition"
                 className={SETTINGS_SECTION_SCROLL_CLASS}
                 settings={settings.aiRecognition}
                 onChange={(aiRecognition) => updateSetting('aiRecognition', aiRecognition)}
+                disabled={externalIntegrationsDisabled}
               />
 
               {/* 预算设置 */}
@@ -345,6 +364,7 @@ export function SettingsScreen() {
                     items={customConfig.categories}
                     onUpdate={updateCategories}
                     showColor={true}
+                    maxItems={200}
                     icon={<FolderKanban className="h-4 w-4" />}
                     getDeleteBlockReason={(item) => {
                       if (customConfig.categories.length <= 1) {
@@ -385,6 +405,7 @@ export function SettingsScreen() {
                     onUpdate={updatePaymentMethods}
                     icon={<CreditCard className="h-4 w-4" />}
                     showIcon={true}
+                    maxItems={200}
                     isItemReadOnly={(item) => isBuiltInPaymentMethodValue(item.value)}
                   />
 
@@ -406,6 +427,7 @@ export function SettingsScreen() {
                 id="settings-cloud-backup"
                 className={SETTINGS_SECTION_SCROLL_CLASS}
                 controller={cloudBackup}
+                disabled={externalIntegrationsDisabled}
               />
 
               <ExchangeRatesSection
@@ -417,6 +439,7 @@ export function SettingsScreen() {
                 activeRateProvider={activeRateProvider}
                 ratesLoading={ratesLoading}
                 ratesError={ratesError}
+                ratesErrorDetails={ratesErrorDetails}
                 lastUpdated={lastUpdated}
                 defaultCurrencyOptions={defaultCurrencyOptions}
                 handleRefreshRates={handleRefreshRates}
@@ -534,6 +557,7 @@ export function SettingsScreen() {
                       activeChannel={activeNotificationChannel}
                       onSelect={setSelectedNotificationChannel}
                       onToggle={handleNotificationChannelToggle}
+                      disabled={externalIntegrationsDisabled}
                     />
                     <NotificationChannelConfigPanel
                       channel={activeNotificationChannel}
@@ -542,6 +566,7 @@ export function SettingsScreen() {
                       updateSetting={updateSetting}
                       testingChannel={testingChannel}
                       onTest={handleTestConnection}
+                      disabled={externalIntegrationsDisabled}
                     />
                   </div>
 
@@ -556,6 +581,7 @@ export function SettingsScreen() {
                       autoComplete="tel"
                       placeholder={t("settings.testPhonePlaceholder")}
                       value={settings.testPhone}
+                      disabled={externalIntegrationsDisabled}
                       onChange={(e) => updateSetting('testPhone', e.target.value)}
                       className="border-border bg-secondary"
                     />
@@ -644,6 +670,15 @@ export function SettingsScreen() {
         config={customConfig}
         initialFile={cloudBackupRestoreFile}
         onInitialFileConsumed={() => setCloudBackupRestoreFile(null)}
+      />
+
+      <RawErrorResponseDialog
+        open={notificationTestErrorDetailsOpen}
+        details={notificationTestErrorDetails}
+        onOpenChange={setNotificationTestErrorDetailsOpen}
+        title={t("rawErrorResponse.title")}
+        description={t("rawErrorResponse.description")}
+        testId="notification-test-raw-error-response-dialog"
       />
     </div>
   );

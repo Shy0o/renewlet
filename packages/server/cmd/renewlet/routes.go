@@ -34,10 +34,18 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 		return e.JSON(http.StatusOK, ready)
 	})
 
+	router.GET("/api/app/status", func(e *core.RequestEvent) error {
+		// app status 是认证前 capability 源；前端置灰和 setup 可见性都只读这一处，不再从页面里猜部署模式。
+		return e.JSON(http.StatusOK, appStatusResponse{
+			SetupRequired: !hasEnabledAdmin(app),
+			SetupEnabled:  demoModePolicy.SetupEnabled(),
+			DemoMode:      demoModePolicy.Enabled(),
+		})
+	})
 	router.GET("/api/app/setup", func(e *core.RequestEvent) error {
 		return e.JSON(http.StatusOK, setupStatusResponse{
 			SetupRequired: !hasEnabledAdmin(app),
-			SetupEnabled:  envBool("SETUP_ENABLED", true),
+			SetupEnabled:  demoModePolicy.SetupEnabled(),
 		})
 	})
 	router.GET("/api/public/status/{token}", func(e *core.RequestEvent) error { return handlePublicStatusRead(app, e) })
@@ -46,7 +54,7 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 	router.GET("/api/cron/notifications", func(e *core.RequestEvent) error { return handleNotificationCron(app, e) })
 	router.POST("/api/app/setup", func(e *core.RequestEvent) error {
 		locale := requestLocale(e.Request)
-		if !envBool("SETUP_ENABLED", true) {
+		if !demoModePolicy.SetupEnabled() {
 			return e.ForbiddenError(serverText(locale, "auth.setupDisabled"), nil)
 		}
 		if hasEnabledAdmin(app) {
@@ -102,6 +110,9 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 		if err != nil {
 			return e.NotFoundError(serverText(locale, "auth.userNotFound"), err)
 		}
+		if err := demoModePolicy.RejectTargetUserMutation(e, user); err != nil {
+			return err
+		}
 		body, err := decodeStrictJSON[adminPatchUserRequest](e.Request, locale)
 		if err != nil {
 			return e.BadRequestError(validationErrorMessage(locale, "common.invalidRequestParameters", err), err)
@@ -140,6 +151,9 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 		if err != nil {
 			return e.NotFoundError(serverText(locale, "auth.userNotFound"), err)
 		}
+		if err := demoModePolicy.RejectTargetUserMutation(e, user); err != nil {
+			return err
+		}
 		if err := preventUserDelete(app, e.Auth, user); err != nil {
 			return e.BadRequestError(localizeAdminMutationError(locale, err), nil)
 		}
@@ -170,6 +184,13 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 			case errors.Is(err, errSystemUpdateUnsupported), errors.Is(err, errSystemUpdateNoUpdate):
 				return e.BadRequestError(err.Error(), nil)
 			default:
+				if details := systemUpstreamErrorDetails(err); details != nil {
+					return e.JSON(http.StatusInternalServerError, map[string]interface{}{
+						"message": serverText(locale, "system.updateFailed"),
+						"code":    "SYSTEM_UPDATE_FAILED",
+						"details": details,
+					})
+				}
 				return e.InternalServerError(serverText(locale, "system.updateFailed"), err)
 			}
 		}
@@ -206,6 +227,9 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 	auth := router.Group("/api/app").Bind(apis.RequireAuth("users"))
 	auth.PUT("/account/password", func(e *core.RequestEvent) error {
 		locale := requestLocale(e.Request)
+		if err := demoModePolicy.RejectAccountMutation(e); err != nil {
+			return err
+		}
 		body, err := decodeStrictJSON[accountPasswordRequest](e.Request, locale)
 		if err != nil {
 			return e.BadRequestError(validationErrorMessage(locale, "common.invalidRequestBody", err), err)
@@ -219,20 +243,20 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 		}
 		return e.JSON(http.StatusOK, newOKResponse())
 	})
-	auth.POST("/notifications/test", func(e *core.RequestEvent) error { return handleNotificationTest(app, e) })
+	auth.POST("/notifications/test", demoModeExternalSideEffectGuard(func(e *core.RequestEvent) error { return handleNotificationTest(app, e) }))
 	auth.GET("/notifications/history", func(e *core.RequestEvent) error { return handleNotificationHistory(app, e) })
-	auth.POST("/notifications/run", func(e *core.RequestEvent) error { return handleNotificationRun(app, e) })
+	auth.POST("/notifications/run", demoModeExternalSideEffectGuard(func(e *core.RequestEvent) error { return handleNotificationRun(app, e) }))
 	// 导入预览和应用都要求登录态；冲突判断只在当前用户数据内完成，避免备份里的来源 ID 探测他人订阅。
 	auth.POST("/import/preview", func(e *core.RequestEvent) error { return handleImportPreview(app, e) })
 	auth.POST("/import/apply", func(e *core.RequestEvent) error { return handleImportApply(app, e) })
 	// 云同步与备份只生成可恢复快照；恢复下载后仍必须进入前端 import preview/apply，不直接覆盖数据库。
 	auth.GET("/cloud-backup/config", func(e *core.RequestEvent) error { return handleCloudBackupConfigRead(app, e) })
-	auth.PUT("/cloud-backup/config", func(e *core.RequestEvent) error { return handleCloudBackupConfigUpdate(app, e) })
-	auth.POST("/cloud-backup/test", func(e *core.RequestEvent) error { return handleCloudBackupTest(app, e) })
-	auth.GET("/cloud-backups", func(e *core.RequestEvent) error { return handleCloudBackupsList(app, e) })
-	auth.POST("/cloud-backups", func(e *core.RequestEvent) error { return handleCloudBackupsCreate(app, e) })
-	auth.GET("/cloud-backups/{id}/download", func(e *core.RequestEvent) error { return handleCloudBackupsDownload(app, e) })
-	auth.DELETE("/cloud-backups/{id}", func(e *core.RequestEvent) error { return handleCloudBackupsDelete(app, e) })
+	auth.PUT("/cloud-backup/config", demoModeExternalSideEffectGuard(func(e *core.RequestEvent) error { return handleCloudBackupConfigUpdate(app, e) }))
+	auth.POST("/cloud-backup/test", demoModeExternalSideEffectGuard(func(e *core.RequestEvent) error { return handleCloudBackupTest(app, e) }))
+	auth.GET("/cloud-backups", demoModeExternalSideEffectGuard(func(e *core.RequestEvent) error { return handleCloudBackupsList(app, e) }))
+	auth.POST("/cloud-backups", demoModeExternalSideEffectGuard(func(e *core.RequestEvent) error { return handleCloudBackupsCreate(app, e) }))
+	auth.GET("/cloud-backups/{id}/download", demoModeExternalSideEffectGuard(func(e *core.RequestEvent) error { return handleCloudBackupsDownload(app, e) }))
+	auth.DELETE("/cloud-backups/{id}", demoModeExternalSideEffectGuard(func(e *core.RequestEvent) error { return handleCloudBackupsDelete(app, e) }))
 	// AI 识别只生成导入草稿，不直接写 subscriptions；最终仍必须走 import preview/apply 的用户确认链路。
 	auth.POST("/ai/subscriptions/recognize/stream", func(e *core.RequestEvent) error { return handleAIRecognizeSubscriptionsStream(app, e) })
 	auth.POST("/ai/subscriptions/recognize", func(e *core.RequestEvent) error { return handleAIRecognizeSubscriptions(app, e) })
@@ -251,6 +275,7 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 	auth.POST("/assets", func(e *core.RequestEvent) error { return handleAssetUpload(app, e) })
 	// 私有资产读取必须经过 handler 的 record.user 校验，不能直接暴露 PocketBase protected file URL。
 	auth.GET("/assets/{id}", func(e *core.RequestEvent) error { return handleAssetRead(app, e) })
+	auth.DELETE("/assets/{id}", func(e *core.RequestEvent) error { return handleAssetDelete(app, e) })
 	// Feed 管理 API 只服务登录用户；公开 ICS route 另走 token bearer secret，不复用 session。
 	auth.GET("/calendar-feed", func(e *core.RequestEvent) error { return handleCalendarFeedStatus(app, e) })
 	auth.POST("/calendar-feed", func(e *core.RequestEvent) error { return handleCalendarFeedCreate(app, e) })
