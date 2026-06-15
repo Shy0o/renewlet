@@ -3,6 +3,7 @@ import { useState } from "react";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_CUSTOM_CONFIG } from "@/types/config";
 import {
   DEFAULT_SETTINGS,
   WEBHOOK_HEADERS_PLACEHOLDER,
@@ -483,6 +484,19 @@ describe("SettingsScreen SMTP email settings", () => {
     expect(phoneInput).toHaveAttribute("inputmode", "tel");
     expect(phoneInput).toHaveAttribute("autocomplete", "tel");
     expect(phoneInput).toHaveAttribute("enterkeyhint", "done");
+  });
+
+  it("keeps category and payment add actions visible when default lists exceed the dialog cap", () => {
+    expect(DEFAULT_CUSTOM_CONFIG.categories.length).toBeGreaterThan(20);
+    expect(DEFAULT_CUSTOM_CONFIG.paymentMethods.length).toBeGreaterThan(20);
+
+    renderSettingsScreen();
+
+    const categoryManager = screen.getByRole("region", { name: "分类管理" });
+    const paymentManager = screen.getByRole("region", { name: "支付方式管理" });
+
+    expect(within(categoryManager).getByRole("button", { name: "添加选项" })).toBeInTheDocument();
+    expect(within(paymentManager).getByRole("button", { name: "添加选项" })).toBeInTheDocument();
   });
 
   it("keeps AI recognition provider and model controls in the shared field grid", () => {
