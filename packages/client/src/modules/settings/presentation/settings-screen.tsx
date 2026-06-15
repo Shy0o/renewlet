@@ -364,6 +364,7 @@ export function SettingsScreen() {
                     items={customConfig.categories}
                     onUpdate={updateCategories}
                     showColor={true}
+                    maxItems={200}
                     icon={<FolderKanban className="h-4 w-4" />}
                     getDeleteBlockReason={(item) => {
                       if (customConfig.categories.length <= 1) {
@@ -404,6 +405,7 @@ export function SettingsScreen() {
                     onUpdate={updatePaymentMethods}
                     icon={<CreditCard className="h-4 w-4" />}
                     showIcon={true}
+                    maxItems={200}
                     isItemReadOnly={(item) => isBuiltInPaymentMethodValue(item.value)}
                   />
 

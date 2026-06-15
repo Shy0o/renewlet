@@ -149,7 +149,25 @@ vi.mock("@/components/header", () => ({
 }));
 
 vi.mock("@/modules/custom-config/presentation/config-manager-dialog", () => ({
-  ConfigManagerDialog: () => null,
+  ConfigManagerDialog: ({
+    title,
+    items,
+    maxItems = 20,
+    readOnly = false,
+    toggleMode = false,
+  }: {
+    title: string;
+    items: unknown[];
+    maxItems?: number;
+    readOnly?: boolean;
+    toggleMode?: boolean;
+  }) => (
+    <section aria-label={title}>
+      {!readOnly && !toggleMode && items.length < maxItems ? (
+        <button type="button">添加选项</button>
+      ) : null}
+    </section>
+  ),
 }));
 
 vi.mock("@/components/theme-selector", () => ({
