@@ -1,11 +1,21 @@
 // Worker 通知测试保护 Cron/手动运行共享的内容收集口径，避免 D1 reminder_days 哨兵和 Go 后端分叉。
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDefaultAppSettings } from "@renewlet/shared/settings-defaults";
 import type { ApiAppSettings } from "@renewlet/shared/schemas/settings";
 import type { ApiSubscription } from "@renewlet/shared/schemas/subscriptions";
-import { collectNotificationItemsForLocalDate, runScheduledNotifications } from "./notifications";
+import { collectNotificationItemsForLocalDate, notificationHistory, notificationTest, runScheduledNotifications } from "./notifications";
+import { createCronJobResult } from "./notification-jobs";
 import { sendServerChan, serverChanEndpoint } from "./notification-serverchan";
+import { notificationChannelErrorDetails } from "./notification-errors";
 import type { Env, NotificationJobRow, SubscriptionRow } from "./types";
+
+const authMocks = vi.hoisted(() => ({
+  requireAuth: vi.fn(),
+}));
+
+vi.mock("./auth", () => ({
+  requireAuth: authMocks.requireAuth,
+}));
 
 vi.mock("./smtp", () => ({
   notificationSmtpConfig: () => {
@@ -136,6 +146,44 @@ function notificationJobRow(overrides: Partial<NotificationJobRow> = {}): Notifi
   };
 }
 
+function cronResultWithDecisionSchedule(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    source: "cron",
+    reason: "no_due_items",
+    force: false,
+    windowMinutes: 2,
+    triggeredAtUtc: "2026-01-09T08:00:00Z",
+    schedule: {
+      scheduledLocalDate: "2026-01-09",
+      scheduledLocalTime: "08:00",
+      timeZone: "UTC",
+      scheduledInstantUtc: "2026-01-09T08:00:00Z",
+      due: true,
+      reason: "not_in_time_window(delta=0m)",
+    },
+    settings: {
+      timezone: "UTC",
+      locale: "zh-CN",
+      notificationTimeLocal: "08:00",
+      enabledChannels: [],
+      showExpired: true,
+    },
+    message: {
+      title: "Renewlet 订阅提醒",
+      content: "今天没有需要提醒的订阅。",
+      timestamp: "2026-01-09 08:00:00 UTC",
+      hasPayload: false,
+      items: [],
+    },
+    channels: {
+      attempted: [],
+      succeeded: [],
+      failed: [],
+    },
+    ...overrides,
+  };
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -143,6 +191,15 @@ afterEach(() => {
 });
 
 describe("Cloudflare notifications", () => {
+  beforeEach(() => {
+    authMocks.requireAuth.mockReset();
+    authMocks.requireAuth.mockResolvedValue({
+      user: { id: "usr_due", role: "admin" },
+      session: { id: "ses" },
+      token: "test",
+    });
+  });
+
   it("skips subscriptions with disabled reminders", () => {
     const items = collectNotificationItemsForLocalDate(
       "2026-01-10",
@@ -151,6 +208,84 @@ describe("Cloudflare notifications", () => {
     );
 
     expect(items).toEqual([]);
+  });
+
+  it("persists cron result schedules without internal decision fields", () => {
+    const schedule = {
+      scheduledLocalDate: "2026-01-09",
+      scheduledLocalTime: "08:00",
+      timeZone: "UTC",
+      scheduledInstantUtc: "2026-01-09T08:00:00Z",
+      due: true,
+      reason: "not_in_time_window(delta=0m)",
+    };
+    const result = createCronJobResult({
+      reason: "no_due_items",
+      force: false,
+      windowMinutes: 2,
+      triggeredAtUtc: "2026-01-09T08:00:00Z",
+      schedule,
+      settings: settings(),
+      message: {
+        title: "Renewlet 订阅提醒",
+        content: "今天没有需要提醒的订阅。",
+        timestamp: "2026-01-09 08:00:00 UTC",
+        hasPayload: false,
+        items: [],
+      },
+      channels: { attempted: [], succeeded: [], failed: [] },
+    }) as { schedule: Record<string, unknown> };
+
+    expect(result.schedule).toEqual({
+      scheduledLocalDate: "2026-01-09",
+      scheduledLocalTime: "08:00",
+      timeZone: "UTC",
+      scheduledInstantUtc: "2026-01-09T08:00:00Z",
+    });
+    expect(result.schedule).not.toHaveProperty("due");
+    expect(result.schedule).not.toHaveProperty("reason");
+  });
+
+  it("normalizes legacy notification history schedules with decision fields", async () => {
+    const legacyJob = notificationJobRow({
+      status: "skipped",
+      attempts: 1,
+      last_error: null,
+      result_json: JSON.stringify(cronResultWithDecisionSchedule()),
+    });
+    const env = fakeEnv(({ sql, params, method }) => {
+      if (method === "first" && sql.includes("SELECT settings_json FROM settings")) {
+        return { settings_json: JSON.stringify(settings({ enabledChannels: [] })) };
+      }
+      if (method === "all" && sql.includes("auto_renew = 1")) return d1All([]);
+      if (method === "all" && sql.includes("FROM subscriptions")) return d1All([]);
+      if (method === "all" && sql.includes("FROM notification_jobs")) return d1All([legacyJob]);
+      if (method === "first" && sql.includes("FROM notification_jobs")) {
+        return params[1] === "failed" ? null : legacyJob;
+      }
+      throw new Error(`unexpected ${method} query: ${sql}`);
+    });
+
+    const response = await notificationHistory(new Request("https://renewlet.test/api/app/notifications/history?status=all&limit=20&offset=0", {
+      headers: { authorization: "Bearer test" },
+    }), env);
+    const body = await response.json() as {
+      summary: { latestJob: { result: { schedule: Record<string, unknown> } } | null };
+      history: { jobs: Array<{ result: { schedule: Record<string, unknown> } }> };
+    };
+    const latestSchedule = body.summary.latestJob?.result.schedule;
+    const historySchedule = body.history.jobs[0]?.result.schedule;
+
+    expect(response.status).toBe(200);
+    expect(latestSchedule).toEqual({
+      scheduledLocalDate: "2026-01-09",
+      scheduledLocalTime: "08:00",
+      timeZone: "UTC",
+      scheduledInstantUtc: "2026-01-09T08:00:00Z",
+    });
+    expect(historySchedule).toEqual(latestSchedule);
+    expect(latestSchedule).not.toHaveProperty("due");
+    expect(latestSchedule).not.toHaveProperty("reason");
   });
 
   it("logs and rejects top-level scheduled failures without leaking secrets", async () => {
@@ -208,7 +343,7 @@ describe("Cloudflare notifications", () => {
     }));
   });
 
-  it("keeps ServerChan business failures inside the cron job summary", async () => {
+  it("keeps ServerChan business failures summarized inside the cron job history", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-09T08:00:00.000Z"));
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -253,10 +388,22 @@ describe("Cloudflare notifications", () => {
     expect(finalizeParams?.[1]).toBe(1);
     expect(String(finalizeParams?.[2])).toContain("[redacted] disabled");
     expect(String(finalizeParams?.[2])).not.toContain("SCTsecret");
-    const result = JSON.parse(String(finalizeParams?.[3])) as { channels: { failed: Array<{ channel: string; error: string }> } };
+    const result = JSON.parse(String(finalizeParams?.[3])) as {
+      schedule: Record<string, unknown>;
+      channels: { failed: Array<{ channel: string; error: string }> };
+    };
+    expect(result.schedule).toEqual({
+      scheduledLocalDate: "2026-01-09",
+      scheduledLocalTime: "08:00",
+      timeZone: "UTC",
+      scheduledInstantUtc: "2026-01-09T08:00:00Z",
+    });
+    expect(result.schedule).not.toHaveProperty("due");
+    expect(result.schedule).not.toHaveProperty("reason");
     expect(result.channels.failed[0]?.channel).toBe("serverchan");
     expect(result.channels.failed[0]?.error).toContain("[redacted] disabled");
     expect(result.channels.failed[0]?.error).not.toContain("SCTsecret");
+    expect(JSON.stringify(result)).not.toContain("providerResponse");
   });
 
   it("renews automatic subscriptions before building scheduled notification content", async () => {
@@ -534,23 +681,81 @@ describe("Cloudflare notifications", () => {
     )).rejects.toThrow("[redacted] disabled");
   });
 
-  it("uses a generic ServerChan detail for non-JSON HTTP failures", async () => {
+  it("keeps raw ServerChan HTTP failures in upstream details", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("SCTsecret upstream", { status: 502, statusText: "Bad Gateway" })));
 
-    await expect(sendServerChan(
+    let error: unknown;
+    await sendServerChan(
       { ...createDefaultAppSettings(), serverchanSendKey: "SCTsecret" },
       { title: "Renewlet test", content: "Channel works", timestamp: "2026-05-14 08:00 UTC", hasPayload: true, items: [] },
       "zh-CN",
-    )).rejects.toThrow("Server酱响应格式无效");
+    ).catch((caught: unknown) => {
+      error = caught;
+    });
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("[redacted] upstream");
+    const details = notificationChannelErrorDetails(error);
+    expect(details).toMatchObject({
+      rawResponseText: "[redacted] upstream",
+    });
+    expect(JSON.stringify(details)).not.toContain("SCTsecret");
   });
 
-  it("rejects malformed ServerChan success responses without leaking the body", async () => {
+  it("keeps malformed ServerChan success responses in upstream details", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("SCTsecret raw response", { status: 200 })));
 
-    await expect(sendServerChan(
+    let error: unknown;
+    await sendServerChan(
       { ...createDefaultAppSettings(), serverchanSendKey: "SCTsecret" },
       { title: "Renewlet test", content: "Channel works", timestamp: "2026-05-14 08:00 UTC", hasPayload: true, items: [] },
       "zh-CN",
-    )).rejects.toThrow("Server酱响应格式无效");
+    ).catch((caught: unknown) => {
+      error = caught;
+    });
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("[redacted] raw response");
+    const details = notificationChannelErrorDetails(error);
+    expect(details).toMatchObject({
+      rawResponseText: "[redacted] raw response",
+    });
+    expect(JSON.stringify(details)).not.toContain("SCTsecret");
+  });
+
+  it("returns notification test failures with one-shot ServerChan upstream details", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("too many requests for SCTsecret", {
+      status: 429,
+      statusText: "Too Many Requests",
+      headers: { "content-type": "text/plain" },
+    })));
+    const env = fakeEnv(({ sql, method }) => {
+      if (method === "first" && sql.includes("SELECT settings_json FROM settings")) {
+        return { settings_json: JSON.stringify(settings()) };
+      }
+      throw new Error(`unexpected ${method} query: ${sql}`);
+    });
+
+    await expect(notificationTest(new Request("https://renewlet.test/api/app/notifications/test", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test",
+        "content-type": "application/json",
+        "x-renewlet-locale": "zh-CN",
+      },
+      body: JSON.stringify({
+        channel: "serverchan",
+        settings: {
+          serverchanSendKey: "SCTsecret",
+          enabledChannels: ["serverchan"],
+        },
+      }),
+    }), env)).rejects.toMatchObject({
+      status: 400,
+      code: "NOTIFICATION_TEST_FAILED",
+      details: {
+        rawResponseText: "too many requests for [redacted]",
+      },
+    });
   });
 });

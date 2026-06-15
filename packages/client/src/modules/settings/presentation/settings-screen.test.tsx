@@ -3,6 +3,7 @@ import { useState } from "react";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_CUSTOM_CONFIG } from "@/types/config";
 import {
   DEFAULT_SETTINGS,
   WEBHOOK_HEADERS_PLACEHOLDER,
@@ -11,6 +12,7 @@ import {
 import { NotificationChannelConfigPanel } from "./notification-channel-config-panel";
 import {
   createControllerState,
+  createUploadedAssetsManagerState,
   mocks,
   renderSettingsScreen,
 } from "./settings-screen.test-utils";
@@ -78,6 +80,7 @@ describe("SettingsScreen SMTP email settings", () => {
       dispatchEvent: vi.fn(),
     })));
     mocks.useSettingsFormController.mockReturnValue(createControllerState());
+    mocks.useUploadedAssetsManager.mockReturnValue(createUploadedAssetsManagerState());
   });
 
   afterEach(() => {
@@ -103,6 +106,28 @@ describe("SettingsScreen SMTP email settings", () => {
     expect(screen.getByLabelText("发件人")).toHaveValue("Renewlet <noreply@example.com>");
     expect(screen.getByLabelText("回复地址")).toHaveValue("support@example.com");
     expect(screen.getByRole("button", { name: "测试邮件通知" })).toBeInTheDocument();
+  });
+
+  it("disables external integration controls in demo mode while keeping ordinary settings editable", () => {
+    mocks.useSettingsFormController.mockReturnValue(createControllerState({
+      externalIntegrationsDisabled: true,
+    }));
+    renderSettingsScreen();
+
+    expect(screen.getByRole("button", { name: "修改密码" })).toBeDisabled();
+    expect(screen.getByLabelText("SMTP 服务器")).toBeDisabled();
+    expect(screen.getByLabelText("SMTP 端口")).toBeDisabled();
+    expect(screen.getByLabelText("收件人邮箱")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "测试邮件通知" })).toBeDisabled();
+    expect(screen.getByLabelText("第三方 API 测试号码")).toBeDisabled();
+    expect(screen.getByLabelText("Base URL")).toBeDisabled();
+    expect(screen.getByLabelText("API Key")).toBeDisabled();
+    for (const button of screen.getAllByRole("button", { name: "测试连接" })) {
+      expect(button).toBeDisabled();
+    }
+    expect(screen.getByRole("button", { name: "保存配置" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "立即备份" })).toBeDisabled();
+    expect(screen.getByLabelText("月度预算金额")).toBeEnabled();
   });
 
   it("keeps the SMTP port as a bounded NumericInput string", async () => {
@@ -139,9 +164,10 @@ describe("SettingsScreen SMTP email settings", () => {
     expect(input.value).not.toMatch(/[.\-eE]/);
   });
 
-  it("shows the PocketBase admin link for admins", () => {
+  it("shows admin account links for Docker admins", () => {
     renderSettingsScreen();
 
+    expect(screen.getByRole("link", { name: "管理用户" })).toHaveAttribute("href", "/admin/users");
     const link = screen.getByRole("link", { name: "PocketBase 后台" });
     expect(link).toHaveAttribute("href", "/_/");
     expect(link).toHaveAttribute("target", "_blank");
@@ -161,13 +187,27 @@ describe("SettingsScreen SMTP email settings", () => {
     expect(screen.getByTestId("route-path")).toHaveTextContent("/forgot-password");
   });
 
-  it("hides the PocketBase admin link for non-admin users", () => {
+  it("hides admin-only account links for non-admin users", () => {
     mocks.useSettingsFormController.mockReturnValue(createControllerState({
+      canManageUsers: false,
       canAccessPocketBaseAdmin: false,
     }));
 
     renderSettingsScreen();
 
+    expect(screen.queryByRole("link", { name: "管理用户" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "PocketBase 后台" })).not.toBeInTheDocument();
+  });
+
+  it("keeps user management visible for Cloudflare admins while hiding PocketBase admin", () => {
+    mocks.useSettingsFormController.mockReturnValue(createControllerState({
+      canManageUsers: true,
+      canAccessPocketBaseAdmin: false,
+    }));
+
+    renderSettingsScreen();
+
+    expect(screen.getByRole("link", { name: "管理用户" })).toHaveAttribute("href", "/admin/users");
     expect(screen.queryByRole("link", { name: "PocketBase 后台" })).not.toBeInTheDocument();
   });
 
@@ -446,6 +486,19 @@ describe("SettingsScreen SMTP email settings", () => {
     expect(phoneInput).toHaveAttribute("enterkeyhint", "done");
   });
 
+  it("keeps category and payment add actions visible when default lists exceed the dialog cap", () => {
+    expect(DEFAULT_CUSTOM_CONFIG.categories.length).toBeGreaterThan(20);
+    expect(DEFAULT_CUSTOM_CONFIG.paymentMethods.length).toBeGreaterThan(20);
+
+    renderSettingsScreen();
+
+    const categoryManager = screen.getByRole("region", { name: "分类管理" });
+    const paymentManager = screen.getByRole("region", { name: "支付方式管理" });
+
+    expect(within(categoryManager).getByRole("button", { name: "添加选项" })).toBeInTheDocument();
+    expect(within(paymentManager).getByRole("button", { name: "添加选项" })).toBeInTheDocument();
+  });
+
   it("keeps AI recognition provider and model controls in the shared field grid", () => {
     renderSettingsScreen();
 
@@ -469,7 +522,7 @@ describe("SettingsScreen SMTP email settings", () => {
     await user.click(configureButton);
 
     const dialog = await screen.findByRole("dialog", { name: "配置内置图标来源" });
-    expect(within(dialog).getByText("选择 Logo 和自定义图标搜索可使用的内置 SVG 图标库，并控制是否展示上游变体。")).toBeInTheDocument();
+    expect(within(dialog).getByText("选择 Logo 和支付方式图标搜索可使用的内置 SVG 图标库，并控制是否展示上游变体。")).toBeInTheDocument();
     expect(within(dialog).getByRole("switch", { name: "切换 TheSVG 来源" })).toBeEnabled();
     expect(within(dialog).getByRole("switch", { name: "切换 selfh.st icons 来源" })).toBeEnabled();
     expect(within(dialog).getByRole("switch", { name: "切换 Dashboard Icons 来源" })).toBeEnabled();

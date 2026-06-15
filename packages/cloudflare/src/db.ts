@@ -1,8 +1,10 @@
 import { createDefaultAppSettings } from "@renewlet/shared/settings-defaults";
 import { appSettingsSchema, settingsUpdateBodySchema, type ApiAppSettings } from "@renewlet/shared/schemas/settings";
 import { apiSubscriptionSchema, type ApiSubscription } from "@renewlet/shared/schemas/subscriptions";
+import { customConfigSchema } from "@renewlet/shared/schemas/custom-config";
 import { cleanBuiltInIconSourceSettingsPatch, mergeBuiltInIconSourceSettings } from "@renewlet/shared/built-in-icons";
 import type { AdminUser } from "@renewlet/shared/schemas/admin";
+import type { AssetInUseDetails } from "@renewlet/shared/schemas/media";
 import type { z } from "zod";
 import type { AssetRow, Env, NotificationJobRow, SubscriptionRow, UserRow } from "./types";
 
@@ -344,6 +346,35 @@ export async function listAssets(env: Env, userId: string, kind: string, page: n
     .bind(userId, kind, perPage, offset)
     .all<AssetRow>();
   return { items: rows.results, total: totalRow?.count ?? 0 };
+}
+
+export async function countAssetReferences(env: Env, userId: string, assetId: string): Promise<AssetInUseDetails> {
+  const assetUrl = `/api/app/assets/${assetId}`;
+  const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM subscriptions WHERE user_id = ? AND logo = ? LIMIT 1")
+    .bind(userId, assetUrl)
+    .first<{ count: number }>();
+  const subscriptionLogoCount = row?.count ?? 0;
+  const paymentMethodIconCount = await countPaymentMethodIconReferences(env, userId, assetUrl);
+  return {
+    usageCount: subscriptionLogoCount + paymentMethodIconCount,
+    subscriptionLogoCount,
+    paymentMethodIconCount,
+  };
+}
+
+async function countPaymentMethodIconReferences(env: Env, userId: string, assetUrl: string): Promise<number> {
+  const row = await env.DB.prepare("SELECT config_json FROM custom_configs WHERE user_id = ? LIMIT 1")
+    .bind(userId)
+    .first<{ config_json: string }>();
+  if (!row) return 0;
+  // 删除资产必须失败闭合；坏 custom config 不能被当作“没有引用”，否则会误删仍在 UI 使用的图标。
+  const config = customConfigSchema.parse(JSON.parse(row.config_json));
+  return config.paymentMethods.filter((item) => item.icon === assetUrl).length;
+}
+
+export async function deleteAssetMetadata(env: Env, userId: string, id: string): Promise<void> {
+  // R2 object 删除和 D1 metadata 删除不在同一事务；metadata 带 owner 条件，避免失败重试时误删他人记录。
+  await env.DB.prepare("DELETE FROM assets WHERE user_id = ? AND id = ?").bind(userId, id).run();
 }
 
 export async function listSubscriptionTags(env: Env, userId: string, limit = 200): Promise<string[]> {

@@ -11,10 +11,12 @@ import { DEFAULT_SETTINGS, type AppSettings, type NotificationChannel } from "@/
 import type { ThemeMode } from "@/types/theme";
 import { BUILT_IN_ICON_PROVIDERS, type BuiltInIconProvider } from "@renewlet/shared/built-in-icons";
 import { SettingsScreen } from "./settings-screen";
+import type { UploadedAssetsManagerController } from "../application/use-uploaded-assets-manager";
 
 const mocks = vi.hoisted(() => ({
   useSettingsFormController: vi.fn(),
   useCloudBackupController: vi.fn(),
+  useUploadedAssetsManager: vi.fn(),
 }));
 
 export { mocks };
@@ -24,6 +26,7 @@ export const SETTINGS_SECTION_IDS = [
   "settings-appearance",
   "settings-display",
   "settings-icon-sources",
+  "settings-uploaded-icons",
   "settings-ai-recognition",
   "settings-budget",
   "settings-data-config",
@@ -146,7 +149,25 @@ vi.mock("@/components/header", () => ({
 }));
 
 vi.mock("@/modules/custom-config/presentation/config-manager-dialog", () => ({
-  ConfigManagerDialog: () => null,
+  ConfigManagerDialog: ({
+    title,
+    items,
+    maxItems = 20,
+    readOnly = false,
+    toggleMode = false,
+  }: {
+    title: string;
+    items: unknown[];
+    maxItems?: number;
+    readOnly?: boolean;
+    toggleMode?: boolean;
+  }) => (
+    <section aria-label={title}>
+      {!readOnly && !toggleMode && items.length < maxItems ? (
+        <button type="button">添加选项</button>
+      ) : null}
+    </section>
+  ),
 }));
 
 vi.mock("@/components/theme-selector", () => ({
@@ -194,6 +215,35 @@ vi.mock("../application/use-settings-form-controller", () => ({
 vi.mock("../application/use-cloud-backup-controller", () => ({
   useCloudBackupController: mocks.useCloudBackupController,
 }));
+
+vi.mock("../application/use-uploaded-assets-manager", () => ({
+  useUploadedAssetsManager: mocks.useUploadedAssetsManager,
+}));
+
+export function createUploadedAssetsManagerState(
+  overrides: Partial<UploadedAssetsManagerController> = {},
+): UploadedAssetsManagerController {
+  const refresh = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+  const loadMore = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+  const emptyKind = {
+    assets: [],
+    error: null,
+    hasLoaded: true,
+    hasMore: false,
+    isLoading: false,
+    isLoadingMore: false,
+    refresh,
+    loadMore,
+  };
+  return {
+    logo: emptyKind,
+    icon: emptyKind,
+    deleteError: null,
+    deletingAssetId: null,
+    deleteAsset: vi.fn<UploadedAssetsManagerController["deleteAsset"]>().mockResolvedValue(true),
+    ...overrides,
+  };
+}
 
 export function createCloudBackupControllerState() {
   const fn = vi.fn();
@@ -268,6 +318,7 @@ export function createCloudBackupControllerState() {
 export function createControllerState(overrides: {
   settings?: Partial<AppSettings>;
   effectiveThemeMode?: ThemeMode;
+  canManageUsers?: boolean;
   canAccessPocketBaseAdmin?: boolean;
   testingChannel?: NotificationChannel | null;
   isSavingSettings?: boolean;
@@ -291,6 +342,7 @@ export function createControllerState(overrides: {
     hiddenCount?: number;
   };
   rates?: ExchangeRates;
+  externalIntegrationsDisabled?: boolean;
 } = {}) {
   const fn = vi.fn();
   const currencySymbols: Record<string, string> = {
@@ -316,6 +368,7 @@ export function createControllerState(overrides: {
     },
     effectiveThemeMode: overrides.effectiveThemeMode ?? overrides.settings?.themeMode ?? DEFAULT_SETTINGS.themeMode,
     accountEmail: "alice@example.com",
+    canManageUsers: overrides.canManageUsers ?? true,
     canAccessPocketBaseAdmin: overrides.canAccessPocketBaseAdmin ?? true,
     customConfig: DEFAULT_CUSTOM_CONFIG,
     subscriptionsQuery: { data: [] },
@@ -429,6 +482,7 @@ export function createControllerState(overrides: {
       updatePassword: fn,
     },
     passwordResetEnabled: true,
+    externalIntegrationsDisabled: overrides.externalIntegrationsDisabled ?? false,
   };
 }
 
@@ -439,6 +493,9 @@ function RouteProbe() {
 
 export function renderSettingsScreen(initialEntries = ["/settings"]) {
   mocks.useCloudBackupController.mockReturnValue(createCloudBackupControllerState());
+  if (mocks.useUploadedAssetsManager.getMockImplementation() === undefined) {
+    mocks.useUploadedAssetsManager.mockReturnValue(createUploadedAssetsManagerState());
+  }
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },

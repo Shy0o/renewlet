@@ -6,7 +6,7 @@ Renewlet uses a tag-driven release process. `dev` is the integration branch, `ma
 
 - `CI`: public quality gate. It needs no secrets and works for forks and PRs.
 - `Build Smoke`: public build smoke test. It needs no secrets, validates Docker build and Cloudflare build, and never pushes or deploys.
-- `Cloudflare Worker`: self-managed Worker deployment for fork users or maintainer test environments. It skips remote deployment when Cloudflare secrets are missing; once secrets exist, it applies D1 migrations and deploys the Worker.
+- `Cloudflare Worker`: self-managed Worker deployment for fork users or maintainer test environments. On the official repository it deploys only from `dev`; stable production Cloudflare deploys stay inside `Release Publish`. It skips remote deployment when Cloudflare secrets are missing; once secrets exist, it applies D1 migrations and deploys the Worker.
 - `Docker Hub Overview`: manual metadata sync for the official Docker Hub page. It does not build or push images.
 - `Maintainer Release`: the only manual maintainer release workflow. Use `action=prepare|rc|promote` to choose the stage.
 - `Release Publish`: tag-driven official publishing workflow for `v*.*.*` tags. It handles Docker images, GitHub Releases, and the production Cloudflare approval chain.
@@ -82,7 +82,7 @@ Add these repository settings before running `Maintainer Release`:
 
 ## Cloudflare Test Deploy
 
-Use the `Cloudflare Worker` workflow for Cloudflare test deployments. It runs on `dev` and `main` pushes and can also be started manually from GitHub Actions. This workflow is for test or user-managed Worker environments; it is separate from the release production gate.
+Use the `Cloudflare Worker` workflow for Cloudflare test deployments. In `zhiyingzzhou/renewlet`, the deploy job runs only on `dev` so `main` cannot overwrite production with a `packageVersion-dev+shortSha` build. Fork and self-managed repositories may still deploy from `dev`, `main`, or a manual GitHub Actions run. This workflow is for test or user-managed Worker environments; it is separate from the release production gate.
 
 If a fork user has not configured `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `WORKER_NAME`, `D1_DATABASE_ID`, and `R2_BUCKET_NAME`, the workflow finishes check/build and skips remote deployment with a notice. Once all secrets exist, it generates the Wrangler config, applies D1 migrations, and deploys the Worker.
 

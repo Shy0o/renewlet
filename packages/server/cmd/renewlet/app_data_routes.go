@@ -61,6 +61,12 @@ type uploadAssetResponse struct {
 	URL string `json:"url"`
 }
 
+type assetInUseDetails struct {
+	UsageCount             int64 `json:"usageCount"`
+	SubscriptionLogoCount  int64 `json:"subscriptionLogoCount"`
+	PaymentMethodIconCount int64 `json:"paymentMethodIconCount"`
+}
+
 type subscriptionWriteRequest struct {
 	Name                         optionalJSONField[string]                 `json:"name"`
 	Logo                         optionalJSONField[string]                 `json:"logo"`
@@ -137,6 +143,9 @@ func handleSettingsUpdate(app core.App, e *core.RequestEvent) error {
 	next, err := mergeSettings(current, raw)
 	if err != nil {
 		return e.BadRequestError(validationErrorMessage(locale, "common.invalidRequestBody", err), err)
+	}
+	if err := demoModePolicy.RejectSettingsSecretMutation(e, current, next); err != nil {
+		return err
 	}
 	if record == nil {
 		collection, err := app.FindCollectionByNameOrId("settings")
@@ -368,6 +377,78 @@ func handleAssetsList(app core.App, e *core.RequestEvent) error {
 		Page:       page,
 		TotalPages: int((total + int64(perPage) - 1) / int64(perPage)),
 	})
+}
+
+func handleAssetDelete(app core.App, e *core.RequestEvent) error {
+	locale := requestLocale(e.Request)
+	id := strings.TrimSpace(e.Request.PathValue("id"))
+	if id == "" {
+		return e.BadRequestError(serverText(locale, "asset.idInvalid"), nil)
+	}
+	record, err := app.FindRecordById("assets", id)
+	if err != nil || record.GetString("user") != e.Auth.Id {
+		// 删除和读取一样对越权返回 404，避免资产 ID 被拿来枚举其他用户上传记录。
+		return e.NotFoundError(serverText(locale, "asset.missing"), err)
+	}
+
+	usage, err := countAssetReferences(app, e.Auth.Id, record.Id)
+	if err != nil {
+		return e.InternalServerError(serverText(locale, "common.internalError"), err)
+	}
+	if usage.UsageCount > 0 {
+		// 上传图标有两个持久引用入口；删除只阻止，不替用户改订阅或支付方式配置。
+		return e.JSON(http.StatusConflict, map[string]interface{}{
+			"message": serverText(locale, "asset.inUse"),
+			"code":    "ASSET_IN_USE",
+			"details": usage,
+		})
+	}
+
+	if err := app.Delete(record); err != nil {
+		return e.BadRequestError(serverText(locale, "common.invalidRequestParameters"), err)
+	}
+	return e.JSON(http.StatusOK, newOKResponse())
+}
+
+func countAssetReferences(app core.App, userID string, assetID string) (assetInUseDetails, error) {
+	assetURL := "/api/app/assets/" + assetID
+	subscriptionLogoCount, err := app.CountRecords("subscriptions", dbx.HashExp{"user": userID, "logo": assetURL})
+	if err != nil {
+		return assetInUseDetails{}, err
+	}
+	paymentMethodIconCount, err := countPaymentMethodIconReferences(app, userID, assetURL)
+	if err != nil {
+		return assetInUseDetails{}, err
+	}
+	return assetInUseDetails{
+		UsageCount:             subscriptionLogoCount + paymentMethodIconCount,
+		SubscriptionLogoCount:  subscriptionLogoCount,
+		PaymentMethodIconCount: paymentMethodIconCount,
+	}, nil
+}
+
+func countPaymentMethodIconReferences(app core.App, userID string, assetURL string) (int64, error) {
+	record, err := app.FindFirstRecordByFilter("custom_configs", "user = {:user}", dbx.Params{"user": userID})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	config, err := customConfigFromValue(record.Get("config"))
+	if err != nil {
+		return 0, err
+	}
+	if err := normalizeCustomConfigPayload(&config); err != nil {
+		return 0, err
+	}
+	var count int64
+	for _, item := range config.PaymentMethods {
+		if item.Icon == assetURL {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func readLimitedJSONBody(reader io.Reader) (json.RawMessage, error) {

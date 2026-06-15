@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -231,9 +233,287 @@ func TestAssetsProductAPIUploadListAndRead(t *testing.T) {
 		t.Fatalf("expected svg content-type, got %q", contentType)
 	}
 
+	del := serveTestRequest(t, app, http.MethodDelete, "/api/app/assets/"+id, "", token)
+	if del.Code != http.StatusOK {
+		t.Fatalf("expected asset delete 200, got %d: %s", del.Code, del.Body.String())
+	}
+	afterDeleteList := serveTestRequest(t, app, http.MethodGet, "/api/app/assets?kind=logo&page=1&perPage=48", "", token)
+	if afterDeleteList.Code != http.StatusOK {
+		t.Fatalf("expected asset list after delete 200, got %d: %s", afterDeleteList.Code, afterDeleteList.Body.String())
+	}
+	var afterDeletePage uploadedAssetsPageResponse
+	if err := json.Unmarshal(afterDeleteList.Body.Bytes(), &afterDeletePage); err != nil {
+		t.Fatal(err)
+	}
+	if len(afterDeletePage.Items) != 0 {
+		t.Fatalf("expected deleted asset to disappear from list: %#v", afterDeletePage)
+	}
+	readDeleted := serveTestRequest(t, app, http.MethodGet, "/api/app/assets/"+id, "", token)
+	if readDeleted.Code != http.StatusNotFound {
+		t.Fatalf("expected deleted asset read 404, got %d: %s", readDeleted.Code, readDeleted.Body.String())
+	}
+
 	invalid := serveMultipartTestRequest(t, app, "/api/app/assets", token, map[string]string{"kind": "logo"}, "file", "note.txt", "plain text")
 	if invalid.Code != http.StatusBadRequest {
 		t.Fatalf("expected invalid upload 400, got %d: %s", invalid.Code, invalid.Body.String())
+	}
+}
+
+func TestAssetProductAPIDeleteBlocksReferencedAndForeignAssets(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	registerRecordHooks(app)
+	user, token := createRouteTestUser(t, app, "assets-owner")
+	_, foreignToken := createRouteTestUser(t, app, "assets-foreign")
+
+	upload := serveMultipartTestRequest(
+		t,
+		app,
+		"/api/app/assets",
+		token,
+		map[string]string{"kind": "logo"},
+		"file",
+		"used.svg",
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>`,
+	)
+	if upload.Code != http.StatusCreated {
+		t.Fatalf("expected asset upload 201, got %d: %s", upload.Code, upload.Body.String())
+	}
+	var uploaded uploadAssetResponse
+	if err := json.Unmarshal(upload.Body.Bytes(), &uploaded); err != nil {
+		t.Fatal(err)
+	}
+	id := strings.TrimPrefix(uploaded.URL, "/api/app/assets/")
+	createRouteTestSubscription(t, app, user.Id, map[string]interface{}{"logo": uploaded.URL})
+
+	foreignDelete := serveTestRequest(t, app, http.MethodDelete, "/api/app/assets/"+id, "", foreignToken)
+	if foreignDelete.Code != http.StatusNotFound {
+		t.Fatalf("expected foreign asset delete 404, got %d: %s", foreignDelete.Code, foreignDelete.Body.String())
+	}
+
+	blockedDelete := serveTestRequest(t, app, http.MethodDelete, "/api/app/assets/"+id, "", token)
+	if blockedDelete.Code != http.StatusConflict {
+		t.Fatalf("expected referenced asset delete 409, got %d: %s", blockedDelete.Code, blockedDelete.Body.String())
+	}
+	var blockedBody struct {
+		Code    string            `json:"code"`
+		Details assetInUseDetails `json:"details"`
+	}
+	if err := json.Unmarshal(blockedDelete.Body.Bytes(), &blockedBody); err != nil {
+		t.Fatal(err)
+	}
+	if blockedBody.Code != "ASSET_IN_USE" || blockedBody.Details.UsageCount != 1 || blockedBody.Details.SubscriptionLogoCount != 1 || blockedBody.Details.PaymentMethodIconCount != 0 {
+		t.Fatalf("unexpected referenced delete body: %#v", blockedBody)
+	}
+
+	read := serveTestRequest(t, app, http.MethodGet, "/api/app/assets/"+id, "", token)
+	if read.Code != http.StatusOK {
+		t.Fatalf("expected referenced asset to remain readable, got %d: %s", read.Code, read.Body.String())
+	}
+}
+
+func TestAssetProductAPIDeleteBlocksPaymentMethodIconReferences(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	registerRecordHooks(app)
+	user, token := createRouteTestUser(t, app, "assets-payment-owner")
+
+	upload := serveMultipartTestRequest(
+		t,
+		app,
+		"/api/app/assets",
+		token,
+		map[string]string{"kind": "icon"},
+		"file",
+		"payment.svg",
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>`,
+	)
+	if upload.Code != http.StatusCreated {
+		t.Fatalf("expected icon upload 201, got %d: %s", upload.Code, upload.Body.String())
+	}
+	var uploaded uploadAssetResponse
+	if err := json.Unmarshal(upload.Body.Bytes(), &uploaded); err != nil {
+		t.Fatal(err)
+	}
+	id := strings.TrimPrefix(uploaded.URL, "/api/app/assets/")
+	createCalendarFeedTestCustomConfig(t, app, user.Id, func(config *customConfigPayload) {
+		config.PaymentMethods = []customConfigItem{{
+			ID:     "card",
+			Value:  "card",
+			Labels: customConfigLabels{ZhCN: "银行卡", EnUS: "Card"},
+			Icon:   uploaded.URL,
+		}}
+	})
+
+	blockedDelete := serveTestRequest(t, app, http.MethodDelete, "/api/app/assets/"+id, "", token)
+	if blockedDelete.Code != http.StatusConflict {
+		t.Fatalf("expected payment-method icon delete 409, got %d: %s", blockedDelete.Code, blockedDelete.Body.String())
+	}
+	var blockedBody struct {
+		Code    string            `json:"code"`
+		Details assetInUseDetails `json:"details"`
+	}
+	if err := json.Unmarshal(blockedDelete.Body.Bytes(), &blockedBody); err != nil {
+		t.Fatal(err)
+	}
+	if blockedBody.Code != "ASSET_IN_USE" || blockedBody.Details.UsageCount != 1 || blockedBody.Details.SubscriptionLogoCount != 0 || blockedBody.Details.PaymentMethodIconCount != 1 {
+		t.Fatalf("unexpected payment-method referenced delete body: %#v", blockedBody)
+	}
+
+	read := serveTestRequest(t, app, http.MethodGet, "/api/app/assets/"+id, "", token)
+	if read.Code != http.StatusOK {
+		t.Fatalf("expected referenced payment icon to remain readable, got %d: %s", read.Code, read.Body.String())
+	}
+}
+
+func TestAssetProductAPIDeleteReportsMixedReferencesAndIgnoresForeignConfig(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	registerRecordHooks(app)
+	user, token := createRouteTestUser(t, app, "assets-mixed-owner")
+	foreignUser, _ := createRouteTestUser(t, app, "assets-mixed-foreign")
+
+	upload := serveMultipartTestRequest(
+		t,
+		app,
+		"/api/app/assets",
+		token,
+		map[string]string{"kind": "logo"},
+		"file",
+		"mixed.svg",
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>`,
+	)
+	if upload.Code != http.StatusCreated {
+		t.Fatalf("expected mixed asset upload 201, got %d: %s", upload.Code, upload.Body.String())
+	}
+	var uploaded uploadAssetResponse
+	if err := json.Unmarshal(upload.Body.Bytes(), &uploaded); err != nil {
+		t.Fatal(err)
+	}
+	id := strings.TrimPrefix(uploaded.URL, "/api/app/assets/")
+	createRouteTestSubscription(t, app, user.Id, map[string]interface{}{"logo": uploaded.URL})
+	createCalendarFeedTestCustomConfig(t, app, user.Id, func(config *customConfigPayload) {
+		config.PaymentMethods = []customConfigItem{{
+			ID:     "paypal",
+			Value:  "paypal",
+			Labels: customConfigLabels{ZhCN: "PayPal", EnUS: "PayPal"},
+			Icon:   uploaded.URL,
+		}}
+	})
+	createCalendarFeedTestCustomConfig(t, app, foreignUser.Id, func(config *customConfigPayload) {
+		config.PaymentMethods = []customConfigItem{{
+			ID:     "foreign_card",
+			Value:  "foreign_card",
+			Labels: customConfigLabels{ZhCN: "外部", EnUS: "Foreign"},
+			Icon:   uploaded.URL,
+		}}
+	})
+
+	blockedDelete := serveTestRequest(t, app, http.MethodDelete, "/api/app/assets/"+id, "", token)
+	if blockedDelete.Code != http.StatusConflict {
+		t.Fatalf("expected mixed referenced asset delete 409, got %d: %s", blockedDelete.Code, blockedDelete.Body.String())
+	}
+	var blockedBody struct {
+		Code    string            `json:"code"`
+		Details assetInUseDetails `json:"details"`
+	}
+	if err := json.Unmarshal(blockedDelete.Body.Bytes(), &blockedBody); err != nil {
+		t.Fatal(err)
+	}
+	if blockedBody.Code != "ASSET_IN_USE" || blockedBody.Details.UsageCount != 2 || blockedBody.Details.SubscriptionLogoCount != 1 || blockedBody.Details.PaymentMethodIconCount != 1 {
+		t.Fatalf("unexpected mixed referenced delete body: %#v", blockedBody)
+	}
+}
+
+func TestAssetProductAPIDeleteIgnoresForeignCustomConfigReferences(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	registerRecordHooks(app)
+	owner, token := createRouteTestUser(t, app, "assets-foreign-config-owner")
+	foreignUser, _ := createRouteTestUser(t, app, "assets-foreign-config-other")
+
+	upload := serveMultipartTestRequest(
+		t,
+		app,
+		"/api/app/assets",
+		token,
+		map[string]string{"kind": "icon"},
+		"file",
+		"unused-by-owner.svg",
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>`,
+	)
+	if upload.Code != http.StatusCreated {
+		t.Fatalf("expected owner icon upload 201, got %d: %s", upload.Code, upload.Body.String())
+	}
+	var uploaded uploadAssetResponse
+	if err := json.Unmarshal(upload.Body.Bytes(), &uploaded); err != nil {
+		t.Fatal(err)
+	}
+	createCalendarFeedTestCustomConfig(t, app, foreignUser.Id, func(config *customConfigPayload) {
+		config.PaymentMethods = []customConfigItem{{
+			ID:     "foreign_card",
+			Value:  "foreign_card",
+			Labels: customConfigLabels{ZhCN: "外部", EnUS: "Foreign"},
+			Icon:   uploaded.URL,
+		}}
+	})
+
+	id := strings.TrimPrefix(uploaded.URL, "/api/app/assets/")
+	del := serveTestRequest(t, app, http.MethodDelete, "/api/app/assets/"+id, "", token)
+	if del.Code != http.StatusOK {
+		t.Fatalf("expected foreign custom config reference to be ignored for owner %s, got %d: %s", owner.Id, del.Code, del.Body.String())
+	}
+}
+
+func TestAssetProductAPIDeleteRemovesMetadataWhenFileIsMissing(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+	registerRecordHooks(app)
+	_, token := createRouteTestUser(t, app, "assets-missing-file")
+
+	upload := serveMultipartTestRequest(
+		t,
+		app,
+		"/api/app/assets",
+		token,
+		map[string]string{"kind": "logo"},
+		"file",
+		"missing.svg",
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>`,
+	)
+	if upload.Code != http.StatusCreated {
+		t.Fatalf("expected asset upload 201, got %d: %s", upload.Code, upload.Body.String())
+	}
+	var uploaded uploadAssetResponse
+	if err := json.Unmarshal(upload.Body.Bytes(), &uploaded); err != nil {
+		t.Fatal(err)
+	}
+	id := strings.TrimPrefix(uploaded.URL, "/api/app/assets/")
+	record, err := app.FindRecordById("assets", id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	filePath := filepath.Join(app.DataDir(), "storage", record.Collection().Id, record.Id, record.GetString("file"))
+	if err := os.Remove(filePath); err != nil {
+		t.Fatal(err)
+	}
+
+	del := serveTestRequest(t, app, http.MethodDelete, "/api/app/assets/"+id, "", token)
+	if del.Code != http.StatusOK {
+		t.Fatalf("expected missing-file asset delete 200, got %d: %s", del.Code, del.Body.String())
+	}
+	if _, err := app.FindRecordById("assets", id); err == nil {
+		t.Fatalf("expected missing-file asset metadata to be deleted")
 	}
 }
 
