@@ -71,16 +71,48 @@ const worker: ExportedHandler<Env> = {
   },
 
   async scheduled(_controller, env) {
-    // Cron 先推进自动续订再生成通知；否则后台续订项会用旧日期进入本轮提醒内容。
-    await renewAutoSubscriptionsForAllUsers(env);
-    // Cron 顶层失败必须交回平台记录；本地调试通过 `--test-scheduled` 的 `/__scheduled` 绕过 Wrangler Static Assets bug。
-    await runScheduledNotifications(env);
-    // 云备份是可恢复快照，不参与通知窗口；放在通知之后，避免慢远端存储拖慢本轮续费提醒。
-    await runDueCloudBackups(env);
+    await runScheduledTasks(env);
   },
 };
 
 export default worker;
+
+async function runScheduledTasks(env: Env): Promise<void> {
+  // Cron 阶段必须串行：自动续订先修正日期，通知再取内容，云备份最后跑慢远端存储。
+  await runScheduledPhase("auto_renew_subscriptions", () => renewAutoSubscriptionsForAllUsers(env));
+  await runScheduledPhase("notifications", () => runScheduledNotifications(env));
+  await runScheduledPhase("cloud_backups", () => runDueCloudBackups(env));
+}
+
+async function runScheduledPhase(phase: string, task: () => Promise<unknown>): Promise<void> {
+  try {
+    await task();
+  } catch (error) {
+    // 顶层隔离只记录阶段摘要并继续后续任务；Cron 里 provider/raw 错误不得把 secret 带进平台日志。
+    console.error("scheduled_phase_failed", {
+      event: "scheduled_phase_failed",
+      phase,
+      error: safeScheduledPhaseError(error),
+    });
+  }
+}
+
+function safeScheduledPhaseError(error: unknown): { name: string; message: string } {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    name: error instanceof Error ? error.name || "Error" : typeof error,
+    message: redactScheduledPhaseError(message).slice(0, 300),
+  };
+}
+
+function redactScheduledPhaseError(message: string): string {
+  return message
+    .replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [redacted]")
+    .replace(/sctp\d+t[A-Za-z0-9_-]+/gi, "[redacted]")
+    .replace(/SCT[A-Za-z0-9_-]+/g, "[redacted]")
+    .replace(/((?:authorization|proxy-authorization|cookie|set-cookie|x-api-key|api-key|token|sendkey)\s*[:=]\s*)[^,\s;]+/gi, "$1[redacted]")
+    .replace(/([?&](?:X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|AWSAccessKeyId|Signature|Expires|access_key|accessKey|api_key|apikey|token|sendkey|sendKey|key)=)[^&\s"'<>]+/gi, "$1[redacted]");
+}
 
 /**
  * handleRequest 完成 Worker 顶层路由分发。
