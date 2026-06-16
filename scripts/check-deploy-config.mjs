@@ -227,6 +227,27 @@ function checkDockerSelfUpdateLayout() {
   }
 }
 
+function checkDockerCustomHeadScriptEnv() {
+  const expectedEnv = "RENEWLET_CUSTOM_HEAD_SCRIPT";
+  const files = [
+    ".env.example",
+    "deploy/env.example",
+    "docker-compose.yml",
+    "docker-compose.ghcr.yml",
+    "deploy/docker-compose.yml",
+    "README.md",
+    "README.zh-CN.md",
+  ];
+
+  // 自定义 head 脚本同时影响 HTML 注入与 CSP；部署入口漏传会让文档配置变成静默无效。
+  for (const relativePath of files) {
+    const content = readFileSync(join(repoRoot, relativePath), "utf8");
+    if (!content.includes(expectedEnv)) {
+      throw new Error(`${relativePath} must document or pass through ${expectedEnv}.`);
+    }
+  }
+}
+
 function checkCloudflareDeployMigrationScript() {
   const packageJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
   const deployScript = packageJson.scripts?.deploy;
@@ -441,6 +462,7 @@ run("bash", ["-n", deployScript]);
 checkGeneratedSecrets();
 checkInvalidExistingPBKeyIsRejected();
 checkDockerSelfUpdateLayout();
+checkDockerCustomHeadScriptEnv();
 checkCloudflareDeployMigrationScript();
 checkCloudflareStaticAssetHeadersContract();
 checkCloudflareScheduledLocalRoute();
