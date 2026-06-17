@@ -270,6 +270,9 @@ describe("SettingsScreen SMTP email settings", () => {
     renderSettingsScreen();
 
     expect(screen.getByRole("heading", { name: "常用货币折算为 CNY" })).toBeInTheDocument();
+    const defaultCurrencySelect = screen.getByRole("combobox", { name: "统计货币" });
+    expect(defaultCurrencySelect).toHaveTextContent("¥ 人民币 (CNY)");
+    expect(defaultCurrencySelect).not.toHaveTextContent("¥ 人民币 (¥)");
     expect(screen.queryByRole("heading", { name: "汇率预览 (1 CNY = )" })).not.toBeInTheDocument();
     expect(screen.getByText("1 USD")).toBeInTheDocument();
     expect(screen.getAllByText("≈ ¥6.78 CNY").length).toBeGreaterThan(0);
@@ -446,6 +449,26 @@ describe("SettingsScreen SMTP email settings", () => {
 
     await user.click(screen.getByRole("button", { name: "撤销公开页" }));
     expect(controller.publicStatusPage.revoke).toHaveBeenCalled();
+  });
+
+  it("shows an explicit public status reporting currency without duplicated symbols", () => {
+    mocks.useSettingsFormController.mockReturnValue(createControllerState({
+      settings: {
+        defaultCurrency: "USD",
+        publicStatusCurrency: "CNY",
+      },
+      publicStatusPage: {
+        enabled: true,
+        pageUrl: "https://example.com/status/secret",
+        showPrices: true,
+      },
+    }));
+
+    renderSettingsScreen();
+
+    const currencySelect = screen.getByRole("combobox", { name: "公开页统计货币" });
+    expect(currencySelect).toHaveTextContent("¥ 人民币 (CNY)");
+    expect(currencySelect).not.toHaveTextContent("¥ 人民币 (¥)");
   });
 
   it("keeps the public status setup compact before URL generation", async () => {

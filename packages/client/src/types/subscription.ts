@@ -431,7 +431,7 @@ export type CurrencyRegion = 'asia' | 'europe' | 'americas' | 'oceania' | 'afric
 export interface CurrencyOption {
   /** 货币代码（ISO 4217），例如：CNY、USD。 */
   value: string;
-  /** UI 展示文案（可包含货币符号）。 */
+  /** 货币身份展示文案，由 currency-data 统一生成。 */
   labels: LocalizedLabels;
   /** 地区分组（用于 UI 分组/排序展示）。 */
   region: CurrencyRegion;
