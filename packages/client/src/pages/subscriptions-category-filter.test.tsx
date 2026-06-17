@@ -24,6 +24,41 @@ const mocks = vi.hoisted(() => ({
   exportToJSON: vi.fn(),
   exportToJSONWithSecrets: vi.fn(),
   exportToCSV: vi.fn(),
+  customConfig: {
+    categories: ([
+      ["productivity", "生产力", "Productivity", "hsl(200 80% 50%)"],
+      ["entertainment", "娱乐", "Entertainment", "hsl(280 70% 55%)"],
+      ["lifestyle", "生活", "Lifestyle", "hsl(35 90% 55%)"],
+      ["finance", "财务", "Finance", "hsl(160 84% 45%)"],
+      ["streaming", "影音流媒体", "Streaming", "hsl(355 78% 58%)"],
+      ["music", "音乐", "Music", "hsl(320 70% 55%)"],
+      ["gaming", "游戏", "Gaming", "hsl(250 80% 60%)"],
+      ["utilities", "公用事业", "Utilities", "hsl(210 18% 48%)"],
+      ["cloud_storage", "云存储", "Cloud storage", "hsl(205 85% 54%)"],
+      ["education", "教育", "Education", "hsl(45 90% 52%)"],
+      ["health_fitness", "健康健身", "Health & fitness", "hsl(145 70% 45%)"],
+      ["food_dining", "餐饮", "Food & dining", "hsl(18 85% 56%)"],
+      ["shopping", "购物", "Shopping", "hsl(330 72% 56%)"],
+      ["travel", "旅行出行", "Travel", "hsl(190 76% 45%)"],
+      ["business", "商务", "Business", "hsl(225 58% 52%)"],
+      ["communication", "通讯与邮件", "Communication", "hsl(175 68% 42%)"],
+      ["developer_tools", "开发工具", "Developer tools", "hsl(265 68% 58%)"],
+      ["design", "设计创意", "Design", "hsl(12 78% 60%)"],
+      ["ai_tools", "AI 工具", "AI tools", "hsl(275 76% 62%)"],
+      ["security_vpn", "安全与 VPN", "Security & VPN", "hsl(350 75% 55%)"],
+      ["hosting_domains", "域名与托管", "Hosting & domains", "hsl(32 86% 50%)"],
+      ["news_media", "新闻媒体", "News media", "hsl(215 72% 55%)"],
+      ["other", "其他", "Other", "hsl(220 12% 55%)"],
+    ] as const).map(([value, zhCN, enUS, color]) => ({
+      id: value,
+      value,
+      labels: { "zh-CN": zhCN, "en-US": enUS },
+      color,
+    })),
+    statuses: [],
+    paymentMethods: [],
+    currencies: [],
+  },
 }));
 
 vi.mock("@/hooks/use-subscriptions", () => ({
@@ -42,25 +77,7 @@ vi.mock("@/hooks/use-exchange-rates", () => ({
 
 vi.mock("@/contexts/CustomConfigContext", () => ({
   useCustomConfig: () => ({
-    config: {
-      categories: [
-        {
-          id: "productivity",
-          value: "productivity",
-          labels: { "zh-CN": "生产力", "en-US": "Productivity" },
-          color: "hsl(200 80% 50%)",
-        },
-        {
-          id: "finance",
-          value: "finance",
-          labels: { "zh-CN": "财务", "en-US": "Finance" },
-          color: "hsl(160 84% 45%)",
-        },
-      ],
-      statuses: [],
-      paymentMethods: [],
-      currencies: [],
-    },
+    config: mocks.customConfig,
     updateCategories: vi.fn(),
     updateStatuses: vi.fn(),
     updatePaymentMethods: vi.fn(),
@@ -171,6 +188,22 @@ function visibleSubscriptionNames() {
   return screen.getAllByTestId("subscription-card").map((card) => card.textContent ?? "");
 }
 
+function expectDesktopFilterPopoverFrame(contentTestId: string, scrollTestId: string) {
+  const popover = screen.getByTestId(contentTestId);
+  const scroll = screen.getByTestId(scrollTestId);
+
+  expect(popover).toHaveClass(
+    "flex",
+    "max-h-[min(calc(var(--app-viewport-height)-1rem),var(--radix-popover-content-available-height,32rem))]",
+    "flex-col",
+    "overflow-hidden",
+  );
+  expect(scroll).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
+  expect(scroll).not.toHaveClass("max-h-72");
+
+  return { popover, scroll };
+}
+
 function mockMobileTagFilterMatch(isMobile: boolean, width = isMobile ? 390 : 1280) {
   Object.defineProperty(window, "matchMedia", {
     writable: true,
@@ -213,10 +246,30 @@ describe("Subscriptions page category filters", () => {
     });
     mocks.useInfiniteSubscriptions.mockReturnValue({
       subscriptions: [
-        subscription({ id: "docs", name: "Docs Notes", category: "productivity", tags: ["Docs"] }),
-        subscription({ id: "budget", name: "Budget Vault", category: "finance", tags: ["Budget"] }),
-        subscription({ id: "sheet", name: "Finance Sheet", category: "finance", tags: ["Sheets"] }),
-        subscription({ id: "music", name: "Music Box", category: "music", tags: ["Music"] }),
+        subscription({
+          id: "docs",
+          name: "Docs Notes",
+          category: "productivity",
+          tags: ["Docs", "Planning", "Research", "Writing", "Archive"],
+        }),
+        subscription({
+          id: "budget",
+          name: "Budget Vault",
+          category: "finance",
+          tags: ["Budget", "Finance Ops", "Tax", "Receipt", "Invoice"],
+        }),
+        subscription({
+          id: "sheet",
+          name: "Finance Sheet",
+          category: "finance",
+          tags: ["Sheets", "Reports", "Forecast", "Audit"],
+        }),
+        subscription({
+          id: "music",
+          name: "Music Box",
+          category: "music",
+          tags: ["Music", "Family", "Shared", "Offline"],
+        }),
       ],
       isPending: false,
     });
@@ -231,6 +284,11 @@ describe("Subscriptions page category filters", () => {
     expect(within(desktopCategoryFilter).getByRole("button", { name: "分类" })).toBeInTheDocument();
 
     await user.click(within(desktopCategoryFilter).getByRole("button", { name: "分类" }));
+    const { scroll: categoryScroll } = expectDesktopFilterPopoverFrame(
+      "desktop-category-filter-popover",
+      "desktop-category-filter-scroll",
+    );
+    expect(within(categoryScroll).getByText("开发工具")).toBeInTheDocument();
     const searchInput = await screen.findByPlaceholderText("搜索分类...");
     await user.type(searchInput, "财");
     expect(screen.queryByText("生产力")).not.toBeInTheDocument();
@@ -239,6 +297,7 @@ describe("Subscriptions page category filters", () => {
     await waitFor(() => {
       expect(visibleSubscriptionNames()).toEqual(["Budget Vault", "Finance Sheet"]);
     });
+    expect(screen.getByTestId("desktop-category-filter-footer")).toHaveClass("shrink-0", "border-t");
     expect(within(desktopCategoryFilter).getByRole("button", { name: "财务" })).toBeInTheDocument();
     expect(screen.getByPlaceholderText("搜索分类...")).toBeInTheDocument();
 
@@ -300,7 +359,13 @@ describe("Subscriptions page category filters", () => {
 
     const desktopTagFilter = screen.getByTestId("desktop-tag-filter");
     await user.click(within(desktopTagFilter).getByRole("button", { name: "标签" }));
+    const { scroll: tagScroll } = expectDesktopFilterPopoverFrame(
+      "desktop-tag-filter-popover",
+      "desktop-tag-filter-scroll",
+    );
+    expect(within(tagScroll).getByRole("button", { name: "Finance Ops" })).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "Budget" }));
+    expect(screen.getByTestId("desktop-tag-filter-footer")).toHaveClass("shrink-0", "border-t");
 
     await waitFor(() => {
       expect(visibleSubscriptionNames()).toEqual(["Budget Vault"]);
