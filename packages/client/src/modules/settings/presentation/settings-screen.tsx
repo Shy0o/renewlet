@@ -74,7 +74,7 @@ import {
 
 /** 设置页 screen：只负责布局与展示，业务状态由 controller 提供。 */
 export function SettingsScreen() {
-  const { t, locale, setLocale, label: localizeLabel, formatDateTime } = useI18n();
+  const { t, locale, setLocale, formatDateTime } = useI18n();
   const {
     settings,
     effectiveThemeMode,
@@ -143,8 +143,6 @@ export function SettingsScreen() {
     currencyOptions: CURRENCY_OPTIONS,
     includeDisabledCurrent: settings.defaultCurrency,
     locale,
-    formatLabel: (item, option) =>
-      `${getCurrencySymbol(item.value)} ${option ? localizeLabel(option.labels) : localizeLabel(item.labels)}`,
   });
   const effectivePublicStatusCurrency = settings.publicStatusCurrency === "inherit"
     ? settings.defaultCurrency
@@ -163,8 +161,6 @@ export function SettingsScreen() {
       currencyOptions: CURRENCY_OPTIONS,
       ...(explicitPublicStatusCurrency ? { includeDisabledCurrent: explicitPublicStatusCurrency } : {}),
       locale,
-      formatLabel: (item, option) =>
-        `${getCurrencySymbol(item.value)} ${option ? localizeLabel(option.labels) : localizeLabel(item.labels)}`,
     }),
   ];
   const [selectedNotificationChannel, setSelectedNotificationChannel] = useState<NotificationChannel | null>(null);
