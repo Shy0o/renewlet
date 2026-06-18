@@ -23,29 +23,38 @@ If you are using a proxy/VPN node, a corporate or school network, or another sha
 
 ### Upgrade
 
-One-click deploy creates a repository in your GitHub/GitLab account. To upgrade later, update that repository. Do not click the one-click button again.
+One-click deploy creates a repository in your GitHub account when you use the Deploy Button with GitHub. To upgrade later, update that repository. Do not click the one-click button again.
 
-Open the Renewlet Worker in the Cloudflare dashboard, go to `Settings` -> `Builds`, and find the connected repository. Then run:
+Open the Renewlet Worker in the Cloudflare dashboard, go to `Settings` -> `Builds`, and find the connected repository. The Cloudflare generated repository is not a standard GitHub fork, so it will not have GitHub's native `Sync fork` button.
 
-```bash
-git clone https://github.com/<your-account>/<cloudflare-generated-repo>.git
-cd <cloudflare-generated-repo>
-git remote add upstream https://github.com/zhiyingzzhou/renewlet.git
-git fetch upstream
-git checkout main
-git merge upstream/main
-git push origin main
+New GitHub generated repositories include a manual sync workflow. To upgrade, open the generated repository:
+
+1. Go to `Actions`.
+2. Select `Sync Renewlet Upstream`.
+3. Click `Run workflow`.
+4. Wait for the workflow to finish.
+
+This workflow only syncs when you click it. It does not run on a schedule. It syncs the file tree from Renewlet upstream, preserves the Worker name, D1 database ID/name, R2 bucket, and existing vars in the generated repository's `wrangler.jsonc`, then pushes a normal commit. After that push, Cloudflare redeploys automatically.
+
+If GitHub says Actions are disabled, open the generated repository's `Settings` -> `Actions` -> `General`, enable Actions, and allow `Read and write permissions` under `Workflow permissions`.
+
+### Existing One-Click Deploy Users
+
+Existing GitHub generated repositories will not get `Sync Renewlet Upstream` automatically. Do not click the one-click deploy button again; keep using the original Worker, D1, R2, and generated repository.
+
+Add this file once in the original generated repository:
+
+```text
+.github/workflows/sync-renewlet-upstream.yml
 ```
 
-If `upstream` already exists:
+Copy its content from the same file in Renewlet upstream:
 
-```bash
-git remote set-url upstream https://github.com/zhiyingzzhou/renewlet.git
+```text
+https://raw.githubusercontent.com/zhiyingzzhou/renewlet/main/.github/workflows/sync-renewlet-upstream.yml
 ```
 
-Then continue with `git fetch upstream`, `git merge upstream/main`, and `git push origin main` above.
-
-After push, Cloudflare redeploys automatically.
+After committing it, future upgrades use the same path as new users: `Actions` -> `Sync Renewlet Upstream` -> `Run workflow`.
 
 If you prefer to create D1/R2, the Cloudflare API Token, and GitHub Secrets yourself, use the manual deploy flow below.
 

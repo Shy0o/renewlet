@@ -23,29 +23,38 @@ https://<worker-name>.<workers-dev-subdomain>.workers.dev/setup
 
 ### 升级办法
 
-一键部署会在你的 GitHub/GitLab 账号下生成一个仓库。以后升级，更新这个仓库，不要重新点一键部署按钮。
+使用 GitHub 入口的一键部署会在你的 GitHub 账号下生成一个仓库。以后升级，更新这个仓库，不要重新点一键部署按钮。
 
-先在 Cloudflare Dashboard 打开 Renewlet Worker，进入 `Settings` -> `Builds`，找到连接的生成仓库。然后本地执行：
+先在 Cloudflare Dashboard 打开 Renewlet Worker，进入 `Settings` -> `Builds`，找到连接的生成仓库。Cloudflare 生成仓库不是标准 GitHub fork，所以不会有 GitHub 原生的 `Sync fork` 按钮。
 
-```bash
-git clone https://github.com/<你的账号>/<Cloudflare生成的仓库>.git
-cd <Cloudflare生成的仓库>
-git remote add upstream https://github.com/zhiyingzzhou/renewlet.git
-git fetch upstream
-git checkout main
-git merge upstream/main
-git push origin main
+新的 GitHub 生成仓库会带一个手动同步入口。升级时打开生成仓库：
+
+1. 进入 `Actions`。
+2. 选择 `Sync Renewlet Upstream`。
+3. 点击 `Run workflow`。
+4. 等待 workflow 完成。
+
+这个 workflow 只在你手动点击时同步，不会定时自动同步。它会从 Renewlet 上游同步文件树，保留生成仓库 `wrangler.jsonc` 里的 Worker 名称、D1 database ID / name、R2 bucket 和现有 vars，然后 push 一个普通提交。push 后 Cloudflare 会自动重新部署。
+
+如果 GitHub 提示 Actions 被禁用，先在生成仓库打开 `Settings` -> `Actions` -> `General`，启用 Actions，并在 `Workflow permissions` 里允许 `Read and write permissions`。
+
+### 旧一键部署用户
+
+旧 GitHub 生成仓库不会自动出现 `Sync Renewlet Upstream`。不要重新点一键部署；继续使用原来的 Worker、D1、R2 和生成仓库。
+
+只需要在原生成仓库里一次性添加：
+
+```text
+.github/workflows/sync-renewlet-upstream.yml
 ```
 
-如果已经有 `upstream`：
+文件内容复制自 Renewlet 上游同名文件：
 
-```bash
-git remote set-url upstream https://github.com/zhiyingzzhou/renewlet.git
+```text
+https://raw.githubusercontent.com/zhiyingzzhou/renewlet/main/.github/workflows/sync-renewlet-upstream.yml
 ```
 
-然后继续执行上面的 `git fetch upstream`、`git merge upstream/main` 和 `git push origin main`。
-
-push 后 Cloudflare 会自动重新部署。
+提交后，以后升级就和新用户一样，进入 `Actions` -> `Sync Renewlet Upstream` -> `Run workflow`。
 
 如果你想自己创建 D1/R2、Cloudflare API Token 和 GitHub Secrets，可以继续使用下面的手动部署流程。
 
