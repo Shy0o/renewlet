@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { DEFAULT_CUSTOM_CONFIG } from "@/types/config";
+import { DEFAULT_CUSTOM_CONFIG, type CustomConfig } from "@/types/config";
 import type { ExchangeRates } from "@/lib/api/schemas/exchange-rates";
 import type { BuiltInIconIndexStatus } from "@/lib/api/schemas/media";
 import { DEFAULT_SETTINGS, type AppSettings, type NotificationChannel } from "@/types/subscription";
@@ -346,6 +346,7 @@ export function createControllerState(overrides: {
   };
   rates?: ExchangeRates;
   externalIntegrationsDisabled?: boolean;
+  customConfig?: CustomConfig;
 } = {}) {
   const fn = vi.fn();
   const checkAllProviders = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
@@ -376,7 +377,7 @@ export function createControllerState(overrides: {
     accountEmail: "alice@example.com",
     canManageUsers: overrides.canManageUsers ?? true,
     canAccessPocketBaseAdmin: overrides.canAccessPocketBaseAdmin ?? true,
-    customConfig: DEFAULT_CUSTOM_CONFIG,
+    customConfig: overrides.customConfig ?? DEFAULT_CUSTOM_CONFIG,
     subscriptionsQuery: { data: [] },
     categoryUsageCount: new Map(),
     rates: overrides.rates ?? {},
