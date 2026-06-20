@@ -206,12 +206,16 @@ describe("Cloudflare Telegram Bot commands", () => {
 
   it("declares the D1 binding table without plaintext secret columns", () => {
     const migration = readFileSync(resolve("migrations/0021_telegram_bot_bindings.sql"), "utf8");
+    const rebuildMigration = readFileSync(resolve("migrations/0022_rebuild_telegram_bot_bindings.sql"), "utf8");
 
     expect(migration).toContain("CREATE TABLE IF NOT EXISTS telegram_bot_bindings");
     expect(migration).toContain("bot_token_hash");
     expect(migration).toContain("webhook_secret_hash");
     expect(migration).not.toContain("webhook_secret TEXT");
     expect(migration).toContain("UNIQUE REFERENCES users");
+    expect(rebuildMigration).toContain("CREATE TABLE telegram_bot_bindings_next");
+    expect(rebuildMigration).toContain("SELECT\n  id,\n  user_id,\n  chat_id");
+    expect(rebuildMigration).toContain("ALTER TABLE telegram_bot_bindings_next RENAME TO telegram_bot_bindings");
   });
 
   it("installs, handles webhook commands, and hard deletes the binding", async () => {
