@@ -3407,3 +3407,73 @@ msgstr "默认思考控制"
 #: src/i18n/descriptors/settings.ts:535
 msgid "settings.notificationReminderDays"
 msgstr "默认提前提醒天数"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:591
+msgid "settings.channel.discordReady"
+msgstr "Webhook URL 已填写"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:592
+msgid "settings.channel.discordTodo"
+msgstr "填写 Discord Webhook URL"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:593
+msgid "settings.channel.pushplusReady"
+msgstr "Token 已填写"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:594
+msgid "settings.channel.pushplusTodo"
+msgstr "填写 PushPlus Token"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:602
+msgid "settings.help.discord"
+msgstr "Discord Webhook 文档"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:603
+msgid "settings.help.pushplus"
+msgstr "PushPlus 消息接口"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:676
+msgid "settings.discordWebhookUrl"
+msgstr "Webhook URL"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:677
+msgid "settings.discordWebhookHelp"
+msgstr "只支持 Discord 官方 Webhook URL，发送时会禁止 @everyone、用户和角色提及。"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:678
+msgid "settings.discordBotUsername"
+msgstr "机器人用户名（可选）"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:679
+msgid "settings.discordBotAvatarUrl"
+msgstr "机器人头像 URL（可选）"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:680
+msgid "settings.pushplusToken"
+msgstr "PushPlus Token"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:681
+msgid "settings.pushplusHelp"
+msgstr "从 PushPlus 获取的消息令牌或用户令牌，Renewlet 使用文本模板发送。"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:689
+msgid "settings.testChannel.discord"
+msgstr "测试 {channel} 通知"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/settings.ts:690
+msgid "settings.testChannel.pushplus"
+msgstr "测试 {channel} 通知"

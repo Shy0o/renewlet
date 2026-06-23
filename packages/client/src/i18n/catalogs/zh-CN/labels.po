@@ -54,6 +54,11 @@ msgid "channel.bark"
 msgstr "Bark"
 
 #. js-lingui-explicit-id
+#: src/i18n/descriptors/labels.ts:46
+msgid "channel.discord"
+msgstr "Discord"
+
+#. js-lingui-explicit-id
 #: src/i18n/descriptors/labels.ts:66
 msgid "payment.elo"
 msgstr "Elo"
@@ -127,6 +132,11 @@ msgstr "SEPA"
 #: src/i18n/descriptors/labels.ts:46
 msgid "channel.serverchan"
 msgstr "Server酱"
+
+#. js-lingui-explicit-id
+#: src/i18n/descriptors/labels.ts:47
+msgid "channel.pushplus"
+msgstr "PushPlus"
 
 #. js-lingui-explicit-id
 #: src/i18n/descriptors/labels.ts:75

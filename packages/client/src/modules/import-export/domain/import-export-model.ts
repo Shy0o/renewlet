@@ -115,6 +115,10 @@ const SECRET_SETTING_KEYS = new Set<keyof AppSettings>([
   "barkServerUrl",
   "barkDeviceKey",
   "serverchanSendKey",
+  "discordWebhookUrl",
+  "discordBotUsername",
+  "discordBotAvatarUrl",
+  "pushplusToken",
 ]);
 
 type RenewletExportSubscription = RenewletExportV1["data"]["subscriptions"][number];
@@ -122,7 +126,7 @@ type RenewletExportSubscription = RenewletExportV1["data"]["subscriptions"][numb
 /**
  * sanitizeSettingsForExport 移除默认不应进入备份的通知和账号 secret。
  *
- * includeSecrets 只由用户显式选择触发；普通备份不能意外携带 SMTP、Webhook、Bark 等凭证。
+ * includeSecrets 只由用户显式选择触发；普通备份不能意外携带通知、Webhook、PushPlus 等凭证。
  */
 export function sanitizeSettingsForExport(settings: AppSettings, includeSecrets: boolean): Partial<AppSettings> {
   const entries = Object.entries(settings).filter(([key]) => includeSecrets || !SECRET_SETTING_KEYS.has(key as keyof AppSettings));
