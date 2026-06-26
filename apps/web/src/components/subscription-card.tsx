@@ -3,7 +3,7 @@
  *
  * 用途：
  * - 在仪表盘与订阅列表展示订阅概览
- * - 提供编辑/删除入口
+ * - 提供编辑/复制/删除入口
  * - 根据续费/试用到期情况做提示（颜色/动画）
  *
  * 注意： 卡片直接读取自定义配置来显示分类颜色。若未来支持服务端渲染卡片，
@@ -22,7 +22,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { colorWithAlpha } from '@/lib/color';
-import { Calendar, MoreHorizontal, CalendarClock, Bell, CreditCard, CalendarPlus, Eye, EyeOff, Pencil, Pin, PinOff, RotateCw, Trash2 } from 'lucide-react';
+import { Calendar, MoreHorizontal, CalendarClock, Bell, CreditCard, CalendarPlus, Copy, Eye, EyeOff, Pencil, Pin, PinOff, RotateCw, Trash2 } from 'lucide-react';
 import {
   daysBetweenDateOnly,
   todayDateOnlyInTimeZone,
@@ -68,6 +68,8 @@ interface SubscriptionCardProps {
   onEdit?: (id: string) => void;
   /** 删除动作只上抛 id，真正 mutation 和缓存失效统一留在页面应用层。 */
   onDelete?: (id: string) => void;
+  /** 复制动作只上抛 id，页面控制器负责打开克隆弹窗并创建新记录。 */
+  onClone?: (id: string) => void;
   /** 置顶切换动作由页面持有 mutation，卡片只负责菜单入口。 */
   onTogglePinned?: (id: string) => void;
   /** 公开页隐藏切换由页面持有 mutation，卡片只负责菜单入口。 */
@@ -128,6 +130,7 @@ function SubscriptionCardComponent({
   viewMode = 'grid',
   onEdit,
   onDelete,
+  onClone,
   onTogglePinned,
   onTogglePublicHidden,
   onRenew,
@@ -332,6 +335,12 @@ function SubscriptionCardComponent({
                   <Pencil className="h-4 w-4 shrink-0 text-muted-foreground" />
                   {t("common.edit")}
                 </DropdownMenuItem>
+                {onClone ? (
+                  <DropdownMenuItem className="gap-2.5 px-2.5 py-2 text-sm" onClick={() => onClone(subscription.id)}>
+                    <Copy className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    {t("subscription.copy")}
+                  </DropdownMenuItem>
+                ) : null}
                 {hasCalendarEvent ? (
                   <DropdownMenuItem className="gap-2.5 px-2.5 py-2 text-sm" onClick={() => setShowAddToCalendarDialog(true)}>
                     <CalendarPlus className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -456,6 +465,7 @@ function areSubscriptionCardPropsEqual(prev: SubscriptionCardProps, next: Subscr
     prev.costSharingCurrencyConvert === next.costSharingCurrencyConvert &&
     prev.onEdit === next.onEdit &&
     prev.onDelete === next.onDelete &&
+    prev.onClone === next.onClone &&
     prev.onTogglePinned === next.onTogglePinned &&
     prev.onTogglePublicHidden === next.onTogglePublicHidden &&
     prev.onRenew === next.onRenew &&

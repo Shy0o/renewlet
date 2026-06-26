@@ -33,6 +33,7 @@ type SubscriptionOverrides = Partial<Omit<Subscription, "billingCycle" | "custom
 type SubscriptionCardHandlers = {
   onEdit?: (id: string) => void;
   onDelete?: (id: string) => void;
+  onClone?: (id: string) => void;
   onTogglePinned?: (id: string) => void;
   onTogglePublicHidden?: (id: string) => void;
   onViewDetails?: (id: string) => void;
@@ -197,6 +198,7 @@ function renderSubscriptionCard(
         paymentMethodByValue={new Map(mocks.paymentMethods.map((method) => [method.value, method]))}
         onEdit={handlers.onEdit ?? vi.fn()}
         onDelete={handlers.onDelete ?? vi.fn()}
+        onClone={handlers.onClone ?? vi.fn()}
         {...(handlers.onTogglePinned ? { onTogglePinned: handlers.onTogglePinned } : {})}
         {...(handlers.onTogglePublicHidden ? { onTogglePublicHidden: handlers.onTogglePublicHidden } : {})}
         {...(handlers.onViewDetails ? { onViewDetails: handlers.onViewDetails } : {})}
@@ -492,9 +494,10 @@ describe("SubscriptionCard", () => {
     openMoreActionsMenu();
 
     const menuItems = screen.getAllByRole("menuitem");
-    expect(menuItems.map((item) => item.textContent)).toEqual(["编辑", "添加到日历", "置顶", "删除"]);
-    const [editItem, calendarItem, pinItem, deleteItem] = menuItems as [HTMLElement, HTMLElement, HTMLElement, HTMLElement];
+    expect(menuItems.map((item) => item.textContent)).toEqual(["编辑", "复制", "添加到日历", "置顶", "删除"]);
+    const [editItem, cloneItem, calendarItem, pinItem, deleteItem] = menuItems as [HTMLElement, HTMLElement, HTMLElement, HTMLElement, HTMLElement];
     expect(editItem).toHaveClass("gap-2.5", "px-2.5", "py-2", "text-sm");
+    expect(cloneItem).toHaveClass("gap-2.5", "px-2.5", "py-2", "text-sm");
     expect(calendarItem).toHaveClass("gap-2.5", "px-2.5", "py-2", "text-sm");
     expect(pinItem).toHaveClass("gap-2.5", "px-2.5", "py-2", "text-sm");
     expect(deleteItem).toHaveClass(
@@ -507,6 +510,7 @@ describe("SubscriptionCard", () => {
       "focus:text-destructive",
     );
     expect(editItem).not.toHaveClass("text-destructive");
+    expect(cloneItem).not.toHaveClass("text-destructive");
     expect(calendarItem).not.toHaveClass("text-destructive");
     expect(pinItem).not.toHaveClass("text-destructive");
 
