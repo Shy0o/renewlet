@@ -25,7 +25,7 @@ It records renewal dates, prices, currencies, categories, payment methods, logos
 
 ## Demo
 
-Try the live demo: <https://renewlet-demo.olyq.org/>
+Try the live demo: <https://demo.renewlet.cc/>
 
 Sign in with `demo@renewlet.local` / `renewlet-demo`. The demo resets regularly, so please do not put real personal data or credentials there.
 
@@ -70,7 +70,7 @@ The deploy script creates `docker-compose.yml`, `.env`, and `data/`, then writes
 For production, pin a stable image tag:
 
 ```bash
-sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.6"#' .env
+sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.7"#' .env
 docker compose pull
 docker compose up -d
 ```
@@ -78,7 +78,7 @@ docker compose up -d
 If Docker Hub is unavailable, use GHCR:
 
 ```env
-RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.2.6"
+RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.2.7"
 ```
 
 ## Cloudflare Workers
@@ -100,7 +100,7 @@ tar -czf renewlet-backup-$(date +%F).tgz .env docker-compose.yml data
 Upgrade with Docker Compose:
 
 ```bash
-sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.6"#' .env
+sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.7"#' .env
 docker compose pull
 docker compose up -d
 docker compose logs -f
