@@ -1,3 +1,4 @@
+-- Cron 不再按分钟扫描 users/subscriptions；scheduler state 保存下一次 due instant，单用户逻辑仍做最终幂等判断。
 ALTER TABLE subscription_scheduler_state ADD COLUMN next_auto_renew_check_at_utc TEXT;
 ALTER TABLE subscription_scheduler_state ADD COLUMN next_daily_notification_due_at_utc TEXT;
 ALTER TABLE subscription_scheduler_state ADD COLUMN next_repeat_notification_due_at_utc TEXT;
@@ -16,6 +17,7 @@ ALTER TABLE cloud_backup_targets ADD COLUMN next_run_at_utc TEXT;
 CREATE INDEX IF NOT EXISTS idx_cloud_backup_targets_next_run
   ON cloud_backup_targets (schedule_enabled, next_run_at_utc, user_id, provider);
 
+-- 列表投影只服务筛选/排序/search/tag 热路径；完整 API DTO 仍以 subscriptions 行为事实源。
 CREATE TABLE IF NOT EXISTS subscription_list_index (
   subscription_id TEXT PRIMARY KEY REFERENCES subscriptions(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -83,6 +85,7 @@ CREATE INDEX IF NOT EXISTS idx_subscription_tags_user_tag_order
 CREATE INDEX IF NOT EXISTS idx_subscription_tags_user_updated
   ON subscription_tags (user_id, updated_at DESC, tag_norm);
 
+-- 用户级统计服务 total/status 摘要，避免公开/登录列表每次实时 COUNT/GROUP BY 全表。
 CREATE TABLE IF NOT EXISTS subscription_user_stats (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   total_count INTEGER NOT NULL DEFAULT 0,
@@ -153,9 +156,8 @@ SELECT
   trim(json_each.value),
   subscriptions.created_at,
   subscriptions.updated_at
-FROM subscriptions, json_each(subscriptions.tags_json)
-WHERE json_valid(subscriptions.tags_json)
-  AND json_each.type = 'text'
+FROM subscriptions, json_each(CASE WHEN json_valid(subscriptions.tags_json) THEN subscriptions.tags_json ELSE '[]' END)
+WHERE json_each.type = 'text'
   AND trim(json_each.value) != '';
 
 INSERT OR REPLACE INTO subscription_user_stats (

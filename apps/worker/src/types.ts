@@ -179,9 +179,9 @@ export interface SubscriptionSchedulerStateRow {
   auto_renew_count: number;
   repeat_reminder_count: number;
   last_auto_renew_local_date: string;
-  next_auto_renew_check_at_utc: string | null;
-  next_daily_notification_due_at_utc: string | null;
-  next_repeat_notification_due_at_utc: string | null;
+  next_auto_renew_check_at_utc?: string | null;
+  next_daily_notification_due_at_utc?: string | null;
+  next_repeat_notification_due_at_utc?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -285,7 +285,7 @@ export interface CloudBackupTargetRow {
   last_status: "idle" | "success" | "failed";
   last_error: string | null;
   locked_until: string | null;
-  next_run_at_utc: string | null;
+  next_run_at_utc?: string | null;
   created_at: string;
   updated_at: string;
 }
