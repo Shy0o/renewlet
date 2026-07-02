@@ -70,7 +70,7 @@ http://localhost:3000/setup
 生产环境固定到稳定版本：
 
 ```bash
-sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.8"#' .env
+sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.9"#' .env
 docker compose pull
 docker compose up -d
 ```
@@ -78,7 +78,7 @@ docker compose up -d
 如果 Docker Hub 拉取不可用，改用 GHCR：
 
 ```env
-RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.2.8"
+RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.2.9"
 ```
 
 ## Cloudflare Workers
@@ -87,7 +87,7 @@ RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.2.8"
 
 可以使用部署按钮创建 Cloudflare 管理的仓库；也可以按 [Cloudflare Workers 部署](docs/cloudflare-workers-deploy.zh-CN.md) 自己管理 D1、R2、GitHub Actions 和 secrets。
 
-升级时不要重新点击部署按钮。一键部署用户在 Cloudflare Builds 连接的生成仓库里运行 `Sync Renewlet Upstream`；手动部署用户把自己的 fork 更新到 Renewlet 最新版本后运行 `Cloudflare Worker`。Cloudflare 升级必须先执行 D1 migrations，再发布 Worker。
+升级时不要重新点击部署按钮。一键部署用户在 Cloudflare Builds 连接的生成仓库里运行 `Sync Renewlet Upstream`；手动部署用户把自己的 fork 更新到 Renewlet 最新版本后运行 `Cloudflare Worker`。
 
 ## 升级
 
@@ -100,7 +100,7 @@ tar -czf renewlet-backup-$(date +%F).tgz .env docker-compose.yml data
 使用 Docker Compose 升级：
 
 ```bash
-sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.8"#' .env
+sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.9"#' .env
 docker compose pull
 docker compose up -d
 docker compose logs -f

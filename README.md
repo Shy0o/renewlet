@@ -70,7 +70,7 @@ The deploy script creates `docker-compose.yml`, `.env`, and `data/`, then writes
 For production, pin a stable image tag:
 
 ```bash
-sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.8"#' .env
+sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.9"#' .env
 docker compose pull
 docker compose up -d
 ```
@@ -78,7 +78,7 @@ docker compose up -d
 If Docker Hub is unavailable, use GHCR:
 
 ```env
-RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.2.8"
+RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.2.9"
 ```
 
 ## Cloudflare Workers
@@ -87,7 +87,7 @@ RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.2.8"
 
 Use the deploy button for a Cloudflare-managed repository, or follow [Cloudflare Workers deploy](docs/cloudflare-workers-deploy.md) to manage D1, R2, GitHub Actions, and secrets yourself.
 
-Do not click the deploy button again to upgrade. One-click deploy users run `Sync Renewlet Upstream` in the generated repository connected by Cloudflare Builds; manual deploy users update their fork to the latest Renewlet version, then run `Cloudflare Worker`. Cloudflare updates must apply D1 migrations before publishing the Worker.
+Do not click the deploy button again to upgrade. One-click deploy users run `Sync Renewlet Upstream` in the generated repository connected by Cloudflare Builds; manual deploy users update their fork to the latest Renewlet version, then run `Cloudflare Worker`.
 
 ## Upgrade
 
@@ -100,7 +100,7 @@ tar -czf renewlet-backup-$(date +%F).tgz .env docker-compose.yml data
 Upgrade with Docker Compose:
 
 ```bash
-sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.8"#' .env
+sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.9"#' .env
 docker compose pull
 docker compose up -d
 docker compose logs -f
