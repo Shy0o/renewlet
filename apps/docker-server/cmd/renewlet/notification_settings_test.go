@@ -47,3 +47,28 @@ func TestMergeSettingsForWriteValidatesTelegramMessageFormat(t *testing.T) {
 		t.Fatal("expected unsupported Telegram message format write to fail")
 	}
 }
+
+func TestDingTalkMessageTypeDefaultsAndWriteValidation(t *testing.T) {
+	if got := defaultAppSettings().DingTalkMessageType; got != dingtalkMessageTypeMarkdown {
+		t.Fatalf("expected markdown DingTalk message type default, got %q", got)
+	}
+
+	settings, err := settingsFromValue(json.RawMessage(`{"dingtalkMessageType":"feedCard","monthlyBudget":2333}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.DingTalkMessageType != dingtalkMessageTypeMarkdown || settings.MonthlyBudget != 2333 {
+		t.Fatalf("expected invalid stored DingTalk type to recover only that field, got %#v", settings)
+	}
+
+	settings, err = mergeSettingsForWrite(defaultAppSettings(), json.RawMessage(`{"dingtalkMessageType":"text"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.DingTalkMessageType != dingtalkMessageTypeText {
+		t.Fatalf("expected text DingTalk type, got %q", settings.DingTalkMessageType)
+	}
+	if _, err := mergeSettingsForWrite(defaultAppSettings(), json.RawMessage(`{"dingtalkMessageType":"actionCard"}`)); err == nil {
+		t.Fatal("expected unsupported DingTalk message type write to fail")
+	}
+}

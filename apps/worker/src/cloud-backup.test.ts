@@ -408,21 +408,29 @@ describe("Cloudflare cloud backup", () => {
     expect(calls.some((call) => call.includes("dav.example.com"))).toBe(false);
   });
 
-  it("strips Discord and PushPlus secrets from cloud backup settings", () => {
+  it("strips external notification secrets from cloud backup settings", () => {
     const sanitized = sanitizeSettingsForCloudBackup({
       ...createDefaultAppSettings(),
       discordWebhookUrl: "https://discord.com/api/webhooks/123/secret",
       discordBotUsername: "Renewlet",
       discordBotAvatarUrl: "https://cdn.example.com/avatar.png",
       pushplusToken: "push-token",
+      dingtalkWebhookUrl: "https://oapi.dingtalk.com/robot/send?access_token=ding-token",
+      dingtalkSecret: "SECsecret",
+      dingtalkKeyword: "自定义关键词",
     });
 
     expect(sanitized).not.toHaveProperty("discordWebhookUrl");
     expect(sanitized).not.toHaveProperty("discordBotUsername");
     expect(sanitized).not.toHaveProperty("discordBotAvatarUrl");
     expect(sanitized).not.toHaveProperty("pushplusToken");
+    expect(sanitized).not.toHaveProperty("dingtalkWebhookUrl");
+    expect(sanitized).not.toHaveProperty("dingtalkSecret");
+    expect(sanitized).not.toHaveProperty("dingtalkKeyword");
     expect(JSON.stringify(sanitized)).not.toContain("secret");
     expect(JSON.stringify(sanitized)).not.toContain("push-token");
+    expect(JSON.stringify(sanitized)).not.toContain("ding-token");
+    expect(JSON.stringify(sanitized)).not.toContain("SECsecret");
   });
 
   it("returns a cloud backup provider error when manual snapshot provider is missing", async () => {

@@ -5,8 +5,11 @@ package main
 // 架构位置：统一 notificationMessage 在这里被转换为各通知渠道的外部请求。
 // 外部服务失败被收敛为 channelFailure，调度层据此决定 sent/failed 和后续重试范围。
 //
-// 注意： Webhook、WeCom、Bark 和 Discord 都可能携带用户配置 URL，必须经过对应公网 HTTPS 防护后才能请求。
+// 注意： Webhook、DingTalk、WeCom、Bark 和 Discord 都可能携带用户配置 URL，必须经过对应公网 HTTPS 防护后才能请求。
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,6 +45,9 @@ var notificationSenders = map[string]notificationSender{
 	}),
 	"webhook": notificationSenderFunc(func(_ core.App, settings appSettings, message notificationMessage) error {
 		return sendWebhook(settings, message)
+	}),
+	"dingtalk": notificationSenderFunc(func(_ core.App, settings appSettings, message notificationMessage) error {
+		return sendDingTalk(settings, message)
 	}),
 	"wechat": notificationSenderFunc(func(_ core.App, settings appSettings, message notificationMessage) error {
 		return sendWeChatWork(settings, message)
@@ -269,20 +275,9 @@ func sendWebhook(settings appSettings, message notificationMessage) error {
 		return channelHTTPErrorFromResponse(normalizeAppLocale(settings.Locale), "Webhook", resp, webhookSecrets(safeURL.String(), headers)...)
 	}
 
-	body, err := json.Marshal(webhookDefaultPayload{
-		Title:     message.Title,
-		Content:   message.Content,
-		Timestamp: message.Timestamp,
-	})
+	body, err := renderWebhookPayloadTemplate(settings.WebhookPayload, message, locale)
 	if err != nil {
 		return err
-	}
-	rawPayload := strings.TrimSpace(applyTemplate(settings.WebhookPayload, message))
-	if rawPayload != "" {
-		// 用户模板只有在仍是合法 JSON 时才会覆盖默认 payload，避免把任意文本作为 application/json 发送。
-		if json.Valid([]byte(rawPayload)) {
-			body = []byte(rawPayload)
-		}
 	}
 	if _, ok := headers["content-type"]; !ok {
 		headers["content-type"] = "application/json"
@@ -295,6 +290,149 @@ func sendWebhook(settings appSettings, message notificationMessage) error {
 		return nil
 	}
 	return channelHTTPErrorFromResponse(normalizeAppLocale(settings.Locale), "Webhook", resp, webhookSecrets(safeURL.String(), headers)...)
+}
+
+// sendDingTalk 发送钉钉自定义机器人消息。
+func sendDingTalk(settings appSettings, message notificationMessage) error {
+	locale := normalizeAppLocale(settings.Locale)
+	rawURL, err := requireNonEmptyLocalized(locale, serverText(locale, "service.dingtalkWebhookURL"), settings.DingTalkWebhookURL)
+	if err != nil {
+		return err
+	}
+	safeURL, err := assertSafeOutboundURL(rawURL, serverText(locale, "service.dingtalkWebhookURL"), locale)
+	if err != nil {
+		return err
+	}
+	endpoint := safeURL.String()
+	if strings.TrimSpace(settings.DingTalkSecret) != "" {
+		endpoint, err = signedDingTalkWebhookURL(endpoint, settings.DingTalkSecret, time.Now())
+		if err != nil {
+			return err
+		}
+	}
+	payload := dingTalkRequestPayload(settings, message)
+	secrets := dingTalkSecrets(rawURL, endpoint, settings.DingTalkSecret)
+	resp, err := postJSON(endpoint, payload, "DingTalk", locale, secrets...)
+	if err != nil {
+		return err
+	}
+	return requireDingTalkSuccess(resp, locale, secrets...)
+}
+
+func dingTalkRequestPayload(settings appSettings, message notificationMessage) interface{} {
+	content := dingTalkMessageContent(message, settings.DingTalkKeyword)
+	if settings.DingTalkMessageType == dingtalkMessageTypeText {
+		return dingTalkTextRequest{
+			MsgType: dingtalkMessageTypeText,
+			Text:    dingTalkTextMessage{Content: content},
+		}
+	}
+	return dingTalkMarkdownRequest{
+		MsgType: dingtalkMessageTypeMarkdown,
+		Markdown: dingTalkMarkdownMessage{
+			Title: message.Title,
+			Text:  content,
+		},
+	}
+}
+
+func dingTalkMessageContent(message notificationMessage, keyword string) string {
+	content := buildTextMessage(message)
+	if !strings.Contains(content, "Renewlet") {
+		content = "Renewlet\n\n" + content
+	}
+	keyword = strings.TrimSpace(keyword)
+	if keyword != "" && !strings.Contains(content, keyword) {
+		content = keyword + "\n\n" + content
+	}
+	return content
+}
+
+func signedDingTalkWebhookURL(endpoint string, secret string, now time.Time) (string, error) {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return "", err
+	}
+	timestamp := fmt.Sprintf("%d", now.UnixMilli())
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(timestamp + "\n" + secret))
+	sign := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	// timestamp/sign 是钉钉加签凭据；覆盖旧 query，避免用户复制的过期签名被继续发送或写进诊断。
+	query := parsed.Query()
+	query.Set("timestamp", timestamp)
+	query.Set("sign", sign)
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
+}
+
+func dingTalkSecrets(rawURL, endpoint, secret string) []string {
+	out := []string{rawURL, endpoint, secret}
+	if parsed, err := url.Parse(endpoint); err == nil {
+		query := parsed.Query()
+		out = append(out, query.Get("access_token"), query.Get("sign"))
+	}
+	return out
+}
+
+func requireDingTalkSuccess(resp *http.Response, locale appLocale, secrets ...string) error {
+	if resp == nil {
+		return channelHTTPError(locale, "DingTalk", 0, "")
+	}
+	providerResponse, rawBody, err := captureUpstreamProviderResponse(resp, secrets)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		detail := dingTalkErrorDetail(rawBody, providerResponse, locale, secrets)
+		return newNotificationChannelError(
+			channelHTTPErrorMessage(locale, "DingTalk", resp.StatusCode, detail),
+			createUpstreamErrorDetails(providerResponse, detail),
+		)
+	}
+	var result dingTalkSendResponse
+	if err := json.Unmarshal([]byte(rawBody), &result); err != nil {
+		detail := fallbackText(upstreamProviderMessage(providerResponse), serverText(locale, "service.dingtalkResponseInvalid"))
+		return newNotificationChannelError(
+			channelHTTPErrorMessage(locale, "DingTalk", resp.StatusCode, detail),
+			createUpstreamErrorDetails(providerResponse, detail),
+		)
+	}
+	// 钉钉自定义机器人会把关键词/签名/IP 白名单失败包在 HTTP 200 里；errcode=0 才是真成功。
+	if result.ErrCode == nil {
+		return newNotificationChannelError(
+			channelHTTPErrorMessage(locale, "DingTalk", resp.StatusCode, serverText(locale, "service.dingtalkResponseInvalid")),
+			createUpstreamErrorDetails(providerResponse, upstreamProviderMessage(providerResponse)),
+		)
+	}
+	if *result.ErrCode != 0 {
+		detail := fallbackText(redactUpstreamSecrets(dingTalkResponseMessage(result), secrets), serverText(locale, "service.dingtalkResponseInvalid"))
+		return newNotificationChannelError(
+			channelHTTPErrorMessage(locale, "DingTalk", resp.StatusCode, detail),
+			createUpstreamErrorDetails(providerResponse, detail),
+		)
+	}
+	return nil
+}
+
+func dingTalkErrorDetail(rawBody string, providerResponse *upstreamProviderResponse, locale appLocale, secrets []string) string {
+	var result dingTalkSendResponse
+	if err := json.Unmarshal([]byte(rawBody), &result); err == nil {
+		if detail := redactUpstreamSecrets(dingTalkResponseMessage(result), secrets); detail != "" {
+			return detail
+		}
+	}
+	return fallbackText(upstreamProviderMessage(providerResponse), serverText(locale, "service.dingtalkResponseInvalid"))
+}
+
+func dingTalkResponseMessage(result dingTalkSendResponse) string {
+	if result.ErrCode == nil {
+		return strings.TrimSpace(result.ErrMsg)
+	}
+	text := strings.TrimSpace(result.ErrMsg)
+	if text == "" {
+		return fmt.Sprintf("errcode=%d", *result.ErrCode)
+	}
+	return fmt.Sprintf("errcode=%d %s", *result.ErrCode, text)
 }
 
 // sendWeChatWork 发送企业微信机器人消息。

@@ -316,6 +316,14 @@ export interface AppSettings {
   webhookHeaders: string;
   /** Webhook Payload（模板字符串/JSON 字符串）。 */
   webhookPayload: string;
+  /** 钉钉机器人 Webhook URL。 */
+  dingtalkWebhookUrl: string;
+  /** 钉钉机器人加签密钥。 */
+  dingtalkSecret: string;
+  /** 钉钉机器人自定义关键词。 */
+  dingtalkKeyword: string;
+  /** 钉钉消息类型。 */
+  dingtalkMessageType: ApiAppSettings["dingtalkMessageType"];
   /** 企业微信机器人 Webhook URL。 */
   wechatWebhookUrl: string;
   /** 企业微信消息类型。 */
@@ -410,6 +418,7 @@ export const CHANNEL_LABELS: Record<NotificationChannel, LocalizedLabels> = {
   telegram: labelsFromCatalog("channel.telegram"),
   notifyx: labelsFromCatalog("channel.notifyx"),
   webhook: labelsFromCatalog("channel.webhook"),
+  dingtalk: labelsFromCatalog("channel.dingtalk"),
   wechat: labelsFromCatalog("channel.wechat"),
   email: labelsFromCatalog("channel.email"),
   bark: labelsFromCatalog("channel.bark"),

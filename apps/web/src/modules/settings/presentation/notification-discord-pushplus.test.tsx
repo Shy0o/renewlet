@@ -15,22 +15,34 @@ const messages: Record<string, string> = {
   "common.enabled": "已启用",
   "settings.channel.discordReady": "Webhook URL 已填写",
   "settings.channel.discordTodo": "填写 Discord Webhook URL",
+  "settings.channel.dingtalkReady": "钉钉机器人 Webhook URL 已填写",
+  "settings.channel.dingtalkTodo": "填写钉钉机器人 Webhook URL",
   "settings.channel.pushplusReady": "Token 已填写",
   "settings.channel.pushplusTodo": "填写 PushPlus Token",
   "settings.channelConfig": "配置 {channel}",
   "settings.channelEnabledHelp": "该渠道已启用。",
+  "settings.dingtalkKeyword": "自定义关键词（可选）",
+  "settings.dingtalkSecret": "加签密钥（可选）",
+  "settings.dingtalkSecretHelp": "填写后自动生成签名。",
+  "settings.dingtalkSecurityHelp": "Cloudflare Worker 不保证固定出口 IP，建议优先使用关键词或加签。",
+  "settings.dingtalkWebhookHelp": "Renewlet 会按钉钉固定消息结构发送。",
+  "settings.dingtalkWebhookUrl": "机器人 Webhook URL",
   "settings.discordBotAvatarUrl": "机器人头像 URL（可选）",
   "settings.discordBotUsername": "机器人用户名（可选）",
   "settings.discordWebhookHelp": "只支持 Discord 官方 Webhook URL，发送时会禁止提及。",
   "settings.discordWebhookUrl": "Webhook URL",
+  "settings.help.dingtalk": "钉钉机器人安全设置",
   "settings.help.discord": "Discord 官方 Webhook 文档",
   "settings.help.pushplus": "PushPlus 消息接口文档",
+  "settings.messageType": "消息类型",
   "settings.notificationChannels": "通知渠道",
   "settings.pushplusHelp": "从 PushPlus 获取的消息令牌或用户令牌。",
   "settings.pushplusToken": "PushPlus Token",
+  "settings.testChannel.dingtalk": "测试 {channel} 通知",
   "settings.testChannel.discord": "测试 {channel} 通知",
   "settings.testChannel.pushplus": "测试 {channel} 通知",
   "settings.testing": "测试中",
+  "settings.textMessage": "文本消息",
 };
 
 vi.mock("@/i18n/I18nProvider", () => ({
@@ -101,6 +113,29 @@ describe("Discord and PushPlus notification settings", () => {
     expect(onTest).toHaveBeenCalledWith("discord");
   });
 
+  it("renders DingTalk fields and keeps the Cloudflare IP caveat visible", async () => {
+    const user = userEvent.setup();
+    const onTest = vi.fn();
+    render(<StatefulPanel channel="dingtalk" onTest={onTest} />);
+
+    expect(screen.getByRole("link", { name: "钉钉机器人安全设置" })).toHaveAttribute(
+      "href",
+      "https://dingtalk.apifox.cn/doc-3550006.md",
+    );
+    expect(screen.getByText("Cloudflare Worker 不保证固定出口 IP，建议优先使用关键词或加签。")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("机器人 Webhook URL"), "https://oapi.dingtalk.com/robot/send?access_token=token");
+    await user.type(screen.getByLabelText("自定义关键词（可选）"), "Renewlet");
+    await user.type(screen.getByLabelText("加签密钥（可选）"), "SECsecret");
+
+    expect(screen.getByLabelText("机器人 Webhook URL")).toHaveValue("https://oapi.dingtalk.com/robot/send?access_token=token");
+    expect(screen.getByLabelText("自定义关键词（可选）")).toHaveValue("Renewlet");
+    expect(screen.getByLabelText("加签密钥（可选）")).toHaveValue("SECsecret");
+
+    await user.click(screen.getByRole("button", { name: "测试 钉钉机器人 通知" }));
+    expect(onTest).toHaveBeenCalledWith("dingtalk");
+  });
+
   it("renders PushPlus token field and keeps demo mode disabled", () => {
     render(<StatefulPanel channel="pushplus" initialSettings={{ pushplusToken: "push-token" }} disabled />);
 
@@ -113,12 +148,13 @@ describe("Discord and PushPlus notification settings", () => {
     expect(screen.getByRole("button", { name: "测试 PushPlus 通知" })).toBeDisabled();
   });
 
-  it("shows Discord and PushPlus summaries and disables channel toggles in demo mode", () => {
+  it("shows DingTalk, Discord and PushPlus summaries and disables channel toggles in demo mode", () => {
     render(
       <NotificationChannelList
         settings={{
           ...DEFAULT_SETTINGS,
           enabledChannels: ["discord"],
+          dingtalkWebhookUrl: "https://oapi.dingtalk.com/robot/send?access_token=token",
           discordWebhookUrl: "https://discord.com/api/webhooks/123/token",
           pushplusToken: "",
         }}
@@ -129,8 +165,10 @@ describe("Discord and PushPlus notification settings", () => {
       />,
     );
 
+    expect(screen.getByText("钉钉机器人 Webhook URL 已填写")).toBeInTheDocument();
     expect(screen.getByText("Webhook URL 已填写")).toBeInTheDocument();
     expect(screen.getByText("填写 PushPlus Token")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "启用 钉钉机器人" })).toBeDisabled();
     expect(screen.getByRole("checkbox", { name: "停用 Discord" })).toBeDisabled();
     expect(screen.getByRole("checkbox", { name: "启用 PushPlus" })).toBeDisabled();
   });

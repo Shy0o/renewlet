@@ -28,9 +28,11 @@ const (
 	defaultNotificationReminderDays = 3
 	maxReminderDays                 = 3650
 	// 默认 plain 表示不发送 Telegram parse_mode；HTML 只能通过 formatter 固定模板输出。
-	telegramMessageFormatPlain = "plain"
-	telegramMessageFormatHTML  = "html"
-	discordContentMaxRunes     = 2000
+	telegramMessageFormatPlain  = "plain"
+	telegramMessageFormatHTML   = "html"
+	dingtalkMessageTypeMarkdown = "markdown"
+	dingtalkMessageTypeText     = "text"
+	discordContentMaxRunes      = 2000
 )
 
 var (
@@ -39,6 +41,7 @@ var (
 		"telegram":   {},
 		"notifyx":    {},
 		"webhook":    {},
+		"dingtalk":   {},
 		"wechat":     {},
 		"email":      {},
 		"bark":       {},
@@ -76,6 +79,10 @@ type appSettings struct {
 	WebhookMethod            string                    `json:"webhookMethod"`
 	WebhookHeaders           string                    `json:"webhookHeaders"`
 	WebhookPayload           string                    `json:"webhookPayload"`
+	DingTalkWebhookURL       string                    `json:"dingtalkWebhookUrl"`
+	DingTalkSecret           string                    `json:"dingtalkSecret"`
+	DingTalkKeyword          string                    `json:"dingtalkKeyword"`
+	DingTalkMessageType      string                    `json:"dingtalkMessageType"`
 	WechatWebhookURL         string                    `json:"wechatWebhookUrl"`
 	WechatMessageType        string                    `json:"wechatMessageType"`
 	WechatAddModeTag         bool                      `json:"wechatAddModeTag"`
@@ -379,6 +386,30 @@ type webhookDefaultPayload struct {
 	Timestamp string `json:"timestamp"`
 }
 
+type dingTalkMarkdownMessage struct {
+	Title string `json:"title"`
+	Text  string `json:"text"`
+}
+
+type dingTalkTextMessage struct {
+	Content string `json:"content"`
+}
+
+type dingTalkMarkdownRequest struct {
+	MsgType  string                  `json:"msgtype"`
+	Markdown dingTalkMarkdownMessage `json:"markdown"`
+}
+
+type dingTalkTextRequest struct {
+	MsgType string              `json:"msgtype"`
+	Text    dingTalkTextMessage `json:"text"`
+}
+
+type dingTalkSendResponse struct {
+	ErrCode *int   `json:"errcode"`
+	ErrMsg  string `json:"errmsg"`
+}
+
 type serverChanSendRequest struct {
 	Title string `json:"title"`
 	Desp  string `json:"desp"`
@@ -443,6 +474,7 @@ func defaultAppSettings() appSettings {
 		TestPhone:                "",
 		TelegramMessageFormat:    telegramMessageFormatPlain,
 		WebhookMethod:            "POST",
+		DingTalkMessageType:      dingtalkMessageTypeMarkdown,
 		WechatMessageType:        "text",
 		BarkServerURL:            "https://api.day.app",
 		DiscordWebhookURL:        "",

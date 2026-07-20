@@ -144,6 +144,12 @@ func mergeSettingsWithOptions(base appSettings, patch json.RawMessage, rejectUns
 		} else if ok && format != telegramMessageFormatPlain && format != telegramMessageFormatHTML {
 			return base, errors.New("TELEGRAM_MESSAGE_FORMAT_UNSUPPORTED")
 		}
+		// 钉钉 payload 结构由渠道发送器统一生成；写入边界只接受官方机器人支持的正文类型。
+		if messageType, ok, err := explicitSettingsStringPatch(patch, "dingtalkMessageType"); err != nil {
+			return base, err
+		} else if ok && messageType != dingtalkMessageTypeMarkdown && messageType != dingtalkMessageTypeText {
+			return base, errors.New("DINGTALK_MESSAGE_TYPE_UNSUPPORTED")
+		}
 	}
 	settings.BuiltInIconSources = mergeBuiltInIconSourceSettings(base.BuiltInIconSources, sourcePatch)
 	if !hasEnabledBuiltInIconSource(settings.BuiltInIconSources) {
@@ -206,6 +212,9 @@ func sanitizeSettings(settings appSettings) appSettings {
 	}
 	settings.WebhookHeaders = clearLegacyWebhookExample(settings.WebhookHeaders, legacyWebhookHeadersExample)
 	settings.WebhookPayload = clearLegacyWebhookExample(settings.WebhookPayload, legacyWebhookPayloadExample)
+	if settings.DingTalkMessageType != dingtalkMessageTypeMarkdown && settings.DingTalkMessageType != dingtalkMessageTypeText {
+		settings.DingTalkMessageType = dingtalkMessageTypeMarkdown
+	}
 	if settings.WechatMessageType != "markdown" && settings.WechatMessageType != "text" {
 		settings.WechatMessageType = "text"
 	}

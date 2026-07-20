@@ -32,4 +32,27 @@ describe("settings schema", () => {
     expect(settingsUpdateBodySchema.safeParse({ pushplusToken: "x".repeat(257) }).success).toBe(false);
     expect(settingsUpdateBodySchema.safeParse({ pushplusToken: "pushplus-token", pushplusSecret: "unexpected" }).success).toBe(false);
   });
+
+  it("accepts DingTalk settings with HTTPS webhook and markdown default", () => {
+    const defaults = createDefaultAppSettings();
+    expect(defaults.enabledChannels).toEqual([]);
+    expect(defaults.dingtalkWebhookUrl).toBe("");
+    expect(defaults.dingtalkSecret).toBe("");
+    expect(defaults.dingtalkKeyword).toBe("");
+    expect(defaults.dingtalkMessageType).toBe("markdown");
+
+    const parsed = settingsUpdateBodySchema.parse({
+      enabledChannels: ["dingtalk"],
+      dingtalkWebhookUrl: "https://oapi.dingtalk.com/robot/send?access_token=token",
+      dingtalkSecret: "SECabcdef",
+      dingtalkKeyword: "Renewlet",
+      dingtalkMessageType: "text",
+    });
+
+    expect(parsed.enabledChannels).toEqual(["dingtalk"]);
+    expect(parsed.dingtalkMessageType).toBe("text");
+    expect(settingsUpdateBodySchema.safeParse({ dingtalkWebhookUrl: "http://oapi.dingtalk.com/robot/send?access_token=token" }).success).toBe(false);
+    expect(settingsUpdateBodySchema.safeParse({ dingtalkMessageType: "actionCard" }).success).toBe(false);
+    expect(settingsUpdateBodySchema.safeParse({ dingtalkKeyword: "x".repeat(101) }).success).toBe(false);
+  });
 });

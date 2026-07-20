@@ -37,6 +37,10 @@ type demoProtectedSettingsSnapshot struct {
 	WebhookMethod           string
 	WebhookHeaders          string
 	WebhookPayload          string
+	DingTalkWebhookURL      string
+	DingTalkSecret          string
+	DingTalkKeyword         string
+	DingTalkMessageType     string
 	WechatWebhookURL        string
 	WechatMessageType       string
 	WechatAddModeTag        bool
@@ -371,6 +375,10 @@ func demoProtectedSettingsSnapshotFrom(settings appSettings) demoProtectedSettin
 		WebhookMethod:           strings.TrimSpace(settings.WebhookMethod),
 		WebhookHeaders:          strings.TrimSpace(settings.WebhookHeaders),
 		WebhookPayload:          strings.TrimSpace(settings.WebhookPayload),
+		DingTalkWebhookURL:      strings.TrimSpace(settings.DingTalkWebhookURL),
+		DingTalkSecret:          strings.TrimSpace(settings.DingTalkSecret),
+		DingTalkKeyword:         strings.TrimSpace(settings.DingTalkKeyword),
+		DingTalkMessageType:     strings.TrimSpace(settings.DingTalkMessageType),
 		WechatWebhookURL:        strings.TrimSpace(settings.WechatWebhookURL),
 		WechatMessageType:       strings.TrimSpace(settings.WechatMessageType),
 		WechatAddModeTag:        settings.WechatAddModeTag,

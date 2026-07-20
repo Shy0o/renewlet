@@ -46,6 +46,7 @@ export const publicStatusCurrencySchema = z.union([
 ]);
 // Telegram 菜单命令描述不支持富文本；这个枚举只控制 sendMessage 正文，默认值在 shared defaults 固定为 plain。
 export const telegramMessageFormatSchema = z.enum(["plain", "html"]);
+export const dingtalkMessageTypeSchema = z.enum(["markdown", "text"]);
 
 const builtInIconSourceSettingSchema = z.object({
   enabled: z.boolean(),
@@ -95,6 +96,10 @@ const appSettingsShape = {
   webhookMethod: z.enum(["GET", "POST"]),
   webhookHeaders: z.string().max(20_000),
   webhookPayload: z.string().max(100_000),
+  dingtalkWebhookUrl: optionalHttpsUrlSchema,
+  dingtalkSecret: z.string().trim().max(512),
+  dingtalkKeyword: z.string().trim().max(100),
+  dingtalkMessageType: dingtalkMessageTypeSchema,
   wechatWebhookUrl: optionalHttpsUrlSchema,
   wechatMessageType: z.enum(["text", "markdown"]),
   wechatAddModeTag: z.boolean(),

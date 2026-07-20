@@ -283,10 +283,22 @@ export function normalizeSettingsJson(value: string): ApiAppSettings {
 
 function normalizeStoredSettingsPatch(value: unknown): unknown {
   if (!isRecord(value)) return value;
-  // 写入 API 仍严格拒绝非法值；读取坏库时只把 Telegram 样式降回 plain，不让整份 settings 掉默认。
+  // 写入 API 仍严格拒绝非法值；读取坏库时只修复枚举字段，不让整份 settings 掉默认。
   const telegramMessageFormat = value["telegramMessageFormat"];
-  if (telegramMessageFormat === undefined || telegramMessageFormat === "plain" || telegramMessageFormat === "html") return value;
-  return { ...value, telegramMessageFormat: "plain" };
+  const dingtalkMessageType = value["dingtalkMessageType"];
+  return {
+    ...value,
+    ...(
+      telegramMessageFormat === undefined || telegramMessageFormat === "plain" || telegramMessageFormat === "html"
+        ? {}
+        : { telegramMessageFormat: "plain" }
+    ),
+    ...(
+      dingtalkMessageType === undefined || dingtalkMessageType === "markdown" || dingtalkMessageType === "text"
+        ? {}
+        : { dingtalkMessageType: "markdown" }
+    ),
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

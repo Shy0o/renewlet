@@ -49,8 +49,20 @@ function normalizeStoredSettingsPatch(value: unknown): unknown {
   if (!isRecord(value)) return value;
   // 写入边界会拒绝非法格式；这里仅修复历史/手改 settings JSON，避免单个坏枚举拖垮整份设置。
   const telegramMessageFormat = value["telegramMessageFormat"];
-  if (telegramMessageFormat === undefined || telegramMessageFormat === "plain" || telegramMessageFormat === "html") return value;
-  return { ...value, telegramMessageFormat: "plain" };
+  const dingtalkMessageType = value["dingtalkMessageType"];
+  return {
+    ...value,
+    ...(
+      telegramMessageFormat === undefined || telegramMessageFormat === "plain" || telegramMessageFormat === "html"
+        ? {}
+        : { telegramMessageFormat: "plain" }
+    ),
+    ...(
+      dingtalkMessageType === undefined || dingtalkMessageType === "markdown" || dingtalkMessageType === "text"
+        ? {}
+        : { dingtalkMessageType: "markdown" }
+    ),
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
