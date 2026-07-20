@@ -72,12 +72,6 @@
     "typecheck:e2e": "tsc --noEmit --project tsconfig.playwright.json",
     "update:built-in-icons-index": "node scripts/update-built-in-icons-index.mjs"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@parcel/watcher",
-      "esbuild"
-    ]
-  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260624.1",
     "@lingui/format-po": "6.1.0",
